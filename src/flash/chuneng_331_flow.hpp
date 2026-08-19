@@ -22,6 +22,14 @@ struct Chuneng331Images {
   std::vector<std::uint8_t> app;
   std::vector<std::uint8_t> driver_verification;
   std::vector<std::uint8_t> app_verification;
+  // Q/CN A201-2025 CBF containers carry a 44-byte ABT block per role.  The
+  // reference ChuNeng CANoe flow (Flash2944_CN_ARC_V1.2) downloads the ABT
+  // block right after each main image, before CheckMemory 0202.  Empty ABT
+  // vectors disable the extra transfer (e.g. plain S-record input sets).
+  std::uint32_t driver_abt_address{};
+  std::vector<std::uint8_t> driver_abt;
+  std::uint32_t app_abt_address{};
+  std::vector<std::uint8_t> app_abt;
 };
 
 struct Chuneng331EntryPlan {

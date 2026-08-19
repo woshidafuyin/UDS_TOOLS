@@ -380,6 +380,13 @@ void Chuneng331Flow::run(const Chuneng331Images& images,
 
   transfer_image(images.driver_address, images.driver, 22, 30, "Driver");
   check_cancelled();
+  // Reference ChuNeng flow (Flash2944_CN_ARC_V1.2): download the 44-byte
+  // Driver ABT block right after the main image, before CheckMemory 0202.
+  if (!images.driver_abt.empty()) {
+    transfer_image(images.driver_abt_address, images.driver_abt, 31, 31,
+                   "DriverABT");
+    check_cancelled();
+  }
   std::vector<std::uint8_t> driver_verify{0x31,0x01,0x02,0x02};
   driver_verify.insert(driver_verify.end(), images.driver_verification.begin(), images.driver_verification.end());
   expect_routine(physical_, driver_verify, 0x0202, 32,
@@ -406,6 +413,13 @@ void Chuneng331Flow::run(const Chuneng331Images& images,
   check_wakeup();
   transfer_image(kAppAddress, images.app, 38, 88, "APP");
   check_cancelled();
+  // Reference ChuNeng flow: download the 44-byte APP ABT block right after
+  // the APP image, before CheckMemory 0202.
+  if (!images.app_abt.empty()) {
+    transfer_image(images.app_abt_address, images.app_abt, 89, 90,
+                   "APPABT");
+    check_cancelled();
+  }
 
   std::vector<std::uint8_t> app_verify{0x31,0x01,0x02,0x02};
   app_verify.insert(app_verify.end(), images.app_verification.begin(), images.app_verification.end());

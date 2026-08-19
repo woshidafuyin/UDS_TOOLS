@@ -146,6 +146,10 @@ void Chuneng331Workflow::run(const FlashJob& job, const FlashWorkflowCallbacks& 
     images.driver_address = 0x00000000;
     images.driver = driver.main.data;
     images.driver_verification = driver.device_signature;
+    // ABT block: downloaded right after the main image (reference
+    // Flash2944_CN_ARC_V1.2 flow) before CheckMemory 0202.
+    images.driver_abt_address = driver.abt.address;
+    images.driver_abt = driver.abt.data;
     const auto identity = cbf_identity(driver);
     log(callbacks, "Driver CBF identity: " + identity);
     record(callbacks, 0, "Driver CBF", "PASS",
@@ -176,6 +180,8 @@ void Chuneng331Workflow::run(const FlashJob& job, const FlashWorkflowCallbacks& 
     }
     images.app = app.main.data;
     images.app_verification = app.device_signature;
+    images.app_abt_address = app.abt.address;
+    images.app_abt = app.abt.data;
     const auto identity = cbf_identity(app);
     log(callbacks, "APP CBF identity: " + identity);
     record(callbacks, 0, "APP CBF", "PASS",
