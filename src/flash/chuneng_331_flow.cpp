@@ -27,6 +27,17 @@ void append_u32(std::vector<std::uint8_t>& out, std::uint32_t value) {
 std::uint8_t bcd(unsigned value) {
   return static_cast<std::uint8_t>(((value / 10U) << 4U) | (value % 10U));
 }
+
+std::uint32_t crc32_ieee(std::span<const std::uint8_t> data) {
+  std::uint32_t crc = 0xFFFFFFFFU;
+  for (const auto byte : data) {
+    crc ^= byte;
+    for (int bit = 0; bit < 8; ++bit) {
+      crc = (crc & 1U) != 0U ? (crc >> 1U) ^ 0xEDB88320U : crc >> 1U;
+    }
+  }
+  return crc ^ 0xFFFFFFFFU;
+}
 } // namespace
 
 Chuneng331EntryPlan resolve_chuneng_331_entry_plan(
@@ -380,8 +391,14 @@ void Chuneng331Flow::run(const Chuneng331Images& images,
 
   transfer_image(images.driver_address, images.driver, 22, 30, "Driver");
   check_cancelled();
+  // Bench evidence (LP_ARC331 CANoe Logging 2026-08-17/18): the ECU accepts
+  // 31 01 02 02 with a 4-byte IEEE CRC32 of the downloaded Driver image and
+  // returns 71 01 02 02 04.  The 256-byte CBF dev_signature variant was
+  // rejected with 71 01 02 02 05 on the current ARC331 ECU, so the CRC32
+  // contract is used for both roles.  The raw image CRC is recomputed here
+  // so the argument always matches the bytes actually transferred.
   std::vector<std::uint8_t> driver_verify{0x31,0x01,0x02,0x02};
-  driver_verify.insert(driver_verify.end(), images.driver_verification.begin(), images.driver_verification.end());
+  append_u32(driver_verify, crc32_ieee(images.driver));
   expect_routine(physical_, driver_verify, 0x0202, 32,
                  "DriverVerification");
   expect_routine(physical_,
@@ -408,7 +425,7 @@ void Chuneng331Flow::run(const Chuneng331Images& images,
   check_cancelled();
 
   std::vector<std::uint8_t> app_verify{0x31,0x01,0x02,0x02};
-  app_verify.insert(app_verify.end(), images.app_verification.begin(), images.app_verification.end());
+  append_u32(app_verify, crc32_ieee(images.app));
   expect_routine(physical_, app_verify, 0x0202, 91,
                  "AppVerification");
   expect_routine(physical_,
