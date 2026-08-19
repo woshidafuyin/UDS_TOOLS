@@ -1,0 +1,66 @@
+/*@!Encoding:936*/
+includes
+{
+  
+}
+
+variables
+{
+  timer resetCan;
+}
+
+on timer resetCan
+{
+  resetCanEx(1);
+}
+on key 'o'
+{
+  @IO::VN1600_1::DOUT=1;  //power on
+}
+on key 'p'
+{
+  @IO::VN1600_1::DOUT=0;  //power on
+}
+on start
+{
+  @IO::VN1600_1::DOUT=1;  //power on
+  putValue(Rader_ID,4);
+  putValue(sendOneFlag,0);
+  @sysvar::BootloaderTestEnable::BT_Test_EnableFlag = 0;
+
+  openPanel("BootloaderTestPanel");
+}
+
+on busOff
+{
+  resetCanEx(1);
+}
+
+on envVar Rader_ID
+{
+  if(getValue(Rader_ID) == 0)
+  {
+    putValue(PhyID,0x772);
+    putValue(ResID,0x77A);
+  }
+  if(getValue(Rader_ID) == 1)
+  {
+    putValue(PhyID,0x773);
+    putValue(ResID,0x77B);
+  }  
+  if(getValue(Rader_ID) == 2)
+  {
+    putValue(PhyID,0x771);
+    putValue(ResID,0x779);
+  }  
+  if(getValue(Rader_ID) == 3)
+  {
+    putValue(PhyID,0x770);
+    putValue(ResID,0x778);
+  }    
+  if(getValue(Rader_ID) == 4)
+  {
+    putValue(PhyID,0x751);
+    putValue(ResID,0x759);
+  }  
+}

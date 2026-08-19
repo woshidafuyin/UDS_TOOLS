@@ -1,0 +1,27 @@
+{
+  "status": "reconstructed_from_successful_blf_not_supplier_original",
+  "app_blf": {
+    "name": "JL_P416APPtoAPP_Flashsoft_Log.blf",
+    "sha256": "d82fbe4fd9daaee00c85aebb5c933ef49b9f18ade849a745baaa0bcb1d623c74",
+    "cycles": 1
+  },
+  "pls_blf": {
+    "name": "JL_P416PLStoAPP_Flashsoft_Log.blf",
+    "sha256": "5057f73d4c98525646a7d31b25d3a699756df7c0e6d974e71bdc51bcc5636a4f",
+    "cycles": 3
+  },
+  "outputs": {
+    "SBL/P416_SBL_reconstructed.vbf": {
+      "bytes": 89130,
+      "sha256": "5985a7ba6e080a9d42916991c736c203b3d34f7920b0ab7683e1a93c3ef7d3b9"
+    },
+    "ESS/P416_ESS_reconstructed.vbf": {
+      "bytes": 1009,
+      "sha256": "b9e3c2e0ea23286944d4397e563e6975bbd3cacc1d13f1db2f51baf578500c7d"
+    },
+    "APP/P416_APP_reconstructed.vbf": {
+      "bytes": 217511,
+      "sha256": "525319cf93c9f36fbc70136db3ebcbd43805d22de627e7375a831bc7c7198566"
+    }
+  }
+}

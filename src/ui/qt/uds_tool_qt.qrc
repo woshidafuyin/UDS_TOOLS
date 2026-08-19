@@ -1,0 +1,5 @@
+<RCC>
+  <qresource prefix="/icons">
+    <file alias="uds_flash_tool.ico">../../../assets/uds_flash_tool.ico</file>
+  </qresource>
+</RCC>

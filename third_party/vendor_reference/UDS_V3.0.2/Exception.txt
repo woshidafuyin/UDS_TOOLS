@@ -1,0 +1,1 @@
+[2025-03-27 09:52:46:916][Debug]-->雷达断开 File:..\UDS\bootload.cpp Function:void __thiscall Bootload::PersistenceDownload(void) Category:default Line:1592 Version:2

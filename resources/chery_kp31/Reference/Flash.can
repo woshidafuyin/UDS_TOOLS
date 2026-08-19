@@ -1,0 +1,2465 @@
+/*@!Encoding:936*/
+includes
+{
+  //#pragma library ("..\DLL\CHERY_E0Y_UPDATE23231115.dll")
+}
+
+variables
+{
+  dword gPhyId = 0x70D;
+  dword gFunId = 0x7DF;
+  dword gResId = 0x78D;
+  
+  message 0x000 g_Tx = {dlc = 8};
+  message 0x000 g_Rx = {dlc = 8};
+  
+  message 0x000 g_server3E = {dlc = 0x08};
+  
+  message 0x000 g_StayInBoot = {dlc = 8};
+  
+  msTimer test_online;
+  
+  const dword S3server = 4000;
+  dword   routine = 0;
+  
+  dword   block_length;
+  
+  dword   Tx_Data[4096];  //存储除服务以外的数据，包括子服务和参数
+  dword   Rx_Data[100];
+  byte    seed_L1[4]     = {0,0,0,0};
+  byte    seed_L2[4]     = {0,0,0,0};
+  int     download_progress_flag;
+  dword   transform_data;
+  int     ResetFlag;
+  dword   fingerdata[19];
+  dword   publickeydata[514] = {
+                                  0xB0, 0xB2, 0xB2, 0xC5, 0x44, 0xBD, 0x1E, 0x85, 0xD2, 0x73, 0x5B, 0x0A, 0xC0, 0x2E, 0x6F, 0x4C, 
+                                  0xF9, 0xA5, 0xE1, 0x42, 0x45, 0x02, 0xE9, 0xC6, 0xC8, 0x6D, 0x85, 0x83, 0x1B, 0x7E, 0xD1, 0x60, 
+                                  0xCC, 0xF8, 0x59, 0x02, 0x7E, 0xDD, 0xB0, 0xC1, 0x55, 0x8B, 0x77, 0xEB, 0x74, 0xA9, 0x97, 0x97, 
+                                  0xFB, 0x09, 0x3F, 0x13, 0xAF, 0x45, 0xAB, 0x47, 0x60, 0x58, 0xAA, 0xC6, 0xCA, 0x5A, 0xCC, 0x71, 
+                                  0x39, 0xFE, 0x32, 0xA0, 0xBB, 0xC2, 0x56, 0xB8, 0x04, 0x4C, 0xDA, 0x31, 0x83, 0x2C, 0xCE, 0xC1, 
+                                  0xD5, 0x2A, 0x75, 0xCC, 0x95, 0xC1, 0x25, 0xE8, 0xF6, 0xA2, 0x60, 0x69, 0xD0, 0x5D, 0x01, 0x07, 
+                                  0x3B, 0xD8, 0xF9, 0x3C, 0xF0, 0xEF, 0x84, 0x5C, 0x09, 0xF2, 0xAF, 0x00, 0xAF, 0x27, 0xAF, 0xF5, 
+                                  0x97, 0x9B, 0xEF, 0xAF, 0x67, 0xCD, 0x0C, 0x82, 0xE5, 0x0B, 0x56, 0xDE, 0x80, 0xC9, 0x90, 0xAB, 
+                                  0x7B, 0x18, 0x08, 0x3F, 0x8F, 0x18, 0xCB, 0x1E, 0xD0, 0xAC, 0xA9, 0x3A, 0xBB, 0x93, 0x22, 0x27, 
+                                  0x69, 0xC8, 0x14, 0x2A, 0xAA, 0xC4, 0xE9, 0x73, 0x48, 0x02, 0x3E, 0xDA, 0x4C, 0x39, 0xE4, 0x08, 
+                                  0x5E, 0x55, 0xB1, 0xD8, 0x59, 0x54, 0xB4, 0x90, 0xF7, 0x67, 0x10, 0xFF, 0x8A, 0xE8, 0x30, 0xB1, 
+                                  0x71, 0xA9, 0x94, 0xCE, 0xE7, 0xCD, 0xAB, 0x9C, 0xED, 0xB0, 0xB3, 0x5A, 0x5A, 0x7C, 0x89, 0x92, 
+                                  0x7E, 0xEE, 0x00, 0x11, 0x90, 0x51, 0x9D, 0xF5, 0x9C, 0x9D, 0x77, 0xF9, 0x32, 0x3C, 0x12, 0x54, 
+                                  0x18, 0x9A, 0x72, 0xB8, 0x87, 0x35, 0x20, 0x82, 0x89, 0x5A, 0x2E, 0x5B, 0xA8, 0x47, 0x9E, 0x6F, 
+                                  0x13, 0xAB, 0x22, 0xFE, 0xDC, 0xA9, 0x87, 0xB6, 0xF6, 0xF8, 0x29, 0xF3, 0x5C, 0x97, 0x29, 0xBB, 
+                                  0x85, 0xF7, 0x66, 0xD6, 0x6B, 0x92, 0xF3, 0xEB, 0x27, 0xF4, 0x7D, 0x42, 0x8B, 0xA6, 0xE8, 0x37, 
+                                  0xA4, 0xF1, 0x1D, 0xA6, 0x7D, 0xA4, 0x0B, 0x63, 0xC6, 0x7C, 0x98, 0xB7, 0xA0, 0xDD, 0x2E, 0x39, 
+                                  0x6C, 0x6A, 0x84, 0x95, 0xDD, 0xAB, 0xC1, 0x91, 0x00, 0x3F, 0xF1, 0xF5, 0x18, 0x9D, 0xCB, 0xD9, 
+                                  0x9E, 0x86, 0xF0, 0x31, 0x48, 0xE2, 0x77, 0x94, 0xDF, 0x4B, 0x08, 0x75, 0xAF, 0x4B, 0x57, 0x6A, 
+                                  0x51, 0x11, 0x2A, 0x39, 0x8F, 0x5F, 0x05, 0xB7, 0x9F, 0xEB, 0x9A, 0x8C, 0xA7, 0xF1, 0x88, 0x3C, 
+                                  0xE8, 0xD0, 0x1B, 0x74, 0xE0, 0x32, 0x97, 0x09, 0xE9, 0x02, 0x11, 0x4D, 0xAF, 0xE0, 0xE3, 0x44, 
+                                  0x32, 0xDF, 0xD6, 0x8B, 0x70, 0x93, 0xE3, 0x2C, 0xF3, 0xBA, 0x4A, 0xC5, 0xDA, 0xFB, 0x7A, 0xB8, 
+                                  0x6B, 0x14, 0xC5, 0x19, 0xB3, 0xDF, 0xF8, 0x96, 0x2B, 0xA9, 0x0A, 0xC5, 0xC5, 0x7C, 0xF8, 0x90, 
+                                  0x64, 0x4D, 0xBD, 0x33, 0x2C, 0x54, 0xE2, 0x7D, 0x42, 0x24, 0xF1, 0x1D, 0x38, 0xC6, 0x4A, 0xDB, 
+                                  0xAB, 0x8E, 0xC5, 0x94, 0xAB, 0xB2, 0x39, 0x86, 0xB7, 0x5F, 0x0A, 0x90, 0x6D, 0xEA, 0xF5, 0x68, 
+                                  0x14, 0x7A, 0x45, 0xA6, 0xDC, 0x87, 0x96, 0x2A, 0x78, 0xA7, 0x3B, 0x60, 0x1C, 0x06, 0xC6, 0x7F, 
+                                  0xFA, 0x53, 0x83, 0x51, 0x7E, 0xD6, 0x18, 0x42, 0x3C, 0x3C, 0x50, 0xD9, 0x57, 0x7B, 0x10, 0xA5, 
+                                  0x4E, 0x22, 0xC6, 0x19, 0xB2, 0x4A, 0xC0, 0x94, 0xB8, 0xCF, 0x6F, 0xD5, 0x02, 0xCE, 0x97, 0x16, 
+                                  0x5E, 0x85, 0x3B, 0xA9, 0x02, 0x3F, 0xDB, 0xE1, 0x3D, 0xF0, 0xBD, 0xCF, 0x22, 0x90, 0x5D, 0x03, 
+                                  0x42, 0x3C, 0x47, 0x88, 0x2E, 0xD5, 0x18, 0xA4, 0xF9, 0xD0, 0x3B, 0xBB, 0x49, 0x61, 0x70, 0x01, 
+                                  0x17, 0x6C, 0xC4, 0xB0, 0xD6, 0x75, 0xEA, 0x1B, 0x37, 0x49, 0xF8, 0xED, 0x7F, 0xA9, 0x26, 0xCC, 
+                                  0x06, 0xE4, 0xE4, 0x65, 0x68, 0x05, 0xDC, 0x52, 0x0B, 0x71, 0x5E, 0x08, 0xC2, 0x79, 0xCF, 0x59, 
+                                  0x26, 0xF5};
+  dword   FileLen;//app长度
+  
+  enum Msg_State
+  {
+    MsgTrue  = 1,
+    MsgFalse = 0
+  };
+    
+  struct Data_Type
+  {
+    dword State;
+    byte  buff[0x00180008];
+    byte  buffDriver[0x2008];//用于存储驱动程序的地址+长度＋数据
+    byte  bufCal[208];
+    
+  }g_Data;
+  
+  struct DIDData
+  {
+    byte writeDID[40];//存放需要写入的DID数据
+    byte readDID[40];
+      
+    byte errorlength[17];
+  }g_Did;  
+  
+  
+  //27服务
+  diagRequest   E0Y.SeedLevelBootRequest_Request   gSeedReq;
+  diagResponse  E0Y.SeedLevelBootRequest_Request   gSeedResp;
+  diagRequest   E0Y.KeyLevelBootSend_Send       gKeyReq;
+  
+  //RSA中模式n
+  byte  mod[128] = {0xf7,0x24,0x2f,0x3b,0xb8,0x69,0x7e,0xe5,
+                    0xc3,0xac,0xaf,0x80,0x0b,0xa1,0xc8,0x4e,
+                    0x3c,0x89,0xea,0x37,0x39,0x87,0x07,0x3d,
+                    0x97,0x1e,0x91,0xf8,0x3a,0xd4,0x36,0xf6,
+                    0x09,0xbb,0xbb,0x8f,0xbf,0x25,0x03,0x98,
+                    0x86,0x0b,0xb2,0x0c,0x63,0x0b,0xa1,0x24,
+                    0xd9,0x34,0x8b,0xe0,0xba,0x61,0xf9,0x43,
+                    0x66,0x21,0x20,0x5e,0x02,0x89,0xae,0x23,
+                    0x8d,0xda,0xbd,0x16,0xeb,0xb7,0x15,0xea,
+                    0x85,0xdd,0xb9,0x88,0xcc,0x31,0xd3,0x74,
+                    0xd7,0xc5,0x80,0x0a,0x74,0xf6,0xda,0x68,
+                    0x11,0x06,0xd0,0xa6,0x3d,0x50,0xba,0x1f,
+                    0xea,0x4f,0xc2,0x02,0x95,0x0f,0x58,0x2e,
+                    0x12,0xe0,0xba,0xf6,0xff,0xe0,0xf4,0xc5,
+                    0xe2,0x76,0xa5,0xaa,0xda,0xe7,0xb8,0x77,
+                    0x34,0x76,0xd0,0x9b,0x0b,0x88,0x3a,0x83
+  };
+  //私钥指数
+  byte privatekey[128] = {0xAF,0xCB,0xF5,0x3C,0x39,0x61,0xD0,0x22,
+                          0xCA,0xAF,0x28,0x8F,0xC5,0xF2,0x1E,0x0D,
+                          0x0D,0xA6,0x74,0x83,0x6F,0xA5,0xF0,0x29,
+                          0x99,0xE8,0x5A,0xA0,0x61,0xEA,0x5D,0x52,
+                          0xB9,0x94,0xAA,0x97,0xBA,0xC2,0x3E,0x99,
+                          0xE2,0x66,0x5D,0x5E,0xFD,0xA7,0xDD,0x7C,
+                          0xE8,0xF1,0x91,0x60,0xC4,0xF9,0xE8,0xDC,
+                          0x71,0x05,0xCE,0x96,0x87,0xD8,0x81,0x10,
+                          0x32,0x3C,0x6B,0x32,0x70,0x5E,0xA5,0xA6,
+                          0x9B,0x3B,0xA7,0xFD,0x90,0x52,0x76,0xC3,
+                          0x5A,0x85,0x7F,0x27,0x7C,0x09,0xCE,0x2E,
+                          0x0F,0x99,0xBC,0x63,0x1F,0x3B,0xC9,0x15,
+                          0xA6,0xDE,0xF4,0x1D,0xD6,0xCA,0x44,0xF3,
+                          0x89,0x2D,0xBA,0x0D,0x64,0xC2,0x5F,0xEF,
+                          0xF1,0x9D,0xEB,0xFA,0x13,0x25,0xCD,0x41,
+                          0x53,0x52,0xB6,0xFA,0x48,0xB7,0x6B,0x8D
+  };
+  struct sign
+  {
+    byte Data_20[20];   //存放20byte的hal值
+    byte Data_128[512]; //存放128byte的rsa值
+  }Signature;
+  
+}
+
+
+on timer test_online
+{
+  server_3e(0x00,gFunId,0x80,0x02);
+  setTimer(test_online,S3server);
+}
+
+on message *
+{
+  if(this.id == gResId)
+  {
+    g_Rx.id      = this.id;
+    g_Rx.byte(0) = this.byte(0); 
+    g_Rx.byte(1) = this.byte(1);
+    g_Rx.byte(2) = this.byte(2); 
+    g_Rx.byte(3) = this.byte(3);
+    g_Rx.byte(4) = this.byte(4); 
+    g_Rx.byte(5) = this.byte(5);
+    g_Rx.byte(6) = this.byte(6); 
+    g_Rx.byte(7) = this.byte(7);
+    PrintMsgReceive(g_Rx);
+    
+    if(g_Rx.byte(1) == 0x67 && g_Rx.byte(2) == 0x01)
+    {
+      seed_L1[0] = g_Rx.byte(3);
+      seed_L1[1] = g_Rx.byte(4);
+    }
+    if(g_Rx.byte(1) == 0x67 && g_Rx.byte(2) == 0x07)
+    {
+      seed_L2[0] = g_Rx.byte(3);
+      seed_L2[1] = g_Rx.byte(4);
+    }
+  }
+  if(this.id == gPhyId)
+  {
+    if(this.byte(1) == 0x27)
+    {
+      g_Tx.id      = this.id;
+      g_Tx.byte(0) = this.byte(0); 
+      g_Tx.byte(1) = this.byte(1);
+      g_Tx.byte(2) = this.byte(2); 
+      g_Tx.byte(3) = this.byte(3);
+      g_Tx.byte(4) = this.byte(4); 
+      g_Tx.byte(5) = this.byte(5);
+      g_Tx.byte(6) = this.byte(6); 
+      g_Tx.byte(7) = this.byte(7);    
+      PrintMsgOutput(g_Tx);
+    }
+  }
+}
+
+void PrintMsgOutput(message* msg)
+{
+  testStep("Tx","[%x] [%.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x]",
+  msg.id,msg.byte(0),msg.byte(1),msg.byte(2),msg.byte(3),msg.byte(4),msg.byte(5),msg.byte(6),msg.byte(7)); 
+}
+
+void PrintMsgReceive(message* msg)
+{
+  testStep("Rx","[%x] [%.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x]",
+  msg.id,msg.byte(0),msg.byte(1),msg.byte(2),msg.byte(3),msg.byte(4),msg.byte(5),msg.byte(6),msg.byte(7)); 
+}
+
+byte CharToHex(char s[],int index)
+{
+  long WriteData;
+  char src[5] = "0x";
+  
+  src[2] = s[index*3]; 
+  src[3] = s[index*3 + 1];
+  
+  strtol(src,WriteData);
+  
+  return WriteData;
+}
+
+void output_FC()
+{
+  g_Tx.id      = gPhyId;
+  g_Tx.byte(0) = 0x30;
+  g_Tx.byte(1) = 0x00;
+  g_Tx.byte(2) = 0x00;
+  g_Tx.byte(3) = 0x55;
+  g_Tx.byte(4) = 0x55;
+  g_Tx.byte(5) = 0x55;
+  g_Tx.byte(6) = 0x55;
+  g_Tx.byte(7) = 0x55;
+  output(g_Tx);
+  PrintMsgOutput(g_Tx);
+}
+
+void output_StayInBoot()
+{
+  g_Tx.id      = gPhyId;
+  g_Tx.byte(0) = 0x04;
+  g_Tx.byte(1) = 0x31;
+  g_Tx.byte(2) = 0x01;
+  g_Tx.byte(3) = 0xDD;
+  g_Tx.byte(4) = 0x01;
+  g_Tx.byte(5) = 0x55;
+  g_Tx.byte(6) = 0x55;
+  g_Tx.byte(7) = 0x55;
+  output(g_Tx);
+  PrintMsgOutput(g_Tx);
+}
+
+nodeDropErrorHandling(long silent)
+{
+  long channel = 1;
+  switch(silent)
+  {
+    case 0:{testStepPass("nodeDrop","nodeDropError");};break;
+    case 1:{testStepPass("nodeDrop","nodeDropErrorRecovery");};break;
+  }
+  canSetChannelOutput(channel, silent);
+}
+
+void JudgeResponse(byte response,dword service)
+{
+  if(response == 0)  //不期待接收到响应
+  {
+    if(0 == testWaitForMessage(gResId,50))
+    {
+      testStepPass("pass","%x Service dosn't response anything",service);
+    }
+    else
+    {
+      if(g_Rx.byte(3) == 0x78 || g_Rx.byte(1) == 0x7e)
+      {
+        while(1)
+        {
+            if(1 == testWaitForMessage(gResId ,5000))
+            {
+                if(g_Rx.byte(3) == 0x78)
+                {
+                  testStep("wait","%x Service returns response pending:[0x%x] ",service,g_Rx.byte(3));
+                }
+                else
+                {
+                  g_Data.State = MsgFalse;
+                  testStepFail("fail","%x Service returns negative response:[0x%x] ",service,g_Rx.byte(3));
+                  break;
+                }
+              }
+            else
+            {
+              break;
+            }
+        }
+        testStepPass("pass","%x Service has NRC78",service);
+      }
+      else
+      {
+        g_Data.State = MsgFalse;
+        testStepFail("fail1","%.2x Service responsed anything",service);
+      }
+    }
+  }
+  else  //期望接收到响应
+  {
+    if(response == service + 0x40)  //肯定响应
+    {
+      if(1 == testWaitForMessage(gResId,200))
+      {
+        if(g_Rx.byte(1) == response)  //单帧响应
+        {
+          testStepPass("pass","%s service has postive response",service);
+        }
+        else if(g_Rx.byte(2) == response)   //多帧响应，需发送流控帧
+        {
+          testStepPass("pass","%s service has postive response",service);
+          output_FC();
+          while(1)  //等待CF传输完毕
+          {
+            if(0 == testWaitForMessage(gResId,128))  //等待连续帧接收完毕，才执行其他步骤
+            {
+              testStepPass("pass","%x service return successive frames",service);
+              break;
+            }
+          }
+        }
+        else if(g_Rx.byte(2) == service && g_Rx.byte(3) != 0x78) //否定响应
+        {
+          g_Data.State = MsgFalse;
+          testStepFail("fail","%s service has negative response:[0x%x],hope to receive response:[0x%x]",service ,g_Rx.byte(3),response);
+        }
+        else if(g_Rx.byte(3) == 0x78)
+        {
+          while(1)  //可能接收到多次NRC78,除接收到NRC78之外的数据，均可跳出该循环
+          {
+            if(1 == testWaitForMessage(gResId ,5000))
+            {
+              if(g_Rx.byte(1) == response)
+              {
+                testStepPass("pass","%s service has postive response",service);
+                break;
+              }
+              else if(g_Rx.byte(2) == response)
+              {
+                testStepPass("pass","%s service has postive response",service);
+                output_FC();
+                while(1)  //等待CF传输完毕
+                {
+                  if(0 == testWaitForMessage(gResId,128))  //等待连续帧接收完毕，才执行其他步骤
+                  {
+                    testStepPass("pass","%x service return successive frames",service);
+                    break;
+                  }
+                }
+              }
+              else
+              {
+                if(g_Rx.byte(3) == 0x78)
+                {
+                  testStep("wait","%x Service returns response pending:[0x%x] ",service,g_Rx.byte(3));
+                  
+                  if(routine == 1) //进行通讯中断
+                  {
+                    nodeDropErrorHandling(0);
+                    testWaitForTimeout(500);
+                    g_Data.state = MsgFalse;
+                    nodeDropErrorHandling(1);
+                    break;
+                  }
+                  
+                }
+                else
+                {
+                  g_Data.State = MsgFalse;
+                  testStepFail("fail","%x Service returns negative response:[0x%x],hope to receive response:[0x%x]",service,g_Rx.byte(3),response);
+                  break;
+                }
+              }
+            }
+            else
+            {
+              g_Data.State = MsgFalse;
+              testStepFail("fail","%x Service dosn't response anything after pending:[0x%x],hope to receive response:[0x%x]",service,0x78,response);
+              break;
+            }
+          }
+        }
+      }
+      else
+      {
+        g_Data.State = MsgFalse;
+        testStepFail("fail","%x has no response",service);
+      }
+    }
+    else  //其他类型响应（NRC）
+    {
+      if(1 == testWaitForMessage(gResId,500))
+      {
+        if(g_Rx.byte(1) == 0x7F)  //xx 7F service nrc
+        {
+          if(g_Rx.byte(3) == 0x78)
+          {
+            while(1)  //可能接收到多次NRC78,除接收到NRC78之外的数据，均可跳出该循环
+            {
+              if(1 == testWaitForMessage(gResId ,5000))
+              {
+                if(g_Rx.byte(1) != 0x7F)
+                {
+                  testStepFail("Fail","no except response");
+                  break;
+                }
+                else
+                {
+                  if(g_Rx.byte(3) == response)
+                  {
+                   break;
+                   testStepPass("Pass","");
+                  }
+                  else
+                  {
+                    if(g_Rx.byte(3) != 0x78)
+                    {
+                       break;
+                       testStepFail("Fail","no except response");
+                    }
+                  }
+                }
+              }
+              else
+              {break;}
+            }
+          }
+          else
+          {
+            if(g_Rx.byte(3) == response)
+            {
+              g_Data.State = MsgFalse;
+              testStepPass("pass","%x Service returns negative response:[0x%x]",service ,g_Rx.byte(3));
+            }
+            else
+            {
+              g_Data.State = MsgFalse;
+              testStepFail("fail","%x Service returns response:[0x%x],hope to receive response:[0x%x] ",service,g_Rx.byte(3),response);
+            }
+          }
+          
+          
+        }
+        else                      //不知名服务
+        {
+          g_Data.State = MsgFalse;
+          testStepFail("fail","%x Service returns response:[0x%x] ",service ,g_Rx.byte(1));
+        }
+        
+      }
+      else
+      {
+        g_Data.State = MsgFalse;
+        testStepFail("fail","%x has no response",service);
+      }
+    }
+  }
+}
+
+void TxTPData(dword id,dword length,dword data[],dword serve)
+{
+  int cur_cf_number,cur_data_number;
+  int sent_cf_n;
+  int i,TempLen;
+  int accepted_fc_n;
+  
+  
+  g_Tx.id       = id;
+  sent_cf_n     = 0;
+  TempLen       = 0;
+  accepted_fc_n = 0;
+  
+  cur_cf_number = length/0x07;
+  cur_data_number = length - 0x06;
+  
+  
+  if(1 == testWaitForMessage(gResId,150))
+  {
+    g_Tx.byte(0) = 0x21;
+    if(g_Rx.byte(0) == 0x30)
+    {
+      accepted_fc_n++;
+      while(sent_cf_n < cur_cf_number)
+      {
+        for(i = 1; i <= 0x07; i++)
+        {
+          if(TempLen < cur_data_number)
+          {
+            g_Tx.byte(i) = data[TempLen];
+            TempLen++;
+            
+            if(download_progress_flag == 1)
+            {
+              transform_data++;
+            }
+          }
+          else
+          {
+            g_Tx.byte(i) = 0x55;
+          }
+        }
+        if(g_Rx.byte(1) != 0x00)
+        {
+          if(abs(sent_cf_n - (accepted_fc_n * g_Rx.byte(1))) == 0)
+          {
+            if(1 == testWaitForMessage(gResId,150))
+            {
+              if(g_Rx.byte(0) == 0x30)
+              {
+                accepted_fc_n++;
+              }
+            }
+            else
+            {
+              testStepFail("fail","No CF was received!");
+              break;
+            }
+          }
+        }
+        
+        output(g_Tx);
+        
+        if(serve != 0x36)
+        {
+          PrintMsgOutput(g_Tx);
+        }
+        
+        sent_cf_n++;
+        
+        if(g_Tx.byte(0) == 0x2F)
+        {
+          g_Tx.byte(0) = 0x1F;
+        }
+        g_Tx.byte(0)++;
+      }
+      if(download_progress_flag == 1)
+      {
+        putvalue(Download,(((float)(transform_data)) / FileLen)*100);
+        putvalue(FlashRate,(((float)(transform_data)) / FileLen)*100);
+      }
+   }
+  }
+}
+
+void TxMsgSrever(byte response,dword id,dword length,dword Data[])
+{
+  int i,j,tp_data_n;
+  dword tp_Data[4096];
+  tp_data_n = 0;
+  g_Tx.id = id;
+    
+  if((0x00 < length) && (length < 0x08))//单帧
+  {
+    g_Tx.byte(0) = length;
+    for(i = 0 ; i < length ; i++)
+    {
+      g_Tx.byte(i+1) = Data[i];
+    }
+    for(i = length + 1 ; i < 0x08 ; i++)
+    {
+      g_Tx.byte(i) = 0x55;
+    }
+    output(g_Tx);
+    PrintMsgOutput(g_Tx);
+  }
+  else if((0x07 < length) && (length <= 0xfff))//首帧
+  {
+    g_Tx.byte(0) = 0x10 + ((length >> 8) & 0xFF);
+    g_Tx.byte(1) = length & 0xFF;
+    for(i = 0;i < 0x06;i++)
+    {
+     g_Tx.byte(i+2) = Data[i];
+    }
+    output(g_Tx);
+    PrintMsgOutput(g_Tx);
+    for(i = 6 ;i < length ;i++)
+    {
+      tp_Data[tp_data_n] = Data[i];
+      tp_data_n++;
+    }    
+    TxTPData(id,length,tp_Data,Data[0]);
+  }
+  
+  JudgeResponse(response,Data[0]);
+  
+  testWaitForTimeout(50);
+  
+}
+
+/// <Server>
+server_3e(byte response,dword id,byte Subfunction,byte length)
+{
+  int i;
+  g_server3E.id = id;
+  g_server3E.byte(0) = length;
+  g_server3E.byte(1) = 0x3E;
+  for(i = 2 ;i < 0x08 ;i++)
+  {
+    g_server3E.byte(i) = 0x55;
+  }
+  
+  if(length == 0x02)
+  {
+    g_server3E.byte(2) = Subfunction;
+  }
+  if(length > 0x02)
+  {
+    g_server3E.byte(2) = Subfunction;
+    for(i = 3;i <= length;i++)
+    {
+      g_server3E.byte(i) = 0x01;
+    }
+  }
+  output(g_server3E);
+  PrintMsgOutput(g_server3E);
+  if(response != 0 || id == gPhyId)
+  {
+    JudgeResponse(response,0x3E);
+  }
+}
+
+/// <Init>
+void ResetAllValue()
+{
+  long Curtime[8];
+  int i;
+  
+  g_Data.State = MsgTrue;
+  
+  download_progress_flag = 0;
+  transform_data = 0;
+  
+  putValue(Download,0);
+  putValue(FlashRate,0);
+  putValue(FlashTime,0);
+  ResetFlag = 0;
+  
+  getMeasurementStartTime(Curtime);
+  
+  fingerdata[0] = ((((Curtime[6] + 1900)%100)/10)*16) + ((Curtime[6] + 1900)%100)%10;//年
+  fingerdata[1] = ((Curtime[5] + 1)/10)*16 + (Curtime[5] + 1)%10;//月
+  fingerdata[2] = (Curtime[4]/10)*16 + Curtime[4]%10;//日
+    
+  for(i = 3;i < 19;i++)
+  {
+    fingerdata[i] = 0xFF;
+  }
+  
+  FileLen = 0x0F5000;
+}
+
+/// <Init>
+char HexToChar(char buff)
+{
+  if((buff >= 0x30) && (buff <= 0x39))
+  {
+    buff -= 0x30;
+  }
+  else if((buff >= 0x41) &&(buff <= 0x46))
+  {
+    buff -= 0x37;
+  }
+  else if((buff >= 0x61) && (buff <= 0x66))
+  {
+    buff -= 0x57;
+  }
+  else
+  {
+    buff = 0xFF;
+  }
+  return buff;
+}
+
+/// <Init>
+byte FileCheckSum(dword  buff[],dword len)
+{
+  dword i;
+  byte Sum;
+  Sum    = 0x00;
+  for(i = 0 ;i < len ;i++)
+  {
+    Sum += buff[i];
+  }
+  Sum = (byte)(0xFF - Sum);
+  return Sum;
+}
+
+/// <Init>
+void FileInit()
+{
+  dword i;
+  dword j;
+  dword k;
+  char  FilePath1[200];//驱动程序
+  dword FileHandle1;
+  
+  char  FilePath2[200];//APP程序
+  dword FileHandle2;
+  
+  char  FilePath3[200];//CAL程序
+  dword FileHandle3;
+  
+  
+  char  cbuf[200];//驱动程序
+  long  copiedBytes;
+  
+  char  Buff[256];
+  dword Data[256];
+  
+  
+  dword FileRow;        //文件的行数
+  
+  byte  TempLen;
+  dword CurrentrowAdressLen;
+  int   status;
+  dword CurrentrowStartaddress;
+  dword byte_addr;
+  
+  
+  FileRow                = 0;
+  CurrentrowAdressLen    = 0;
+  CurrentrowStartaddress = 0;
+  
+ // testWaitForEnvVar(Flash_set,0);
+  
+  
+  for(i = 8; i < 0x0408;i++)
+  {
+    g_Data.buffDriver[i] = 0xFF;
+  }
+  
+  
+  //首先解析驱动程序
+  getValue(FilePath_Driver,FilePath1);
+  FileHandle1 = openFileRead(FilePath1,0);  //打开文件进行读取（0：ASCII ,1：binary）
+  
+  if(FileHandle1 != 0)
+  {
+    while(fileGetString(Buff,elCount(Buff),FileHandle1) != 0)
+    {
+      if((Buff[0] == 'S') && ((Buff[1] == '1') ||(Buff[1] == '2') ||(Buff[1] == '3')))
+      {
+        FileRow++;
+        TempLen = (byte)((HexToChar(Buff[2]) << 4) + HexToChar(Buff[3]) + 1);  //该行的总长度
+        CurrentrowAdressLen = HexToChar(Buff[1]) + 1;
+        for(i = 0;i < TempLen ;i++)
+        {
+          Data[i] = (byte)((HexToChar(Buff[(i + 1)*2]) << 4) + HexToChar(Buff[(i + 1)*2 + 1]));
+          
+          if(i == 4)
+          {
+            if(((Data[1] << 24) + (Data[2] << 16) + (Data[3] << 8) + Data[4]) < 0x08000000)
+            {
+              status = 1;
+              break;
+            }
+          }
+          status = 0;
+        }
+        if(status == 1)
+        {
+          continue;
+        }
+        
+        if(Data[TempLen - 1] == FileCheckSum(Data,TempLen -1))
+        {
+          CurrentrowStartaddress = 0;
+          
+          for(i = 0;i < CurrentrowAdressLen;i++)//数据的地址
+          {
+            CurrentrowStartaddress += Data[i+1] << (8 * (CurrentrowAdressLen - i - 1));
+          }
+          for(i = 0;i < (TempLen - 2 - CurrentrowAdressLen);i++)
+          {
+            byte_addr = CurrentrowStartaddress + i;
+            g_Data.buffDriver[byte_addr - 0x08000000 + 8] = Data[i + CurrentrowAdressLen + 1]; //前面八个字节用于存放地址跟长度
+          }
+        }
+        else
+        {
+          testStepFail("fail","%d line checksum error!",FileRow);
+        }
+      }
+    }
+  }
+  fileClose(FileHandle1);
+
+  
+  //解析APP报文
+  FileRow                = 0;
+  CurrentrowAdressLen    = 0;
+  CurrentrowStartaddress = 0;
+  
+  for(i = 8 ; i < 0x0F5008;i++)
+  {
+     g_Data.buff[i] = 0xFF;
+  }
+  
+  getValue(FilePath,FilePath2);
+  FileHandle2 = openFileRead(FilePath2,0);  //打开文件进行读取（0：ASCII ,1：binary）
+  
+  if(FileHandle2 != 0)
+  {
+    while(fileGetString(Buff,elCount(Buff),FileHandle2) != 0)
+    {
+      if((Buff[0] == 'S') && ((Buff[1] == '1') ||(Buff[1] == '2') ||(Buff[1] == '3')))
+      {
+        FileRow++;
+        TempLen = (byte)((HexToChar(Buff[2]) << 4) + HexToChar(Buff[3]) + 1);  //该行的总长度
+        CurrentrowAdressLen = HexToChar(Buff[1]) + 1;
+        for(i = 0;i < TempLen ;i++)
+        {
+          Data[i] = (byte)((HexToChar(Buff[(i + 1)*2]) << 4) + HexToChar(Buff[(i + 1)*2 + 1])); //以字节形式存放
+          
+          if(i == 4)
+          {
+            if(((Data[1] << 24) + (Data[2] << 16) + (Data[3] << 8) + Data[4]) < 0xC0080000)
+            {
+              status = 1;
+              break;
+            }
+          }
+          status = 0;
+        }
+        if(status == 1)
+        {
+          continue;
+        }
+        if(Data[TempLen - 1] == FileCheckSum(Data,TempLen -1))
+        {
+          CurrentrowStartaddress = 0;
+          for(i = 0;i < CurrentrowAdressLen ;i++)
+          {
+            CurrentrowStartaddress += Data[i+1] << (8*(CurrentrowAdressLen -1-i));
+          }
+          for(i = 0;i < TempLen -(CurrentrowAdressLen + 2);i++) //数据长度
+          {
+            byte_addr = CurrentrowStartaddress + i;
+            g_Data.buff[byte_addr - 0xC0080000 + 8] = Data[i + CurrentrowAdressLen + 1];
+          }
+        }
+        else
+        {
+          testStepFail("fail","%d line checksum error!",FileRow);
+        }
+      }
+    }
+  }
+  fileClose(FileHandle2);
+  
+  
+  //解析CAL报文
+  FileRow                = 0;
+  CurrentrowAdressLen    = 0;
+  CurrentrowStartaddress = 0;
+  
+  for(i = 8 ; i < 208;i++)
+  {
+     g_Data.bufCal[i] = 0xFF;
+  }
+  
+  getValue(FilePath_Cal,FilePath3);
+  FileHandle3 = openFileRead(FilePath3,0);  //打开文件进行读取（0：ASCII ,1：binary）
+  
+  if(FileHandle3 != 0)
+  {
+    while(fileGetString(Buff,elCount(Buff),FileHandle3) != 0)
+    {
+      if((Buff[0] == 'S') && ((Buff[1] == '1') ||(Buff[1] == '2') ||(Buff[1] == '3')))
+      {
+        FileRow++;
+        TempLen = (byte)((HexToChar(Buff[2]) << 4) + HexToChar(Buff[3]) + 1);  //该行的总长度
+        CurrentrowAdressLen = HexToChar(Buff[1]) + 1;
+        for(i = 0;i < TempLen ;i++)
+        {
+          Data[i] = (byte)((HexToChar(Buff[(i + 1)*2]) << 4) + HexToChar(Buff[(i + 1)*2 + 1])); //以字节形式存放
+          
+          if(i == 4)
+          {
+            if(((Data[1] << 24) + (Data[2] << 16) + (Data[3] << 8) + Data[4]) < 0xC0180000)
+            {
+              status = 1;
+              break;
+            }
+          }
+          status = 0;
+        }
+        if(status == 1)
+        {
+          continue;
+        }
+        if(Data[TempLen - 1] == FileCheckSum(Data,TempLen -1))
+        {
+          CurrentrowStartaddress = 0;
+          for(i = 0;i < CurrentrowAdressLen ;i++)
+          {
+            CurrentrowStartaddress += Data[i+1] << (8*(CurrentrowAdressLen -1-i));
+          }
+          for(i = 0;i < TempLen -(CurrentrowAdressLen + 2);i++) //数据长度
+          {
+            byte_addr = CurrentrowStartaddress + i;
+            g_Data.bufCal[byte_addr - 0xC0180000+8] = Data[i + CurrentrowAdressLen + 1];
+          }
+        }
+        else
+        {
+          testStepFail("fail","%d line checksum error!",FileRow);
+        }
+      }
+    }
+  }
+  fileClose(FileHandle3);
+  
+  
+  
+}
+
+/// <Init>
+void driverData()
+{
+  dword i;
+  dword j;
+  dword k;
+  
+  char  FilePath3[200];//驱动程序校验值
+  dword FileHandle3;
+  
+  char  FilePath4[200];//APP程序校验值
+  dword FileHandle4;
+  
+  char  Buff1[3000];
+  char  Buff2[3000];
+  
+  k = 0;
+  j = 0;
+  getValue(FilePath_Draver_data,FilePath3);
+  FileHandle3 = openFileRead(FilePath3,0);
+  if(FileHandle3 != 0)
+  {
+    while(fileGetString(Buff1,elCount(Buff1),FileHandle3) != 0)
+    {
+      for(i = 0;i < strlen(Buff1);i++)
+      {
+
+        if(Buff1[i] == ' ')
+        {
+          continue;
+        }
+        if(Buff1[i] != ',')
+        {
+          Buff2[j++] = Buff1[i];
+        }
+        if(j == 4)
+        {
+          Signature.Data_128[k++] = atol(Buff2);
+          j = 0;
+        }
+      }
+    }
+  }
+  fileClose(FileHandle3);
+}
+/// <Init>
+void fileData()
+{
+  dword i;
+  dword j;
+  dword k;
+  
+  char  FilePath3[200];//驱动程序校验值
+  dword FileHandle3;
+  
+  char  FilePath4[200];//APP程序校验值
+  dword FileHandle4;
+  
+  char  Buff1[3000];
+  char  Buff2[3000];
+  
+  k = 0;
+  j = 0;
+  getValue(FilePath_data,FilePath4);
+  FileHandle4 = openFileRead(FilePath4,0);
+  if(FileHandle4 != 0)
+  {
+    while(fileGetString(Buff1,elCount(Buff1),FileHandle4) != 0)
+    {
+      for(i = 0;i < strlen(Buff1);i++)
+      {
+
+        if(Buff1[i] == ' ')
+        {
+          continue;
+        }
+        if(Buff1[i] != ',')
+        {
+          Buff2[j++] = Buff1[i];
+        }
+        if(j == 4)
+        {
+          Signature.Data_128[k++] = atol(Buff2);
+          j = 0;
+          write("%x",Signature.Data_128[k-1]);
+        }
+      }
+    }
+  }
+}
+/// <Init>
+void CALData()
+{
+  dword i;
+  dword j;
+  dword k;
+  
+  char  FilePath3[200];//驱动程序校验值
+  dword FileHandle3;
+  
+  char  FilePath5[200];//APP程序校验值
+  dword FileHandle5;
+  
+  char  Buff1[3000];
+  char  Buff2[3000];
+  
+  k = 0;
+  j = 0;
+  getValue(FilePath_Cal_Data,FilePath5);
+  FileHandle5 = openFileRead(FilePath5,0);
+  if(FileHandle5 != 0)
+  {
+    while(fileGetString(Buff1,elCount(Buff1),FileHandle5) != 0)
+    {
+      for(i = 0;i < strlen(Buff1);i++)
+      {
+
+        if(Buff1[i] == ' ')
+        {
+          continue;
+        }
+        if(Buff1[i] != ',')
+        {
+          Buff2[j++] = Buff1[i];
+        }
+        if(j == 4)
+        {
+          Signature.Data_128[k++] = atol(Buff2);
+          j = 0;
+          write("%x",Signature.Data_128[k-1]);
+        }
+      }
+    }
+  }
+}
+/// <Server>
+server_10(byte response,dword id,byte Subfunction)
+{
+  dword length;  //该命令长度
+  length            = 0;
+  
+  Tx_Data[length++] = 0x10;
+  Tx_Data[length++] = Subfunction;
+  
+  TxMsgSrever(response,id,length,Tx_Data);
+  
+  if(ResetFlag == 1)
+  {
+    testWaitForTimeout(2000);
+  }
+  ResetFlag = 0;
+}
+
+void HalAndRsa(byte data[],dword length)//计算signature
+{
+  //驱动函数的hal
+  dword i,j;
+  dword temp[0x200000];
+  dword input[0x200000];
+  byte  RSAdata[128]; //补齐128byte
+  
+  j = 0;
+  for(i = 0;i < length;i++)
+  {
+    temp[i] = data[i] & 0x000000FF;
+  }
+  
+  for(i = 0;i < length/4;i++)
+  {
+    input[i] = (temp[4*j] << 24) + (temp[4*j + 1] << 16) + (temp[4*j + 2] << 8) + temp[4*j + 3];
+    j++;
+  }
+  
+  //hal_Cal(input,Signature.Data_20,length);
+      
+  //RSA加密
+  RSAdata[0] = 0x00;
+  RSAdata[1] = 0x01;
+  for(i = 2;i < 92;i++)
+  {
+    RSAdata[i] = 0xFF;
+  }
+  
+  RSAdata[92] = 0x00;
+  
+  RSAdata[93]  = 0x30;
+  RSAdata[94]  = 0x21;
+  RSAdata[95]  = 0x30;
+  RSAdata[96]  = 0x09;
+  RSAdata[97]  = 0x06;
+  RSAdata[98]  = 0x05;
+  RSAdata[99]  = 0x2b;
+  RSAdata[100] = 0x0e;
+  RSAdata[101] = 0x03;
+  RSAdata[102] = 0x02;
+  RSAdata[103] = 0x1a;
+  RSAdata[104] = 0x05;
+  RSAdata[105] = 0x00;
+  RSAdata[106] = 0x04;
+  RSAdata[107] = 0x14;
+  
+  for(i = 108;i<128;i++)
+  {
+    RSAdata[i] = Signature.Data_20[i-108];
+  }
+  //RSA_Cal(RSAdata,privatekey,128,mod,128,Signature.Data_128);
+}
+
+
+/// <Server>
+server_31(byte response,dword id,byte Subfunction,dword RID,dword data,dword flag)
+{
+  int i;
+  dword length;
+  length =0 ;
+  
+    Tx_Data[length++] = 0x31;
+    Tx_Data[length++] = Subfunction;
+    if(flag == 0) //擦除内存
+    {
+      Tx_Data[length++] = (byte)((RID >> 8) & 0xFF);
+      Tx_Data[length++] = (byte)( RID       & 0xFF);
+      Tx_Data[length++] = 0x44;
+      Tx_Data[length++] = 0xC0;//楚航
+      Tx_Data[length++] = 0x08;//楚航
+      Tx_Data[length++] = 0x00;//楚航
+      Tx_Data[length++] = 0x00;//楚航
+      Tx_Data[length++] = 0x00;;//楚航
+      Tx_Data[length++] = 0x0F;//楚航
+      Tx_Data[length++] = 0x50;//楚航
+      Tx_Data[length++] = 0x00;//楚航
+    }
+    if(flag == 1) //校验
+    {
+      Tx_Data[length++] = (byte)((RID >> 8)   & 0xFF);
+      Tx_Data[length++] = (byte)( RID         & 0xFF);
+      
+      //128byte signature生成
+      
+      for(i = 0;i < 512;i++)
+      {
+        Tx_Data[length++] = Signature.Data_128[i];
+      }
+    }
+    if(flag == 2) //只发DID
+    {
+      Tx_Data[length++] = (byte)((RID >> 8)   & 0xFF);
+      Tx_Data[length++] = (byte)( RID         & 0xFF);
+    }
+    if(flag == 3)
+    {
+      Tx_Data[length++] = (byte)((RID >> 8) & 0xFF);
+      Tx_Data[length++] = (byte)( RID       & 0xFF);
+      Tx_Data[length++] = 0x44;
+      Tx_Data[length++] = 0xC0;
+      Tx_Data[length++] = 0x18;
+      Tx_Data[length++] = 0x00;
+      Tx_Data[length++] = 0x00;//
+      Tx_Data[length++] = 0x00;
+      Tx_Data[length++] = 0x00;
+      Tx_Data[length++] = 0x00;
+      Tx_Data[length++] = 0xC8;
+    }
+        if(flag == 4)//错误的擦除地址
+    {
+      Tx_Data[length++] = (byte)((RID >> 8) & 0xFF);
+      Tx_Data[length++] = (byte)( RID       & 0xFF);
+      Tx_Data[length++] = 0x44;
+      Tx_Data[length++] = 0xC0;
+      Tx_Data[length++] = 0x18;
+      Tx_Data[length++] = 0xFF;
+      Tx_Data[length++] = 0xFF;//
+      Tx_Data[length++] = 0x00;
+      Tx_Data[length++] = 0x00;
+      Tx_Data[length++] = 0x00;
+      Tx_Data[length++] = 0xC8;
+    }
+  
+  TxMsgSrever(response,id,length,Tx_Data);
+    
+  if(g_Rx.byte(5) != 0x00)  //肯定响应参数为0x00时，pass
+  {
+    if(RID != 0xD005)
+    {
+      testStepFail("fail","Routine Completed unsuccessfully");
+    }
+    else
+    {
+      if(g_Rx.byte(5) != 0x01)
+      {
+        testStepFail("fail","Routine Completed unsuccessfully");
+      }
+    }
+  }
+}
+/// <Server>
+void server_85(byte response,dword id,byte subfunction)
+{
+  dword length;
+  length = 0;
+  
+  Tx_Data[length++] = 0x85;
+  Tx_Data[length++] = subfunction;
+  
+ /* if(g_Data.State == MsgTrue)
+  {
+    TxMsgSrever(response,id,length,Tx_Data);
+  }*/
+  TxMsgSrever(response,id,length,Tx_Data);
+  
+}
+
+/// <Server>
+void server_28(byte response,dword id,byte subfunction,byte data)
+{
+  dword length;
+  length = 0;
+  
+  Tx_Data[length++] = 0x28;
+  Tx_Data[length++] = subfunction;
+  Tx_Data[length++] = data;
+  
+  TxMsgSrever(response,id,length,Tx_Data);
+}
+
+/// <Server>
+void server_27()
+{
+  byte gSeedArray[16];
+  int gSeedArraySize    = 16;
+  int gSecurityLevel    = 0x11;
+  char gVariant[200]    = "";
+  char gOption[200]     = "";
+  byte gKeyArray[255];
+  int  gMaxKeyArraySize = 255;
+  dword gActualSizeOut     = 0;
+  char gDebugBuffer[2000];
+
+  
+  diagSetTarget("E0Y");
+  diagSendRequest(gSeedReq);
+  testWaitForDiagResponse(gSeedReq, 100);
+  diagGetLastResponse(gSeedReq, gSeedResp);
+  diagGetParameterRaw(gSeedResp, "SecuritySeed", gSeedArray, elcount(gSeedArray)); 
+  write("E0Y seed is %x%x%x%x",gSeedArray[0],gSeedArray[1],gSeedArray[2],gSeedArray[3]);
+ 
+  if(0 == diagGenerateKeyFromSeed(gSeedArray, gSeedArraySize, gSecurityLevel, gVariant, gOption, gKeyArray, gMaxKeyArraySize, gActualSizeOut))
+  {
+    write("E0Y key is %x%x%x%x",gKeyArray[0],gKeyArray[1],gKeyArray[2],gKeyArray[3]);
+    diagSetParameterRaw(gKeyReq, "SecurityKey", gKeyArray, gActualSizeOut);
+    diagSendRequest(gKeyReq);
+    testWaitForDiagRequestSent(gKeyReq, 50);
+    testWaitForDiagResponse(gSeedReq, 50);
+    testWaitForTimeout(50);
+  }
+}
+
+/// <Server>
+void server_2E(byte response,dword id,dword DID,dword DataRecord[],dword len)
+{
+  dword length;
+  int   i;
+  int   saveData;
+  length = 0;
+  saveData = 0;
+  
+  Tx_Data[length++] = 0x2E;
+  Tx_Data[length++] = (DID >> 8) & 0xFF ;
+  Tx_Data[length++] =  DID       & 0xFF;
+  
+  for(i = 0;i < len;i++)
+  {
+    Tx_Data[length++] = DataRecord[i];
+  }
+
+  TxMsgSrever(response,id,length,Tx_Data);
+}
+
+/// <Server>
+void server_34(byte response,dword id,dword DataStartAddress,dword DataLen)
+{
+  dword length;
+  length      = 0;
+  
+  Tx_Data[length++] = 0x34;
+  Tx_Data[length++] = 0x00;
+  Tx_Data[length++] = 0x44;
+  Tx_Data[length++] = (byte)((DataStartAddress >> 24) & 0xFF);
+  Tx_Data[length++] = (byte)((DataStartAddress >> 16) & 0xFF);
+  Tx_Data[length++] = (byte)((DataStartAddress >>  8) & 0xFF);
+  Tx_Data[length++] = (byte)((DataStartAddress)       & 0xFF);
+  Tx_Data[length++] = (byte)((DataLen          >> 24) & 0xFF);
+  Tx_Data[length++] = (byte)((DataLen          >> 16) & 0xFF);
+  Tx_Data[length++] = (byte)((DataLen          >>  8) & 0xFF);
+  Tx_Data[length++] = (byte)((DataLen)                & 0xFF);
+  
+  TxMsgSrever(response,id,length,Tx_Data);
+  
+  block_length = (g_Rx.byte(5) <<8) + g_Rx.byte(6);
+}
+
+/// <Server>
+void server_36(byte response,dword id,dword allDataLen,dword blockLen,byte buffData[],dword extraData)
+{
+  dword i,k,j;
+  dword length;
+  dword blockNum;
+  dword lastBlockLen;
+  
+  dword DataBlockLen[5000];
+  dword BlockData[5000][4096];
+  dword blockIndex;
+  
+  blockNum = 0;
+  lastBlockLen = 0;
+  length = 0;
+  j = 0;
+  
+  if(allDataLen == 0x0F5000)//进行APP下载
+  {
+    download_progress_flag = 1;
+    write("appflash");
+  }
+  
+  blockNum = allDataLen/(blockLen - 2);
+    
+  if((allDataLen % (blockLen - 2)) != 0)
+  {
+    lastBlockLen = allDataLen%(blockLen - 2) + 2;//剩余数据加上36与块序列
+    blockNum++;
+  }
+  
+  //将数据存储起来
+  
+  for(i = 1;i <= blockNum;i++)
+  {
+    //计算每一块数据长度
+    if(i<blockNum)
+    {
+      DataBlockLen[i] = blockLen - 2;
+    }
+    else
+    {
+      if(lastBlockLen != 0)
+      {
+        DataBlockLen[i] = lastBlockLen - 2;
+      }
+      else
+      {
+        DataBlockLen[i] = blockLen - 2;
+      }
+    }
+    
+    //对每一块数据进行赋值
+    for(k = 0;k < DataBlockLen[i];k++)
+    {
+      BlockData[i][k] = buffData[8 + (j++)];
+    }
+  }
+  //传输数据
+  
+  for(blockIndex = 1; blockIndex <= blockNum;blockIndex++)
+  {
+    length = 0;
+    Tx_Data[length++] = 0x36;
+    Tx_Data[length++] = blockIndex;
+    for(i = 0;i < DataBlockLen[blockIndex];i++)
+    {
+      Tx_Data[length++] =  BlockData[blockIndex][i];
+    }
+    TxMsgSrever(response,id,length,Tx_Data);
+  }
+  
+  if(allDataLen == 0x0F5000)
+  {
+     putvalue(Download,100);
+     putvalue(FlashRate,100);
+     download_progress_flag = 0;
+  }
+}
+
+/// <Server>
+void server_36_1(byte response,dword id,dword allDataLen,dword blockLen,byte buffData[],dword extraData)
+{
+  dword i,k,j;
+  dword length;
+  dword blockNum;
+  dword lastBlockLen;
+  
+  dword DataBlockLen[500];
+  dword BlockData[500][4096];
+  dword blockIndex;
+  int sendSpecBlockNum=3;
+  
+  blockNum = 0;
+  lastBlockLen = 0;
+  length = 0;
+  j = 0;
+  
+  if(allDataLen == 0x0F5000)//进行APP下载
+  {
+    download_progress_flag = 1;
+    write("appflash");
+  }
+  
+  blockNum = allDataLen/(blockLen - 2);
+    
+  if((allDataLen % (blockLen - 2)) != 0)
+  {
+    lastBlockLen = allDataLen%(blockLen - 2) + 2;//剩余数据加上36与块序列
+    blockNum++;
+  }
+  
+  //将数据存储起来
+  
+  for(i = 1;i <= blockNum;i++)
+  {
+    //计算每一块数据长度
+    if(i<blockNum)
+    {
+      DataBlockLen[i] = blockLen - 2;
+    }
+    else
+    {
+      if(lastBlockLen != 0)
+      {
+        DataBlockLen[i] = lastBlockLen - 2;
+      }
+      else
+      {
+        DataBlockLen[i] = blockLen - 2;
+      }
+    }
+    
+    //对每一块数据进行赋值
+    for(k = 0;k < DataBlockLen[i];k++)
+    {
+      BlockData[i][k] = buffData[8 + (j++)];
+    }
+  }
+  //传输数据
+  
+  for(blockIndex = 1; blockIndex <= blockNum;blockIndex++)
+  {
+    length = 0;
+    Tx_Data[length++] = 0x36;
+    Tx_Data[length++] = blockIndex;
+    for(i = 0;i < DataBlockLen[blockIndex];i++)
+    {
+      Tx_Data[length++] =  BlockData[blockIndex][i];
+    }
+    TxMsgSrever(response,id,length,Tx_Data);
+    if(blockIndex==2 )//blockinde==2时再发2次
+    {
+        for(sendSpecBlockNum=0;sendSpecBlockNum<1;sendSpecBlockNum++)
+        {
+            TxMsgSrever(response,id,length,Tx_Data);
+        }
+        
+        
+    }
+  }
+  
+  if(allDataLen == 0x0F5000)
+  {
+     putvalue(Download,100);
+     putvalue(FlashRate,100);
+     download_progress_flag = 0;
+  }
+}
+
+/// <Server>
+void server_37(byte response,dword id,dword extraData)
+{
+  dword length;
+  length = 0;
+  
+  if(extraData == 0x00)
+  {
+    Tx_Data[length++] = 0x37;
+  }
+  else
+  {
+    Tx_Data[length++] = 0x37;
+    Tx_Data[length++] = extraData;
+  }
+  
+  TxMsgSrever(response,id,length,Tx_Data);
+}
+
+/// <Server>
+void server_11(byte response,dword id,byte subfunction)
+{
+  dword length;
+  length = 0;
+  
+    Tx_Data[length++] = 0x11;
+    Tx_Data[length++] = subfunction;
+  
+  TxMsgSrever(response,id,length,Tx_Data);
+  testWaitForTimeout(2000);
+}
+/// <Server>
+void server_14(byte response,dword id)
+{
+  dword length;
+  length = 0;
+  
+    Tx_Data[length++] = 0x14;
+    Tx_Data[length++] = 0xFF;
+    Tx_Data[length++] = 0xFF;
+    Tx_Data[length++] = 0xFF;
+  
+  TxMsgSrever(response,id,length,Tx_Data);
+  testWaitForTimeout(2000);
+}
+
+
+testcase Download()
+{
+  float time;
+  float interval;
+  long Curtime[8];
+  int i;
+  
+  time     = 0;
+  interval = 0;
+  time = timeNow()/100000.0;
+  
+  putValueToControl("FlashChery","CAPL Output View","Enter Extended session-进入扩展会话");
+  putValueToControl("FlashChery","CAPL Output View",1,1);  
+  server_10(0x00,gFunId,0x83);
+  
+  putValueToControl("FlashChery","CAPL Output View","Check Programming Prog-检查编程环境");
+  putValueToControl("FlashChery","CAPL Output View",1,1);  
+  server_31(0x71,gPhyId,0x01,0x0203,0,2);
+  
+  putValueToControl("FlashChery","CAPL Output View","Control DTC Off-关闭DTC设置");
+  putValueToControl("FlashChery","CAPL Output View",1,1);  
+  server_85(0x00,gFunId,0x82);
+  
+  putValueToControl("FlashChery","CAPL Output View","Communication Control-关闭通讯");
+  putValueToControl("FlashChery","CAPL Output View",1,1);  
+  server_28(0x00,gFunId,0x81,0x03);
+  
+  putValueToControl("FlashChery","CAPL Output View","Enter Programming session-进入编程会话");
+  putValueToControl("FlashChery","CAPL Output View",1,1);  
+  server_10(0x50,gPhyId,0x02);
+  
+  //testWaitForTimeout(10000);
+  putValueToControl("FlashChery","CAPL Output View","Process Security Access-解密");
+  putValueToControl("FlashChery","CAPL Output View",1,1);  
+  server_27();
+  
+  if(getValue(Update_PublicKey) == 0x01)
+  {
+    putValueToControl("FlashChery","CAPL Output View","Write Fingerprint-修改验签秘钥");
+    putValueToControl("FlashChery","CAPL Output View",1,1);  
+    server_2E(0x6E,gPhyId,0x6F00,publickeydata,514); 
+  }
+  
+  putValueToControl("FlashChery","CAPL Output View","Write Fingerprint-写入指纹信息");
+  putValueToControl("FlashChery","CAPL Output View",1,1);  
+  server_2E(0x6E,gPhyId,0xF184,fingerdata,19);
+  
+//  putValueToControl("FlashChery","CAPL Output View","Security Signature check");
+//  putValueToControl("FlashChery","CAPL Output View",1,1);  
+//  server_31(0x71,gPhyId,0x01,0xD004,0,2);
+  
+  putValueToControl("FlashChery","CAPL Output View","Request Download-请求驱动下载");
+  putValueToControl("FlashChery","CAPL Output View",1,1);  
+  server_34(0x74,gPhyId,0x08000000,0x0400);//楚航boot
+  //server_34(0x74,gPhyId,0x08FF0000,0x0400);//楚航boot使用错误的flash下载地址
+    //server_34(0x74,gPhyId,0x478000,0x30f1);  //普华boot
+  
+  putValueToControl("FlashChery","CAPL Output View","Transfer Data-驱动下载");
+  putValueToControl("FlashChery","CAPL Output View",1,1);  
+  server_36(0x76,gPhyId,0x0400,block_length,g_Data.buffDriver,0x00);
+  //server_36(0x76,gPhyId,0x30f1,block_length,g_Data.buffDriver,0x00);//普华boot
+  
+  putValueToControl("FlashChery","CAPL Output View","Transfer Exit-驱动下载完成");
+  putValueToControl("FlashChery","CAPL Output View",1,1);  
+  server_37(0x77,gPhyId,0x00);
+  
+  //HalAndRsa(g_Data.buffDriver,0x00000408);//RSA加密,结果值存放在Signature.Data_128[128]里
+  driverData();
+  
+  testWaitForTimeout(2000);
+  
+  putValueToControl("FlashChery","CAPL Output View","check Routine-驱动校验");
+  putValueToControl("FlashChery","CAPL Output View",1,1);  
+  server_31(0x71,gPhyId,0x01,0xDD02,0,1);//最后1：校验
+  
+  testWaitForTimeout(2000);
+  
+  putValueToControl("FlashChery","CAPL Output View","Routine Control – erase Memory-擦除内存");
+  putValueToControl("FlashChery","CAPL Output View",1,1);  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  //server_31(0x71,gPhyId,0x01,0xFF00,0,4);//最后4：擦除内存地址错误
+
+  putValueToControl("FlashChery","CAPL Output View","Request Download-请求软件下载");
+  putValueToControl("FlashChery","CAPL Output View",1,1);  
+  server_34(0x74,gPhyId,0xC0080000,0x000F5000);//楚航
+  //server_34(0x74,gPhyId,0xCFF80000,0x000F5000);//楚航，使用错误的下载地址
+  //server_34(0x74,gPhyId,0x000C1000,0x0007B000);//普华
+    
+  putValueToControl("FlashChery","CAPL Output View","Transfer Data-软件下载");
+  putValueToControl("FlashChery","CAPL Output View",1,1);  
+  //server_36(0x76,gPhyId,0x000F5000,block_length,g_Data.buff,0x00);//楚航
+  server_36(0x76,gPhyId,0x000F5000,258,g_Data.buff,0x00);//楚航
+  //server_36_1(0x76,gPhyId,0x000F5000,block_length,g_Data.buff,0x00);//楚航,验证block重发
+
+//server_36(0x76,gPhyId,0x0007B000,block_length,g_Data.buff,0x00);//普华
+  
+  putValueToControl("FlashChery","CAPL Output View","Request Transfer Exit-软件下载完成");
+  putValueToControl("FlashChery","CAPL Output View",1,1);  
+  //server_37(0x77,gPhyId,0x00);
+  
+  //HalAndRsa(g_Data.buff,0x000F5008);//RSA加密,结果值存放在Signature.Data_128[128]里
+  fileData();
+  testWaitForTimeout(2000);
+  
+  putValueToControl("FlashChery","CAPL Output View","check Routine-软件校验");
+  putValueToControl("FlashChery","CAPL Output View",1,1);  
+  server_31(0x71,gPhyId,0x01,0xDD02,0,1);//最后1：校验
+
+  testWaitForTimeout(2000);
+  
+  putValueToControl("FlashChery","CAPL Output View","Routine Control–checkProgrammingDependencies-检查编程依赖性");
+  putValueToControl("FlashChery","CAPL Output View",1,1);  
+  server_31(0x71,gPhyId,0x01,0xFF01,0,2);//最后2:只发送DID
+  
+//  putValueToControl("FlashChery","CAPL Output View","[FlashFileInstallation");
+//  putValueToControl("FlashChery","CAPL Output View",1,1);  
+//  server_31(0x71,gPhyId,0x01,0xDD03,0,2);
+  
+  putValueToControl("FlashChery","CAPL Output View","ECU Reset – hard reset-硬件复位");
+  putValueToControl("FlashChery","CAPL Output View",1,1);  
+  server_11(0x51,gPhyId,0x01);
+  
+  putValueToControl("FlashChery","CAPL Output View","Enter Default session-进入默认会话");
+  putValueToControl("FlashChery","CAPL Output View",1,1);  
+  server_10(0x00,gFunId,0x81);
+  
+  server_14(0x54,gFunId);
+  
+  interval = (timeNow()/100000.0) - time;
+  putValue(FlashTime,interval);
+}
+testcase TC_11()
+{
+  testCaseDescription("tc_11");
+  FileInit();
+  testWaitForTimeout(1000);
+  
+  server_10(0x50,gPhyId,0x03);
+  server_31(0x71,gPhyId,0x01,0xD003,0,2);
+  server_10(0x50,gPhyId,0x02);
+  server_27();
+  server_2E(0x6E,gPhyId,0xF184,fingerdata,19);
+  fileData();
+  
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD004,0,1);
+  driverData();
+  testWaitForTimeout(2000);
+  server_31(0x22,gPhyId,0x01,0xD002,0,1);
+  server_11(0x51,gPhyId,0x01);
+  server_14(0x54,gFunId);
+}
+testcase TC_12()
+{
+  testCaseDescription("tc_12");
+  FileInit();
+  testWaitForTimeout(1000);
+  
+  server_10(0x50,gPhyId,0x03);
+  server_31(0x71,gPhyId,0x01,0xD003,0,2);
+  server_10(0x50,gPhyId,0x02);
+  server_27();
+  server_2E(0x6E,gPhyId,0xF184,fingerdata,19);
+  fileData();
+  
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD004,0,1);
+  
+  server_34(0x74,gPhyId,0x08000000,0x0400);
+  server_36(0x76,gPhyId,0x0400,block_length,g_Data.buffDriver,0x00);
+  server_37(0x77,gPhyId,0x00);
+  
+  driverData();
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD002,0,1);
+  
+  server_34(0x70,gPhyId,0xC0080000,0x000F5000);
+  
+  server_11(0x51,gPhyId,0x01);
+  server_14(0x54,gFunId);
+}
+
+testcase TC_13()
+{
+  testCaseDescription("tc_13");
+  FileInit();
+  testWaitForTimeout(1000);
+  
+  server_10(0x50,gPhyId,0x03);
+  server_31(0x71,gPhyId,0x01,0xD003,0,2);
+  server_10(0x50,gPhyId,0x02);
+  server_27();
+  server_2E(0x6E,gPhyId,0xF184,fingerdata,19);
+  fileData();
+  
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD004,0,1);
+  
+  server_34(0x74,gPhyId,0x08000000,0x0400);
+  server_36(0x76,gPhyId,0x0400,block_length,g_Data.buffDriver,0x00);
+  server_37(0x77,gPhyId,0x00);
+  
+  driverData();
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD002,0,1);
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  server_34(0x74,gPhyId,0xC0080000,0x000F5000);
+    
+  server_36(0x76,gPhyId,0x000F5000,block_length,g_Data.buff,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  //HalAndRsa(g_Data.buff,0x000F5008);//RSA加密,结果值存放在Signature.Data_128[128]里
+  fileData();
+  testWaitForTimeout(2000);
+  
+  server_31(0x71,gPhyId,0x01,0xD002,0,1);//最后1：校验
+  server_31(0x22,gPhyId,0x01,0xD005,0,2);
+  
+  server_11(0x51,gPhyId,0x01);
+  server_14(0x00,gFunId);
+}
+
+testcase TC_14()
+{
+  testCaseDescription("tc_14");
+  FileInit();
+  testWaitForTimeout(1000);
+  
+  server_10(0x50,gPhyId,0x03);
+  server_31(0x71,gPhyId,0x01,0xD003,0,2);
+  server_10(0x50,gPhyId,0x02);
+  server_27();
+  server_2E(0x6E,gPhyId,0xF184,fingerdata,19);
+  fileData();
+  
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD004,0,1);
+  
+  server_34(0x74,gPhyId,0x08000000,0x0400);
+  server_36(0x76,gPhyId,0x0400,block_length,g_Data.buffDriver,0x00);
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x22,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+    
+  server_11(0x51,gPhyId,0x01);
+  server_14(0x54,gFunId);
+}
+
+testcase TC_15()
+{
+  testCaseDescription("tc_15");
+  FileInit();
+  testWaitForTimeout(1000);
+  
+  server_10(0x50,gPhyId,0x03);
+  server_31(0x71,gPhyId,0x01,0xD003,0,2);
+  server_10(0x50,gPhyId,0x02);
+  server_27();
+  server_2E(0x6E,gPhyId,0xF184,fingerdata,19);
+  fileData();
+  
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD004,0,1);
+  
+  server_34(0x74,gPhyId,0x08000000,0x0400);
+  server_36(0x76,gPhyId,0x0400,block_length,g_Data.buffDriver,0x00);
+  server_37(0x77,gPhyId,0x00);
+  
+  driverData();
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD002,0,1);
+  
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  server_34(0x74,gPhyId,0xC0080000,0x000F5000);
+  server_36(0x76,gPhyId,0x000F5000,block_length,g_Data.buff,0x00);
+  server_37(0x77,gPhyId,0x00);
+  server_31(0x22,gPhyId,0x01,0xFF01,0,2);//最后2:只发送DID
+  
+  server_11(0x51,gPhyId,0x01);
+  server_14(0x00,gFunId);
+}
+testcase TC_17()
+{
+  testCaseDescription("tc_17");
+  FileInit();
+  testWaitForTimeout(1000);
+  
+  server_10(0x50,gPhyId,0x03);
+  server_31(0x71,gPhyId,0x01,0xD003,0,2);
+  server_10(0x50,gPhyId,0x02);
+  server_27();
+  server_2E(0x6E,gPhyId,0xF184,fingerdata,19);
+  fileData();
+  
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD004,0,1);
+  
+  server_34(0x74,gPhyId,0x08000000,0x0400);
+  server_36(0x76,gPhyId,0x0400,block_length,g_Data.buffDriver,0x00);
+  server_37(0x77,gPhyId,0x00);
+  
+  driverData();
+  Signature.Data_128[0] = Signature.Data_128[0] + 1;
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD002,0,1);
+  
+  server_11(0x51,gPhyId,0x01);
+  server_14(0x54,gFunId);
+}
+testcase TC_18()
+{
+  testCaseDescription("tc_18");
+  FileInit();
+  testWaitForTimeout(1000);
+  
+  server_10(0x50,gPhyId,0x03);
+  server_31(0x71,gPhyId,0x01,0xD003,0,2);
+  server_10(0x50,gPhyId,0x02);
+  server_27();
+  server_2E(0x6E,gPhyId,0xF184,fingerdata,19);
+  fileData();
+  
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD004,0,1);
+  
+  server_34(0x74,gPhyId,0x08000000,0x0400);
+  g_Data.buffDriver[8] = g_Data.buffDriver[8] + 1;
+  write("%x",g_Data.buffDriver[0]);
+  server_36(0x76,gPhyId,0x0400,block_length,g_Data.buffDriver,0x00);
+  server_37(0x77,gPhyId,0x00);
+  
+  driverData();
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD002,0,1);
+  
+  server_11(0x51,gPhyId,0x01);
+  server_14(0x54,gFunId);
+}
+
+testcase TC_19()
+{
+  testCaseDescription("tc_19");
+  FileInit();
+  testWaitForTimeout(1000);
+  
+  server_10(0x50,gPhyId,0x03);
+  server_31(0x71,gPhyId,0x01,0xD003,0,2);
+  server_10(0x50,gPhyId,0x02);
+  server_27();
+  server_2E(0x6E,gPhyId,0xF184,fingerdata,19);
+  
+  fileData();
+  
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD004,0,1);
+  server_34(0x74,gPhyId,0x08000000,0x0400);
+  
+  server_36(0x76,gPhyId,0x0400,block_length,g_Data.buffDriver,0x00);
+  server_37(0x77,gPhyId,0x00);
+  
+ // HalAndRsa(g_Data.buffDriver,0x00000408);//RSA加密,结果值存放在Signature.Data_128[128]里
+  driverData();
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD002,0,1);//最后1：校验
+  testWaitForTimeout(2000);
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  server_34(0x74,gPhyId,0xC0080000,0x000F5000);
+    
+  server_36(0x76,gPhyId,0x000F5000,block_length,g_Data.buff,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  //HalAndRsa(g_Data.buff,0x000F5008);//RSA加密,结果值存放在Signature.Data_128[128]里
+  fileData();
+  
+  
+  testWaitForTimeout(2000);
+  Signature.Data_128[0] = Signature.Data_128[0] + 1;
+  server_31(0x71,gPhyId,0x01,0xD002,0,1);//最后1：校验
+
+  testWaitForTimeout(2000);
+  
+  server_11(0x51,gPhyId,0x01);
+    
+  server_14(0x00,gFunId);
+
+}
+testcase TC_20()
+{
+  testCaseDescription("tc_20");
+  FileInit();
+  testWaitForTimeout(1000);
+  
+  server_10(0x50,gPhyId,0x03);
+  server_31(0x71,gPhyId,0x01,0xD003,0,2);
+  server_10(0x50,gPhyId,0x02);
+  server_27();
+  server_2E(0x6E,gPhyId,0xF184,fingerdata,19);
+  
+  fileData();
+  
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD004,0,1);
+  server_34(0x74,gPhyId,0x08000000,0x0400);
+  
+  server_36(0x76,gPhyId,0x0400,block_length,g_Data.buffDriver,0x00);
+  server_37(0x77,gPhyId,0x00);
+  
+ // HalAndRsa(g_Data.buffDriver,0x00000408);//RSA加密,结果值存放在Signature.Data_128[128]里
+  driverData();
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD002,0,1);//最后1：校验
+  testWaitForTimeout(2000);
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  server_34(0x74,gPhyId,0xC0080000,0x000F5000);
+    
+  g_Data.buff[8] = g_Data.buff[8] +1;
+  server_36(0x76,gPhyId,0x000F5000,block_length,g_Data.buff,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  //HalAndRsa(g_Data.buff,0x000F5008);//RSA加密,结果值存放在Signature.Data_128[128]里
+  fileData();
+  
+  
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD002,0,1);//最后1：校验
+
+  testWaitForTimeout(2000);
+  
+  server_11(0x51,gPhyId,0x01);
+    
+  server_14(0x00,gFunId);
+
+}
+
+
+testcase TC_27()
+{
+  testCaseDescription("tc_20");
+  FileInit();
+  testWaitForTimeout(1000);
+  
+  server_10(0x50,gPhyId,0x03);
+  server_31(0x71,gPhyId,0x01,0xD003,0,2);
+  server_10(0x50,gPhyId,0x02);
+  server_27();
+  server_2E(0x6E,gPhyId,0xF184,fingerdata,19);
+  
+  fileData();
+  
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD004,0,1);  
+  
+  server_34(0x74,gPhyId,0x08000000,0x0400);
+  
+  server_36(0x76,gPhyId,0x0400,block_length,g_Data.buffDriver,0x00);
+  server_37(0x77,gPhyId,0x00);
+  
+ // HalAndRsa(g_Data.buffDriver,0x00000408);//RSA加密,结果值存放在Signature.Data_128[128]里
+  driverData();
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD002,0,1);//最后1：校验
+  testWaitForTimeout(2000);
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  server_34(0x74,gPhyId,0xC0080000,0x000F5000);
+    
+  server_36(0x76,gPhyId,0x000F5000,block_length,g_Data.buff,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  //HalAndRsa(g_Data.buff,0x000F5008);//RSA加密,结果值存放在Signature.Data_128[128]里
+  fileData();
+  
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD002,0,1);//最后1：校验
+
+  testWaitForTimeout(2000);
+  
+  server_31(0x71,gPhyId,0x01,0xFF01,0,2);//最后2:只发送DID
+  
+  server_31(0x71,gPhyId,0x01,0xD005,0,2);
+  
+  server_11(0x51,gPhyId,0x01);
+    
+  server_14(0x54,gFunId);
+}
+
+testcase TC_2()
+{
+  testCaseDescription("tc_2");
+  FileInit();
+  testWaitForTimeout(1000);
+  
+  server_10(0x50,gPhyId,0x03);
+  server_31(0x71,gPhyId,0x01,0xD003,0,2);
+  server_10(0x50,gPhyId,0x02);
+  server_27();
+  server_2E(0x6E,gPhyId,0xF184,fingerdata,19);
+  
+  fileData();
+  
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD004,0,1);
+  
+  server_34(0x74,gPhyId,0x08000000,0x0400);
+  
+  server_36(0x76,gPhyId,0x0400,block_length,g_Data.buffDriver,0x00);
+  server_37(0x77,gPhyId,0x00);
+  
+ // HalAndRsa(g_Data.buffDriver,0x00000408);//RSA加密,结果值存放在Signature.Data_128[128]里
+  driverData();
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD002,0,1);//最后1：校验
+  testWaitForTimeout(2000);
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  server_34(0x74,gPhyId,0xC0080000,0x000F5000);
+    
+  server_36(0x76,gPhyId,0x000F5000,block_length,g_Data.buff,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  //HalAndRsa(g_Data.buff,0x000F5008);//RSA加密,结果值存放在Signature.Data_128[128]里
+  fileData();
+  
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD002,0,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,3);//最后0：擦除Cal
+  server_34(0x74,gPhyId,0xC0180000,0x000000C8);
+  server_36(0x76,gPhyId,0x000000C8,block_length,g_Data.bufCal,0x00);
+  server_37(0x77,gPhyId,0x00);
+  
+  CALData();
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD002,0,1);//最后1：校验
+  testWaitForTimeout(2000);
+  
+  server_31(0x71,gPhyId,0x01,0xFF01,0,2);//最后2:只发送DID
+  
+  server_31(0x71,gPhyId,0x01,0xD005,0,2);
+  
+  server_11(0x51,gPhyId,0x01);
+    
+  server_14(0x54,gFunId);
+}
+
+testcase TC_7()
+{
+    testCaseDescription("tc_7");
+    FileInit();
+    testWaitForTimeout(1000);
+
+    putValueToControl("FlashChery","CAPL Output View","Enter Extended session-进入扩展会话");
+    putValueToControl("FlashChery","CAPL Output View",1,1);  
+    server_10(0x50,gPhyId,0x03);
+
+    putValueToControl("FlashChery","CAPL Output View","Check Programming Prog-检查编程环境");
+    putValueToControl("FlashChery","CAPL Output View",1,1);  
+    server_31(0x71,gPhyId,0x01,0x0203,0,2);
+
+    putValueToControl("FlashChery","CAPL Output View","Enter Programming session-进入编程会话");
+    putValueToControl("FlashChery","CAPL Output View",1,1); 
+    server_10(0x50,gPhyId,0x02);
+
+    putValueToControl("FlashChery","CAPL Output View","Process Security Access-解密");
+    putValueToControl("FlashChery","CAPL Output View",1,1); 
+    server_27();
+  
+    if(getValue(Update_PublicKey) == 0x01)
+    {
+        putValueToControl("FlashChery","CAPL Output View","Write VerifKey-写入验签秘钥");
+        putValueToControl("FlashChery","CAPL Output View",1,1);  
+        server_2E(0x6E,gPhyId,0x6F00,publickeydata,514); 
+    }
+    
+    putValueToControl("FlashChery","CAPL Output View","Write Fingerprint-写入指纹信息");
+    putValueToControl("FlashChery","CAPL Output View",1,1);  
+    server_2E(0x6E,gPhyId,0xF184,fingerdata,19);
+  
+    fileData();
+
+    testWaitForTimeout(2000);
+    
+    putValueToControl("FlashChery","CAPL Output View","Request Download-请求驱动下载");
+    putValueToControl("FlashChery","CAPL Output View",1,1);  
+    server_34(0x74,gPhyId,0x08000000,0x0400);
+    
+    putValueToControl("FlashChery","CAPL Output View","Transfer Data-驱动下载");
+    putValueToControl("FlashChery","CAPL Output View",1,1);  
+    server_36(0x76,gPhyId,0x0400,block_length,g_Data.buffDriver,0x00);
+    
+    putValueToControl("FlashChery","CAPL Output View","Transfer Exit-驱动下载完成");
+    putValueToControl("FlashChery","CAPL Output View",1,1); 
+    server_37(0x77,gPhyId,0x00);
+
+    //HalAndRsa(g_Data.buffDriver,0x00000408);//RSA加密,结果值存放在Signature.Data_128[128]里
+    driverData();
+    testWaitForTimeout(2000);
+    putValueToControl("FlashChery","CAPL Output View","check Routine-驱动软件校验");
+    putValueToControl("FlashChery","CAPL Output View",1,1); 
+    server_31(0x71,gPhyId,0x01,0xDD02,0,1);//最后1：校验
+    
+    
+    testWaitForTimeout(2000);
+    putValueToControl("FlashChery","CAPL Output View","Routine Control – erase Memory-擦除内存");
+    putValueToControl("FlashChery","CAPL Output View",1,1);      
+    server_31(0x71,gPhyId,0x01,0xFF00,0,3);//最后0：擦除Cal
+    
+    putValueToControl("FlashChery","CAPL Output View","Request Download-请求标定软件下载");
+    putValueToControl("FlashChery","CAPL Output View",1,1);
+    server_34(0x74,gPhyId,0xC0180000,0x000000C8);
+    
+    putValueToControl("FlashChery","CAPL Output View","Transfer Data-标定软件下载");
+    putValueToControl("FlashChery","CAPL Output View",1,1); 
+    server_36(0x76,gPhyId,0x000000C8,block_length,g_Data.bufCal,0x00);
+    
+    putValueToControl("FlashChery","CAPL Output View","Request Transfer Exit-标定软件下载完成");
+    putValueToControl("FlashChery","CAPL Output View",1,1);   
+    server_37(0x77,gPhyId,0x00);
+
+    CALData();
+    testWaitForTimeout(2000);
+    putValueToControl("FlashChery","CAPL Output View","check Routine-标定软件校验");
+    putValueToControl("FlashChery","CAPL Output View",1,1); 
+    server_31(0x71,gPhyId,0x01,0xDD02,0,1);//最后1：校验
+    
+    testWaitForTimeout(2000);
+    putValueToControl("FlashChery","CAPL Output View","Routine Control–checkProgrammingDependencies-检查编程依赖性");
+    putValueToControl("FlashChery","CAPL Output View",1,1);  
+    server_31(0x71,gPhyId,0x01,0xFF01,0,2);//最后2:只发送DID
+
+    putValueToControl("FlashChery","CAPL Output View","[FlashFileInstallation");
+    putValueToControl("FlashChery","CAPL Output View",1,1);  
+    server_31(0x71,gPhyId,0x01,0xDD03,0,2);
+    
+    putValueToControl("FlashChery","CAPL Output View","ECU Reset – hard reset-硬件复位");
+    putValueToControl("FlashChery","CAPL Output View",1,1); 
+    server_11(0x51,gPhyId,0x01);
+    
+    server_14(0x54,gFunId);
+}
+testcase TC_10()
+{
+  testCaseDescription("tc_10");
+  FileInit();
+  testWaitForTimeout(1000);
+  
+  server_10(0x50,gPhyId,0x03);
+  server_31(0x71,gPhyId,0x01,0xD003,0,2);
+  server_10(0x50,gPhyId,0x02);
+  server_27();
+  server_2E(0x6E,gPhyId,0xF184,fingerdata,19);
+  
+  fileData();
+  
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD004,0,1);
+  
+  server_34(0x74,gPhyId,0x08000000,0x0400);
+  
+  server_36(0x76,gPhyId,0x0400,block_length,g_Data.buffDriver,0x00);
+  server_37(0x77,gPhyId,0x00);
+  
+ // HalAndRsa(g_Data.buffDriver,0x00000408);//RSA加密,结果值存放在Signature.Data_128[128]里
+  driverData();
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD002,0,1);//最后1：校验
+  testWaitForTimeout(2000);
+  
+  server_11(0x51,gPhyId,0x01);
+    
+  server_14(0x54,gFunId);
+}
+testcase TC_16()
+{
+  testCaseDescription("tc_16");
+  FileInit();
+  testWaitForTimeout(1000);
+  
+  server_10(0x50,gPhyId,0x03);
+  server_31(0x71,gPhyId,0x01,0xD003,0,2);
+  server_10(0x50,gPhyId,0x02);
+  server_27();
+  server_2E(0x6E,gPhyId,0xF184,fingerdata,19);
+  
+  fileData();
+  
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD004,0,1);
+  
+  server_34(0x74,gPhyId,0x08000000,0x0400);
+  
+  server_36(0x76,gPhyId,0x0400,block_length,g_Data.buffDriver,0x00);
+  server_37(0x77,gPhyId,0x00);
+  
+ // HalAndRsa(g_Data.buffDriver,0x00000408);//RSA加密,结果值存放在Signature.Data_128[128]里
+  driverData();
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD002,0,1);//最后1：校验
+  testWaitForTimeout(2000);
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,3);//最后0：擦除Cal
+  server_34(0x74,gPhyId,0xC0180000,0x000000C8);
+  server_36(0x76,gPhyId,0x000000C8,block_length,g_Data.bufCal,0x00);
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x22,gPhyId,0x01,0xFF01,0,2);//最后2:只发送DID
+  
+  server_11(0x51,gPhyId,0x01);
+    
+  server_14(0x00,gFunId);
+}
+testcase TC_21()
+{
+  testCaseDescription("tc_21");
+  FileInit();
+  testWaitForTimeout(1000);
+  
+  server_10(0x50,gPhyId,0x03);
+  server_31(0x71,gPhyId,0x01,0xD003,0,2);
+  server_10(0x50,gPhyId,0x02);
+  server_27();
+  server_2E(0x6E,gPhyId,0xF184,fingerdata,19);
+  
+  fileData();
+  
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD004,0,1);
+  
+  server_34(0x74,gPhyId,0x08000000,0x0400);
+  
+  server_36(0x76,gPhyId,0x0400,block_length,g_Data.buffDriver,0x00);
+  server_37(0x77,gPhyId,0x00);
+  
+ // HalAndRsa(g_Data.buffDriver,0x00000408);//RSA加密,结果值存放在Signature.Data_128[128]里
+  driverData();
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD002,0,1);//最后1：校验
+  testWaitForTimeout(2000);
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,3);//最后0：擦除Cal
+  server_34(0x74,gPhyId,0xC0180000,0x000000C8);
+  server_36(0x76,gPhyId,0x000000C8,block_length,g_Data.bufCal,0x00);
+  server_37(0x77,gPhyId,0x00);
+  
+  CALData();
+  testWaitForTimeout(2000);
+  Signature.Data_128[0] = Signature.Data_128[0] + 1;
+  server_31(0x71,gPhyId,0x01,0xD002,0,1);//最后1：校验
+  
+  server_11(0x51,gPhyId,0x01);
+    
+  server_14(0x54,gFunId);
+}
+
+testcase TC_22()
+{
+  testCaseDescription("tc_22");
+  FileInit();
+  testWaitForTimeout(1000);
+  
+  server_10(0x50,gPhyId,0x03);
+  server_31(0x71,gPhyId,0x01,0xD003,0,2);
+  server_10(0x50,gPhyId,0x02);
+  server_27();
+  server_2E(0x6E,gPhyId,0xF184,fingerdata,19);
+  
+  fileData();
+  
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD004,0,1);
+  
+  server_34(0x74,gPhyId,0x08000000,0x0400);
+  
+  server_36(0x76,gPhyId,0x0400,block_length,g_Data.buffDriver,0x00);
+  server_37(0x77,gPhyId,0x00);
+  
+ // HalAndRsa(g_Data.buffDriver,0x00000408);//RSA加密,结果值存放在Signature.Data_128[128]里
+  driverData();
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD002,0,1);//最后1：校验
+  testWaitForTimeout(2000);
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,3);//最后0：擦除Cal
+  server_34(0x74,gPhyId,0xC0180000,0x000000C8);
+  
+  g_Data.bufCal[0] = g_Data.bufCal[0] + 1;
+  server_36(0x76,gPhyId,0x000000C8,block_length,g_Data.bufCal,0x00);
+  server_37(0x77,gPhyId,0x00);
+  
+  CALData();
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD002,0,1);//最后1：校验
+  
+  server_11(0x51,gPhyId,0x01);
+    
+  server_14(0x54,gFunId);
+}
+testcase TC_23()
+{
+  testCaseDescription("tc_23");
+  FileInit();
+  testWaitForTimeout(1000);
+  
+  server_10(0x50,gPhyId,0x03);
+  server_31(0x71,gPhyId,0x01,0xD003,0,2);
+  server_10(0x50,gPhyId,0x02);
+  server_27();
+  server_2E(0x6E,gPhyId,0xF184,fingerdata,19);
+  
+  fileData();
+  
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD004,0,1);
+  
+  server_34(0x74,gPhyId,0x08000000,0x0400);
+  
+  server_36(0x76,gPhyId,0x0400,0x202,g_Data.buffDriver,0x00);
+  server_37(0x77,gPhyId,0x00);
+  
+ // HalAndRsa(g_Data.buffDriver,0x00000408);//RSA加密,结果值存放在Signature.Data_128[128]里
+  driverData();
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD002,0,1);//最后1：校验
+  testWaitForTimeout(2000);
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  server_34(0x74,gPhyId,0xC0080000,0x000F5000);
+    
+  server_36(0x76,gPhyId,0x000F5000,0x202,g_Data.buff,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  //HalAndRsa(g_Data.buff,0x000F5008);//RSA加密,结果值存放在Signature.Data_128[128]里
+  fileData();
+  
+  testWaitForTimeout(2000);
+  server_31(0x71,gPhyId,0x01,0xD002,0,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF01,0,2);//最后2:只发送DID
+  
+  server_31(0x71,gPhyId,0x01,0xD005,0,2);
+    
+  server_11(0x51,gPhyId,0x01);
+    
+  server_14(0x54,gFunId);
+}
+
+void maintest()
+{
+  byte i;
+  ResetAllValue();//将信号置0
+
+//  FileInit();
+//  testWaitForTimeout(1000);
+//  setTimer(test_online,S3server);
+//  testWaitForTimeout(1000);
+  
+    
+//  server_10(0x00,gFunId,0x83);
+//  server_27();
+  testWaitForEnvVar(Flash_set,0);
+  
+  if(getValue(APPAndCAL) == 1)
+  {
+      TC_2();
+  }
+  else if(getValue(APP) == 1)
+  {
+      FileInit();
+      for(i = 0; i< 1; i++){
+        testWaitForTimeout(2000);
+        Download();
+      }
+
+  }
+  else if(getValue(CAL) == 1)
+  {
+      TC_7();
+  }else{
+    
+  }
+//  
+//  putValueToControl("FlashChery","CAPL Output View","ECU Reset – hard reset-硬件复位");
+//  putValueToControl("FlashChery","CAPL Output View",1,1);  
+//  server_11(0x51,gPhyId,0x01);
+//  
+//  putValueToControl("FlashChery","CAPL Output View","ECU Reset – StayInBoot-硬件复位");
+//  putValueToControl("FlashChery","CAPL Output View",1,1);  
+//  output_StayInBoot();
+  
+//    Download();
+  
+//    TC_2();
+//    TC_7();
+//    TC_10();
+
+//    TC_11();
+//    TC_12();
+//    TC_13();
+//    TC_14();
+//    TC_15();
+//    TC_16();
+//    TC_17();
+//    TC_18();
+//    TC_19();
+//    TC_20();
+//    TC_21();
+//    TC_22();
+//    TC_23();
+//    TC_27();
+
+}

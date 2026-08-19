@@ -1,0 +1,6273 @@
+/*@!Encoding:936*/
+includes
+{
+  #pragma library ("\EXECL\capldll_lingpao.dll")
+  //#include "C:\\Users\\Public\\Documents\\Vector\\CANoe\\12.0 (x64)\\Reusable\\CAPL_Includes\\Diagnostics\\CCI_CanTP.cin"
+}
+
+variables
+{
+  dword gPhyId = 0x772;
+  dword gFunId = 0x7DF;
+  dword gResId = 0x77a;
+  
+  message 0x000 g_Tx = {dlc = 8};
+  message 0x000 g_Rx = {dlc = 8};
+  
+  message 0x000 g_server3E = {dlc = 0x08};
+  msTimer test_online;
+  
+  const dword S3server = 4000;
+  dword   routine = 0;
+  
+  dword   block_length;
+  
+  dword   CheckSum;
+  
+  dword   Tx_Data[4096];  //存储除服务以外的数据，包括子服务和参数
+  dword   Rx_Data[100];
+  byte    seed_L1[4]     = {0,0,0,0};
+  byte    seed_L2[4]     = {0,0,0,0};
+  int     download_progress_flag;
+  dword   transform_data;
+  int     ResetFlag;
+  dword   fingerdata[4];
+  dword   curDidlength    = 0;//当前DID长度
+  dword   readByteNum;
+  byte    CurDidData[2]   = {0,0};//当前读取的DID
+  dword   FileLen;//app长度
+  
+  enum Msg_State
+  {
+    MsgTrue  = 1,
+    MsgFalse = 0
+  };
+    
+  struct Data_Type
+  {
+    dword State;
+    long  buff[0x00180000];
+    long  buffDriver[0x4000];//用于存储驱动程序的地址+长度＋数据
+  }g_Data;
+  
+  struct DIDData
+  {
+    byte writeDID[40];//存放需要写入的DID数据
+    byte readDID[40];
+      
+    byte errorlength[17];
+  }g_Did;  
+  
+  byte crc_8;
+  word  crc_16;   
+
+  byte VerCheck[1322];//存放版本信息（hash+rs2048）
+  
+  byte Sha_256[32];
+  byte Signature[1024];
+  byte FileValid[10]; //存文件版本号
+  byte RSA2048[256];  
+  
+  dword Serial[16]; //写入序列号信息
+  
+  int  _Sid31CheckFlag;//判断31服务中是否为正常情况，0：正常，1:不正常
+  
+  dword  TransFrameNum;//判断发送的帧数，发送完实际的连续帧在进行响应判断
+  dword  CurTransFrameNum;//当前发送完的连续帧  
+  
+  byte   TransFCFFFrame;  
+  
+  dword  DriverLength;
+  dword  DriverStartAdress;
+  dword  AppLength;
+  dword  AppStartAdress;
+  
+  dword  _P2Server;//p2*参数时间   
+}
+
+on timer test_online
+{
+  server_3e(0x00,gFunId,0x80,0x02);
+  //server_3e(0x00,gFunId,0x00,0x02);
+  setTimer(test_online,S3server/2);
+}
+
+on message *
+{
+  if(this.id == gResId)
+  {
+    g_Rx.id      = this.id;
+    g_Rx.byte(0) = this.byte(0); 
+    g_Rx.byte(1) = this.byte(1);
+    g_Rx.byte(2) = this.byte(2); 
+    g_Rx.byte(3) = this.byte(3);
+    g_Rx.byte(4) = this.byte(4); 
+    g_Rx.byte(5) = this.byte(5);
+    g_Rx.byte(6) = this.byte(6); 
+    g_Rx.byte(7) = this.byte(7);
+    PrintMsgReceive(g_Rx);
+    
+    if(g_Rx.byte(1) == 0x67 && g_Rx.byte(2) == 0x01)
+    {
+      seed_L1[0] = g_Rx.byte(3);
+      seed_L1[1] = g_Rx.byte(4);
+      seed_L1[2] = g_Rx.byte(5);
+      seed_L1[3] = g_Rx.byte(6);
+    }
+    
+    if(g_Rx.byte(1) == 0x67 && g_Rx.byte(2) == 0x11)//boot下
+    {
+      seed_L2[0] = g_Rx.byte(3);
+      seed_L2[1] = g_Rx.byte(4);
+      seed_L2[2] = g_Rx.byte(5);
+      seed_L2[3] = g_Rx.byte(6);
+    }
+    
+    if(curDidlength != 0)
+    {
+      if(g_Rx.byte(1) == 0x62 || g_Rx.byte(2) == 0x62 || ((g_Rx.byte(0) >= 0x20) && (g_Rx.byte(0) <= 0x2F)))
+      {
+        JudgeReadData();
+      }
+    }
+  }
+  if(this.id == gPhyId || this.id == gFunId)
+  {
+    if(this.id == gPhyId && (this.byte(0) >=0x20 && this.byte(0) <0x30)) //发送完完整的连续帧
+    {
+      CurTransFrameNum++;
+      if(g_Rx.byte(1) != 0x00)
+      {
+        if(CurTransFrameNum % g_Rx.byte(1) == 0)
+        {
+          putValue(CFFrameNum,1);
+        }
+      }
+      
+      if(CurTransFrameNum == TransFrameNum)
+      {
+        putValue(CFFrameNum,1);
+      }
+    }  
+    else //单帧或首帧
+    {
+      TransFCFFFrame++;
+      if(TransFCFFFrame == 1)
+      {
+        putValue(OneFrameTranse,1);
+      }
+    }
+    
+  }
+}
+
+//该函数主要用于读取信息（面板上VerCheck）
+void ReadVerSion(){
+  dword i;
+  dword j;
+  dword k;
+  char  FilePath3[200];
+  dword FileHandle3;
+  char  Buff[256];
+  
+  char  temp[20];
+  
+  temp[0] = '0';
+  temp[1] = 'x';
+  
+  j = 0;
+  
+  //首先解析驱动程序
+  getValue(FilePath_data,FilePath3);
+  FileHandle3 = openFileRead(FilePath3,0);  //打开文件进行读取（0：ASCII ,1：binary）
+  
+  if(FileHandle3 != 0) //用于读取值信息，信息存放在VerCheck[]
+  {
+    while(fileGetString(Buff,elCount(Buff),FileHandle3) != 0)    {
+      for(i = 0;i < (strlen(Buff)+1)/3;i++)      {
+        temp[2] = Buff[i*3];
+        temp[3] = Buff[i*3+1];
+        
+        VerCheck[j++] = atol(temp);
+      }
+    }
+  }   
+  fileClose(FileHandle3);    
+}
+/// <Judge>
+void JudgeReadData()
+{
+  int i;
+  int j;
+  
+  if(g_Rx.byte(0) <= 0x07 && CurDidData[0] == g_Rx.byte(2) && CurDidData[1] == g_Rx.byte(3))
+  {
+    readByteNum = g_Rx.byte(0) - 3;
+    
+    if(readByteNum == curDidlength)
+    {
+      for(i = 0;i < readByteNum;i++)
+      {
+        g_Did.readDID[i] = g_Rx.byte(4+i);
+      }
+    }
+    else
+    {
+      readByteNum = g_Rx.byte(0) - 3;
+     testStepFail("fail","DID:%x%x has %d byte",g_Rx.byte(2),g_Rx.byte(3),g_Rx.byte(0)-3);
+      
+    }
+    
+  }
+  else
+  {
+    if((g_Rx.byte(0) >= 0x10) && (g_Rx.byte(0) < 0x20) && CurDidData[0] == g_Rx.byte(3) && CurDidData[1] == g_Rx.byte(4))
+    {
+      readByteNum =  g_Rx.byte(1) - 3;
+      j = 0;
+      if(readByteNum == curDidlength)
+      {
+        for(i = 0;i < 3;i++)
+        {
+          g_Did.readDID[j++] = g_Rx.byte(5+i);
+        }
+      }
+      else
+      {
+        readByteNum = g_Rx.byte(1) - 3;
+        testStepFail("fail","DID:%x%x has %d byte",g_Rx.byte(2),g_Rx.byte(3),g_Rx.byte(1)-3);
+      }
+    }
+    if((g_Rx.byte(0) > 0x20) && (g_Rx.byte(0) < 0x30) )
+    {
+      for(i = 0;i < 7;i++)
+      {
+        if(j < readByteNum)
+        {
+          g_Did.readDID[j++] = g_Rx.byte(i+1);
+        }
+      }
+    }
+  }
+}
+
+void PrintMsgOutput(message* msg)
+{
+  //if(msg.byte(0)==0x18 && msg.byte(1)==0x02 && msg.byte(2)==0x36)
+
+if((msg.byte(0)&0xF0)==0x20){write("xx");}
+else{
+  testStep("Tx","[%x] [%.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x]",
+  msg.id,msg.byte(0),msg.byte(1),msg.byte(2),msg.byte(3),msg.byte(4),msg.byte(5),msg.byte(6),msg.byte(7)); 
+}
+}
+
+void PrintMsgReceive(message* msg)
+{
+   // if(msg.byte(0)==0x02 && msg.byte(1)==0x76){}
+   if(msg.byte(0)==0x30 && msg.byte(1)==0x00)
+{}
+else{
+  testStep("Rx","[%x] [%.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x]",
+  msg.id,msg.byte(0),msg.byte(1),msg.byte(2),msg.byte(3),msg.byte(4),msg.byte(5),msg.byte(6),msg.byte(7)); 
+}
+}
+
+byte CharToHex(char s[],int index)
+{
+  long WriteData;
+  char src[5] = "0x";
+  
+  src[2] = s[index*3]; 
+  src[3] = s[index*3 + 1];
+  
+  strtol(src,WriteData);
+  
+  return WriteData;
+}
+
+void output_FC()
+{
+  g_Tx.id      = gPhyId;
+  g_Tx.byte(0) = 0x30;
+  g_Tx.byte(1) = 0x00;
+  g_Tx.byte(2) = 0x00;
+  g_Tx.byte(3) = 0x55;
+  g_Tx.byte(4) = 0x55;
+  g_Tx.byte(5) = 0x55;
+  g_Tx.byte(6) = 0x55;
+  g_Tx.byte(7) = 0x55;
+  output(g_Tx);
+  PrintMsgOutput(g_Tx);
+}
+
+nodeDropErrorHandling(long silent)
+{
+  long channel = 1;
+  switch(silent)
+  {
+    case 0:{testStepPass("nodeDrop","nodeDropError");};break;
+    case 1:{testStepPass("nodeDrop","nodeDropErrorRecovery");};break;
+  }
+  canSetChannelOutput(channel, silent);
+}
+
+void JudgeResponse(byte response,dword service)
+{
+  int flag_NRC78;
+  if(response == 0)  //不期待接收到响应
+  {
+    if(0 == testWaitForMessage(gResId,50))
+    {
+      testStepPass("pass","111%x Service dosn't response anything",service);
+    }
+    else
+    {
+      if(g_Rx.byte(3) == 0x78 || g_Rx.byte(1) == 0x7e)
+      {
+        flag_NRC78 = 1;
+        while(1)
+        {
+            if(1 == testWaitForMessage(gResId ,_P2Server))
+            {
+                if(g_Rx.byte(3) == 0x78)
+                {
+                  flag_NRC78 = 1;
+                  testStep("wait","222%x Service returns response pending:[0x%x] ",service,g_Rx.byte(3));
+                }
+                else
+                {
+                  flag_NRC78 = 0;
+                  if(g_Rx.byte(1) == 0x40+service )
+                  {
+                   // g_Data.State = MsgFalse;
+                    testStepWarning("Warning","333%x Service returnsresponse:[0x%x],response nothing",service,g_Rx.byte(1));
+                    break;
+                  }
+                  else if(g_Rx.byte(2) == 0x40+service)
+                  {
+                    testStepWarning("Warning","444%x Service returns response:[0x%x],response nothing",service,g_Rx.byte(2));
+                    break;
+                  }
+                  else
+                  {
+                    testStepWarning("Warning","555%x Service returns negative response:[0x%x],response nothing",service,g_Rx.byte(3));
+                    break;
+                  }
+                }
+              }
+            else
+            {
+              break;
+            }
+        }
+        if(flag_NRC78 == 1)
+        {
+          testStepFail("fail","666%x Service returns negative response:[0x%x],response nothing",service,g_Rx.byte(3));
+        }
+      }
+      
+      else
+      {
+        g_Data.State = MsgFalse;
+        testStepFail("fail1","777%.2x Service responsed anything,response nothing",service);
+      }
+    }
+  }
+  else  //期望接收到响应
+  {
+    if(response == service + 0x40)  //肯定响应
+    {
+      if(1 == testWaitForMessage(gResId,50))
+      {
+        
+        if((g_Tx.byte(1) == 0x10) && (g_Tx.byte(2) == 0x02))
+        {
+          gResId = getValue(ResID);
+        }
+        
+        if(g_Rx.byte(1) == response)  //单帧响应
+        {
+          testStepPass("pass","888%s service has postive response",service);
+        }
+        else if(g_Rx.byte(2) == response)   //多帧响应，需发送流控帧
+        {
+          testStepPass("pass","999%s service has postive response",service);
+          output_FC();
+          while(1)  //等待CF传输完毕
+          {
+            if(0 == testWaitForMessage(gResId,128))  //等待连续帧接收完毕，才执行其他步骤
+            {
+              testStepPass("pass","aaa%x service return successive frames",service);
+              break;
+            }
+          }
+        }
+        else if(g_Rx.byte(2) == service && g_Rx.byte(3) != 0x78) //否定响应
+        {
+          g_Data.State = MsgFalse;
+          testStepFail("fail","bbb%s service has negative response (%s),hope to receive response:[0x%x]",service ,g_Rx.byte(3),response);
+        }
+        else if(g_Rx.byte(3) == 0x78)
+        {
+          while(1)  //可能接收到多次NRC78,除接收到NRC78之外的数据，均可跳出该循环
+          {
+            if(1 == testWaitForMessage(gResId ,_P2Server))
+            {
+              if(g_Rx.byte(1) == response)
+              {
+                testStepPass("pass","ccc%s service has postive response",service);
+                break;
+              }
+              else if(g_Rx.byte(2) == response)
+              {
+                testStepPass("pass","ddd%s service has postive response",service);
+                output_FC();
+                while(1)  //等待CF传输完毕
+                {
+                  if(0 == testWaitForMessage(gResId,128))  //等待连续帧接收完毕，才执行其他步骤
+                  {
+                    testStepPass("pass","fff%x service return successive frames",service);
+                    break;
+                  }
+                }
+              }
+              else
+              {
+                if(g_Rx.byte(3) == 0x78)
+                {
+                  testStep("wait","gggx Service returns response pending:[0x%x] ",service,g_Rx.byte(3));
+                  
+                  if(routine == 1) //进行通讯中断
+                  {
+                    nodeDropErrorHandling(0);
+                    testWaitForTimeout(500);
+                    g_Data.state = MsgFalse;
+                    nodeDropErrorHandling(1);
+                    break;
+                  }
+                  
+                }
+                else
+                {
+                  g_Data.State = MsgFalse;
+                  testStepFail("fail","hhh%x Service returns negative response:[0x%x],hope to receive response:[0x%x]",service,g_Rx.byte(3),response);
+                  break;
+                }
+              }
+            }
+            else
+            {
+              g_Data.State = MsgFalse;
+              testStepFail("fail","iii%x Service dosn't response anything after pending:[0x%x]",service,0x78);
+              break;
+            }
+          }
+        }
+      }
+      else
+      {
+        g_Data.State = MsgFalse;
+        testStepFail("fail","%x has no response",service);
+      }
+    }
+    else  //其他类型响应（NRC）
+    {
+      if(1 == testWaitForMessage(gResId,50))
+      {
+        if(g_Rx.byte(1) == 0x7F && g_Rx.byte(3) == 0x78)
+        {
+          while(1)
+          {
+            if(1 == testWaitForMessage(gResId ,_P2Server))
+            {
+              if(g_Rx.byte(1) == 0x7F && g_Rx.byte(3) == 0x78)
+              {
+                testStep("wait","%x Service returns response pending:[0x%x] ",service,g_Rx.byte(3));
+              }
+              else
+              {
+                if(g_Rx.byte(3) == response)
+                {
+                  g_Data.State = MsgFalse;
+                  testStepPass("pass","%x Service returns negative response:[0x%x]",service ,g_Rx.byte(3));
+                }
+                else
+                {
+                  if(g_Rx.byte(1) == service + 0x40)
+                  {
+                    g_Data.State = MsgFalse;
+                    testStepFail("fail","%x Service returns response:[0x%x],hope to receive response:[0x%x]",service ,g_Rx.byte(1),response);
+                  }
+                  if(g_Rx.byte(2) == service + 0x40)
+                  {
+                    g_Data.State = MsgFalse;
+                    testStepFail("fail","%x Service returns response:[0x%x],hope to receive response:[0x%x]",service ,g_Rx.byte(2),response);
+                  }
+                  if(g_Rx.byte(1) == 0x7F)
+                  {
+                    g_Data.State = MsgFalse;
+                    testStepFail("fail","%x Service returns response:[0x%x],hope to receive response:[0x%x]",service,g_Rx.byte(3),response);
+                  }
+                }
+                break;
+              }
+            }
+          }
+        }
+        else if(g_Rx.byte(1) == 0x7F && g_Rx.byte(3) != 0x78)
+        {
+          if(g_Rx.byte(3) == response)
+          {
+            g_Data.State = MsgFalse;
+            testStepPass("pass","%x Service returns negative response:[0x%x]",service ,g_Rx.byte(3));
+          }
+          else
+          {
+            g_Data.State = MsgFalse;
+            testStepFail("fail","%x Service returns response:[0x%x],hope to receive response:[0x%x]",service,g_Rx.byte(3),response);
+          }
+        }
+        else                      //不知名服务
+        {
+          if(g_Rx.byte(2) == service + 0x40)
+          {
+            output_FC();
+            while(1)  //等待CF传输完毕
+              {
+                if(0 == testWaitForMessage(gResId,128))  //等待连续帧接收完毕，才执行其他步骤
+                {
+                  break;
+                }
+              }
+          }
+          if(g_Rx.byte(1) == service + 0x40)
+          {
+            g_Data.State = MsgFalse;
+            testStepFail("fail","%x Service returns response:[0x%x],hope to receive response:[0x%x]",service ,g_Rx.byte(1),response);
+          }
+          if(g_Rx.byte(2) == service + 0x40)
+          {
+            g_Data.State = MsgFalse;
+            testStepFail("fail","%x Service returns response:[0x%x],hope to receive response:[0x%x]",service ,g_Rx.byte(2),response);
+          }
+        }
+      }
+      else
+      {
+        g_Data.State = MsgFalse;
+        testStepFail("fail","%x has no response",service);
+      }
+    }
+  }
+  
+}
+
+void TxTPData(dword id,dword length,dword data[],dword serve)
+{
+  int cur_cf_number,cur_data_number;
+  int sent_cf_n;
+  int i,TempLen;
+  int accepted_fc_n;
+  
+  
+  g_Tx.id       = id;
+  sent_cf_n     = 0;
+  TempLen       = 0;
+  accepted_fc_n = 0;
+  
+  cur_cf_number = length/0x07;
+  cur_data_number = length - 0x06;
+  
+  TransFrameNum = cur_cf_number;
+  CurTransFrameNum = 0;
+  putValue(CFFrameNum,0);
+  
+  if(1 == testWaitForMessage(gResId,50))
+  {
+    g_Tx.byte(0) = 0x21;
+    if(g_Rx.byte(0) == 0x30)
+    {
+      accepted_fc_n++;
+      while(sent_cf_n < cur_cf_number)
+      {
+        for(i = 1; i <= 0x07; i++)
+        {
+          if(TempLen < cur_data_number)
+          {
+            g_Tx.byte(i) = data[TempLen];
+            TempLen++;
+            
+            if(download_progress_flag == 1)
+            {
+              transform_data++;
+            }
+          }
+          else
+          {
+            g_Tx.byte(i) = 0x55;
+          }
+        }
+        if(g_Rx.byte(1) != 0x00) //此数不会发生改变
+        {
+          if(abs(sent_cf_n - (accepted_fc_n * g_Rx.byte(1))) == 0)
+          {
+            testWaitForEnvVar(CFFrameNum,1000);
+            
+            if(1 == testWaitForMessage(gResId,150))
+            {
+              if(g_Rx.byte(0) == 0x30)
+              {
+                accepted_fc_n++;
+              }
+            }
+            else
+            {
+              testStepFail("fail","No CF was received!");
+              break;
+            }
+            putValue(CFFrameNum,0);
+          }
+        }
+        output(g_Tx);
+        
+        if(serve != 0x36)
+        {
+          PrintMsgOutput(g_Tx);
+        }
+        
+        sent_cf_n++;
+        
+        if(g_Tx.byte(0) == 0x2F)
+        {
+          g_Tx.byte(0) = 0x1F;
+        }
+        g_Tx.byte(0)++;
+      }
+      if(download_progress_flag == 1)
+      {
+        putvalue(Download,(((float)(transform_data)) / FileLen)*100);
+        putvalue(FlashRate,(((float)(transform_data)) / FileLen)*100);
+      }
+   }
+    testWaitForEnvVar(CFFrameNum,1000);
+  }
+}
+
+void TxMsgSrever(byte response,dword id,dword length,dword Data[])
+{
+  int i,j,tp_data_n;
+  dword tp_Data[4096];
+  tp_data_n = 0;
+  g_Tx.id = id;    
+  
+  TransFCFFFrame = 0;
+  //putValue(OneFrameTranse,0);  
+  
+  if((0x00 < length) && (length < 0x08))//单帧
+  {
+    g_Tx.byte(0) = length;
+    for(i = 0 ; i < length ; i++)
+    {
+      g_Tx.byte(i+1) = Data[i];
+    }
+    for(i = length + 1 ; i < 0x08 ; i++)
+    {
+      g_Tx.byte(i) = 0x55;
+    }
+    output(g_Tx);
+    testWaitForEnvVar(OneFrameTranse,2000);
+    
+    PrintMsgOutput(g_Tx);
+  }
+  else if((0x07 < length) && (length <= 0xfff))//首帧
+  {
+    g_Tx.byte(0) = 0x10 + ((length >> 8) & 0xFF);
+    g_Tx.byte(1) = length & 0xFF;
+    for(i = 0;i < 0x06;i++)
+    {
+     g_Tx.byte(i+2) = Data[i];
+    }
+    output(g_Tx);
+    testWaitForEnvVar(OneFrameTranse,2000);
+    
+    PrintMsgOutput(g_Tx);
+    for(i = 6 ;i < length ;i++)
+    {
+      tp_Data[tp_data_n] = Data[i];
+      tp_data_n++;
+    }    
+    TxTPData(id,length,tp_Data,Data[0]);
+  }
+  
+  JudgeResponse(response,Data[0]);  
+  //testWaitForTimeout(200);//接受等待时间
+}
+
+//连续帧丢失测试
+void TxMsgSrever1(byte response,dword id,dword length,dword Data[])
+{
+  int i,j,tp_data_n;
+  dword tp_Data[4096];
+  tp_data_n = 0;
+  g_Tx.id = id;    
+  
+  TransFCFFFrame = 0;
+  //putValue(OneFrameTranse,0);  
+  
+  if((0x00 < length) && (length < 0x08))//单帧
+  {
+    g_Tx.byte(0) = length;
+    for(i = 0 ; i < length ; i++)
+    {
+      g_Tx.byte(i+1) = Data[i];
+    }
+    for(i = length + 1 ; i < 0x08 ; i++)
+    {
+      g_Tx.byte(i) = 0x55;
+    }
+    output(g_Tx);
+    testWaitForEnvVar(OneFrameTranse,2000);
+    
+    PrintMsgOutput(g_Tx);
+  }
+  else if((0x07 < length) && (length <= 0xfff))//首帧
+  {
+    g_Tx.byte(0) = 0x18;
+    g_Tx.byte(1) = 02;
+    for(i = 0;i < 0x06;i++)
+    {
+     g_Tx.byte(i+2) = Data[i];
+    }
+    output(g_Tx);
+    testWaitForEnvVar(OneFrameTranse,2000);
+    
+    PrintMsgOutput(g_Tx);
+    for(i = 6 ;i < length ;i++)
+    {
+      tp_Data[tp_data_n] = Data[i];
+      tp_data_n++;
+    }    
+    TxTPData(id,length,tp_Data,Data[0]);
+  }
+  
+  JudgeResponse(response,Data[0]);  
+  //testWaitForTimeout(200);//接受等待时间
+}
+
+void TxTPCANFDData(dword id,dword length,dword data[],dword serve)
+{
+  int cur_cf_number,cur_data_number;
+  int sent_cf_n;
+  int i,TempLen;
+  int accepted_fc_n;
+
+  g_Tx.id       = id;
+  sent_cf_n     = 0;
+  TempLen       = 0;
+  accepted_fc_n = 0;
+
+  cur_cf_number = length/63;
+  cur_data_number = length - 62;
+
+  TransFrameNum = cur_cf_number;
+  CurTransFrameNum = 0;
+  putValue(CFFrameNum,0);
+
+  if(1 == testWaitForMessage(gResId,50))
+  {
+    g_Tx.byte(0) = 0x21;
+    if(g_Rx.byte(0) == 0x30)
+    {
+      accepted_fc_n++;
+      while(sent_cf_n < cur_cf_number)
+      {
+        if((cur_data_number - TempLen) > 63)
+        {
+          g_Tx.DataLength = 64;
+          for(i = 1; i <= 63; i++)
+          {
+            if(TempLen < cur_data_number)
+            {
+              g_Tx.byte(i) = data[TempLen];
+              TempLen++;
+
+              if(download_progress_flag == 1)
+              {
+                transform_data++;
+              }
+            }
+            else
+            {
+              g_Tx.byte(i) = 0x55;
+            }
+          }
+        }
+
+        else if((cur_data_number - TempLen) <8)
+        {
+          g_Tx.DataLength = 8;
+          for(i = 1; i < 8; i++)
+          {
+            if(TempLen < cur_data_number)
+            {
+              g_Tx.byte(i) = data[TempLen];
+              TempLen++;
+
+              if(download_progress_flag == 1)
+              {
+                transform_data++;
+              }
+            }
+            else
+            {
+              g_Tx.byte(i) = 0x55;
+            }
+          }
+        }
+        else if((cur_data_number - TempLen) <12)
+        {
+          g_Tx.DataLength = 12;
+          for(i = 1; i < 12; i++)
+          {
+            if(TempLen < cur_data_number)
+            {
+              g_Tx.byte(i) = data[TempLen];
+              TempLen++;
+           
+              if(download_progress_flag == 1)
+              {
+                transform_data++;
+              }
+            }
+            else
+            {
+              g_Tx.byte(i) = 0x55;
+            }
+          }
+        }
+        else if((cur_data_number - TempLen) <16)
+        {
+         g_Tx.DataLength = 16;
+          for(i = 1; i < 16; i++)
+          {
+            if(TempLen < cur_data_number)
+            {
+              g_Tx.byte(i) = data[TempLen];
+              TempLen++;
+             
+              if(download_progress_flag == 1)
+              {
+                transform_data++;
+              }
+            }
+            else
+            {
+              g_Tx.byte(i) = 0x55;
+            }
+          }
+        }
+        else if((cur_data_number - TempLen) <20)
+        {
+          g_Tx.DataLength = 20;
+          for(i = 1; i < 20; i++)
+          {
+            if(TempLen < cur_data_number)
+            {
+              g_Tx.byte(i) = data[TempLen];
+              TempLen++;
+              if(download_progress_flag == 1)
+              {
+                transform_data++;
+              }
+            }
+            else
+            {
+              g_Tx.byte(i) = 0x55;
+            }
+          }
+        }
+        else if((cur_data_number - TempLen) <24)
+       {
+         g_Tx.DataLength = 24;
+          for(i = 1; i < 24; i++)
+          {
+            if(TempLen < cur_data_number)
+            {
+              g_Tx.byte(i) = data[TempLen];
+              TempLen++;
+
+              if(download_progress_flag == 1)
+              {
+                transform_data++;
+              }
+            }
+
+            else
+            {
+              g_Tx.byte(i) = 0x55;
+            }
+          }
+        }
+
+        else if((cur_data_number - TempLen) <32)
+        {
+          g_Tx.DataLength = 32;
+          for(i = 1; i < 32; i++)
+          {
+            if(TempLen < cur_data_number)
+            {
+              g_Tx.byte(i) = data[TempLen];
+              TempLen++;
+
+              if(download_progress_flag == 1)
+              {
+                transform_data++;
+              }
+            }
+            else
+            {
+              g_Tx.byte(i) = 0x55;
+            }
+          }
+        }
+
+        else if((cur_data_number - TempLen) <48)
+        {
+          g_Tx.DataLength = 48;
+          for(i = 1; i < 48; i++)
+          {
+            if(TempLen < cur_data_number)
+            {
+              g_Tx.byte(i) = data[TempLen];
+              TempLen++;
+             
+              if(download_progress_flag == 1)
+              {
+                transform_data++;
+              }
+            }
+            else
+            {
+              g_Tx.byte(i) = 0x55;
+            }
+          }
+        }
+        else if((cur_data_number - TempLen) <64)
+        {
+          g_Tx.DataLength = 64;
+          for(i = 1; i < 64; i++)
+          {
+            if(TempLen < cur_data_number)
+            {
+              g_Tx.byte(i) = data[TempLen];
+              TempLen++;
+              
+              if(download_progress_flag == 1)
+              {
+                transform_data++;
+              }
+            }
+            else
+            {
+              g_Tx.byte(i) = 0x55;
+            }
+          }
+        }
+
+        if(g_Rx.byte(1) != 0x00) //此数不会发生改变
+        {
+          if(abs(sent_cf_n - (accepted_fc_n * g_Rx.byte(1))) == 0)
+          {
+            testWaitForEnvVar(CFFrameNum,1000);
+
+            if(1 == testWaitForMessage(gResId,150))
+            {
+              if(g_Rx.byte(0) == 0x30)
+              {
+                accepted_fc_n++;
+              }
+            }
+            else
+            {
+              testStepFail("fail","No CF was received!");
+              break;
+            }
+            putValue(CFFrameNum,0);
+          }
+        }
+        output(g_Tx);
+        
+        if(serve != 0x36)
+        {
+          PrintMsgOutput(g_Tx);
+        }
+
+        sent_cf_n++;
+
+        if(g_Tx.byte(0) == 0x2F)
+        {
+          g_Tx.byte(0) = 0x1F;
+        }
+        g_Tx.byte(0)++;
+      }
+
+      if(download_progress_flag == 1)
+      {
+        putvalue(Download,(((float)(transform_data)) / FileLen)*100);
+        putvalue(FlashRate,(((float)(transform_data)) / FileLen)*100);
+      }
+   }
+    testWaitForEnvVar(CFFrameNum,1000);
+  }
+}
+
+
+
+void TxMsgCANFDSrever(byte response,dword id,dword length,dword Data[])
+{
+  int i,j,tp_data_n;
+  dword tp_Data[4096];
+  tp_data_n = 0;
+  g_Tx.id = id;    
+ 
+  TransFCFFFrame = 0;
+  //putValue(OneFrameTranse,0);  
+
+  if((0x00 < length) && (length < 0x40-1))//单帧
+  {
+    if(length<8)
+    {
+      g_Tx.byte(0) = length;
+      g_Tx.DataLength = 8;
+      for(i = 0 ; i < length ; i++)
+      {
+        g_Tx.byte(i+1) = Data[i];
+      }
+
+      for(i = length + 1 ; i < 0x08 ; i++)
+      {
+        g_Tx.byte(i) = 0x55;
+      }
+    }
+
+    else if(length<=10)
+    {
+      g_Tx.DataLength = 12;
+      for(i = 0 ; i < length ; i++)
+      {
+        g_Tx.byte(i+2) = Data[i];
+      }
+      for(i = length + 2 ; i < 12 ; i++)
+      { g_Tx.byte(i) = 0x55;
+      }
+    }
+    else if(length<14)
+    {
+      g_Tx.DataLength = 16;
+      for(i = 0 ; i < length ; i++)
+      {
+        g_Tx.byte(i+2) = Data[i];
+      }
+      for(i = length + 2 ; i < 16 ; i++)
+      {
+        g_Tx.byte(i) = 0x55;
+      }
+    }
+
+    else if(length<=18)
+    {
+      g_Tx.DataLength = 20;
+      for(i = 0 ; i < length ; i++)
+      {
+        g_Tx.byte(i+2) = Data[i];
+      }
+
+      for(i = length + 2 ; i < 20 ; i++)
+      {
+        g_Tx.byte(i) = 0x55;
+      }
+    }
+
+    else if(length<=22)
+    {
+      g_Tx.DataLength = 24;
+      for(i = 0 ; i < length ; i++)
+      {
+        g_Tx.byte(i+2) = Data[i];
+      }
+
+      for(i = length + 2 ; i < 24 ; i++)
+      {        g_Tx.byte(i) = 0x55;
+
+      }
+    }
+
+    else if(length<=30)
+    {
+      g_Tx.DataLength = 32;
+      for(i = 0 ; i < length ; i++)
+      {        g_Tx.byte(i+2) = Data[i];
+
+      }
+      for(i = length + 2 ; i < 32 ; i++)
+      {
+        g_Tx.byte(i) = 0x55;
+      }
+    }
+    else if(length<=46)
+    {
+      g_Tx.DataLength = 48;
+      for(i = 0 ; i < length ; i++)
+      {
+        g_Tx.byte(i+2) = Data[i];
+      }
+
+      for(i = length + 2 ; i < 48 ; i++)
+      {
+        g_Tx.byte(i) = 0x55;
+      }
+    }
+
+    else if(length<=62)
+    {
+      g_Tx.DataLength = 64;
+      for(i = 0 ; i < length ; i++)
+      {
+        g_Tx.byte(i+2) = Data[i];
+      }
+      for(i = length + 2 ; i < 64 ; i++)
+      {
+        g_Tx.byte(i) = 0x55;
+      }
+    }
+    if(length>=8)
+    {
+        g_Tx.byte(0) = 0;
+        g_Tx.byte(1) = length;
+    }
+
+    output(g_Tx);
+    testWaitForEnvVar(OneFrameTranse,2000);
+    
+    PrintMsgOutput(g_Tx);
+  }
+  else if((64 < length) && (length <= 0xfff))//首帧
+  {
+    g_Tx.byte(0) = 0x10 + ((length >> 8) & 0xFF);
+    g_Tx.byte(1) = length & 0xFF;
+    for(i = 0;i < 62;i++)
+    {
+     g_Tx.byte(i+2) = Data[i];
+    }
+
+    g_Tx.DataLength = 64;
+    output(g_Tx);
+    testWaitForEnvVar(OneFrameTranse,2000);
+
+    PrintMsgOutput(g_Tx);
+    for(i = 62 ;i < length ;i++)
+    {
+      tp_Data[tp_data_n] = Data[i];
+      tp_data_n++;
+    }    
+    TxTPData(id,length,tp_Data,Data[0]);
+  }
+  JudgeResponse(response,Data[0]);
+  //testWaitForTimeout(200);//接受等待时间
+}
+
+/// <Server>
+server_3e(byte response,dword id,byte Subfunction,byte length)
+{
+  int i;
+  g_server3E.id = id;
+  g_server3E.byte(0) = length;
+  g_server3E.byte(1) = 0x3E;
+  for(i = 2 ;i < 0x08 ;i++)
+  {
+    g_server3E.byte(i) = 0x00;
+  }
+  
+  if(length == 0x02)
+  {
+    g_server3E.byte(2) = Subfunction;
+  }
+  if(length > 0x02)
+  {
+    g_server3E.byte(2) = Subfunction;
+    for(i = 3;i <= length;i++)
+    {
+      g_server3E.byte(i) = 0x01;
+    }
+  }
+  output(g_server3E);
+  PrintMsgOutput(g_server3E);
+  if(response != 0 || id == gPhyId)
+  {
+    JudgeResponse(response,0x3E);
+  }
+}
+
+/// <Init>
+void ResetAllValue()
+{
+  long Curtime[8];
+  int i;
+  
+  g_Data.State = MsgTrue;
+  
+  download_progress_flag = 0;
+  transform_data = 0;
+  
+  putValue(Download,0);
+  putValue(FlashRate,0);
+  putValue(FlashTime,0);
+  ResetFlag = 0;
+  
+  getMeasurementStartTime(Curtime);
+  
+  
+  for(i = 0;i < 16;i++)
+  {
+    Serial[i] = 0x00;
+  }
+  
+  
+  
+  fingerdata[0] = ((Curtime[6] + 1900)/1000)*16 + ((Curtime[6] + 1900)/100)%10 ;//年
+  fingerdata[1] = ((((Curtime[6] + 1900)%100)/10)*16) + ((Curtime[6] + 1900)%100)%10;//年
+  fingerdata[2] = ((Curtime[5] + 1)/10)*16 + (Curtime[5] + 1)%10;//月
+  fingerdata[3] = (Curtime[4]/10)*16 + Curtime[4]%10;//日
+  
+//  fingerdata[0] = ((((Curtime[6] + 1900)%100)/10)*16) + ((Curtime[6] + 1900)%100)%10;//年
+//  fingerdata[1] = ((Curtime[5] + 1)/10)*16 + Curtime[5] + 1%10;//月
+//  fingerdata[2] = (Curtime[4]/10)*16 + Curtime[4]%10;//日
+  
+  
+//  for(i = 3;i < 9;i++)
+//  {
+//    fingerdata[i] = 0xFF;
+//  }
+  
+  FileLen = 0x00180000;
+  curDidlength = 0;
+  
+  
+  DriverLength       = 0x4000;
+  DriverStartAdress  = 0x0;
+  AppLength          = 0x00180000;
+  AppStartAdress     = 0xC0000;  //OK
+  //AppStartAdress     = 0x240001;//异常场景测试
+
+  /////////////////////////////////////
+  _P2Server   = 2000;//P2时间参数
+  
+  
+  _Sid31CheckFlag = 0;
+  
+  //用于获取当前雷达ID
+  
+  if(getValue(Rader_ID) == 0)
+  {
+    gPhyId = 0x772;
+    gFunId = 0x7DF;
+    gResId = 0x77a;
+    putValue(PhyID,gPhyId);
+    putValue(ResID,gResId);
+  }
+  
+  if(getValue(Rader_ID) == 1)
+  {
+    gPhyId = 0x773;
+    gFunId = 0x7DF;
+    gResId = 0x77b;
+    putValue(PhyID,gPhyId);
+    putValue(ResID,gResId);
+  }  
+
+  if(getValue(Rader_ID) == 2)
+  {
+    gPhyId = 0x771;
+    gFunId = 0x7DF;
+    gResId = 0x779;
+    putValue(PhyID,gPhyId);
+    putValue(ResID,gResId);
+  } 
+  
+  if(getValue(Rader_ID) == 3)
+  {
+    gPhyId = 0x770;
+    gFunId = 0x7DF;
+    gResId = 0x778;
+    putValue(PhyID,gPhyId);
+    putValue(ResID,gResId);
+  } 
+  
+  if(getValue(Rader_ID) == 4)
+  {
+    gPhyId = getValue(PhyID);
+    gFunId = 0x7DF;
+    gResId = getValue(ResID);
+    
+    if(gPhyId == 0 || gResId == 0)
+    {
+      putValue(PhyID,0x772);
+      putValue(ResID,0x77A);
+    }
+  } 
+}
+
+/// <Init>
+char HexToChar(char buff)
+{
+  if((buff >= 0x30) && (buff <= 0x39))
+  {
+    buff -= 0x30;
+  }
+  else if((buff >= 0x41) &&(buff <= 0x46))
+  {
+    buff -= 0x37;
+  }
+  else if((buff >= 0x61) && (buff <= 0x66))
+  {
+    buff -= 0x57;
+  }
+  else
+  {
+    buff = 0xFF;
+  }
+  return buff;
+}
+
+/// <CRC>
+byte crc8CheckSum(long buff[],dword len)
+{
+  long tmp;
+  dword i;
+  byte  checksum;
+  tmp=0x00;
+  for(i = 0;i < len;i++)
+  {
+    tmp= tmp + buff[i];
+  }
+  
+  checksum = ~((byte)tmp);
+  return checksum;
+}
+/// <CRC>
+word crc16CheckSum(long buff[],dword len)
+{
+  word crc;
+  dword i;
+  word tmp;
+  dword crctab[256] =
+    {
+      0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50A5, 0x60C6, 0x70E7,
+      0x8108, 0x9129, 0xA14A, 0xB16B, 0xC18C, 0xD1AD, 0xE1CE, 0xF1EF,
+      0x1231, 0x0210, 0x3273, 0x2252, 0x52B5, 0x4294, 0x72F7, 0x62D6,
+      0x9339, 0x8318, 0xB37B, 0xA35A, 0xD3BD, 0xC39C, 0xF3FF, 0xE3DE,
+      0x2462, 0x3443, 0x0420, 0x1401, 0x64E6, 0x74C7, 0x44A4, 0x5485,
+      0xA56A, 0xB54B, 0x8528, 0x9509, 0xE5EE, 0xF5CF, 0xC5AC, 0xD58D,
+      0x3653, 0x2672, 0x1611, 0x0630, 0x76D7, 0x66F6, 0x5695, 0x46B4,
+      0xB75B, 0xA77A, 0x9719, 0x8738, 0xF7DF, 0xE7FE, 0xD79D, 0xC7BC,
+      0x48C4, 0x58E5, 0x6886, 0x78A7, 0x0840, 0x1861, 0x2802, 0x3823,
+      0xC9CC, 0xD9ED, 0xE98E, 0xF9AF, 0x8948, 0x9969, 0xA90A, 0xB92B,
+      0x5AF5, 0x4AD4, 0x7AB7, 0x6A96, 0x1A71, 0x0A50, 0x3A33, 0x2A12,
+      0xDBFD, 0xCBDC, 0xFBBF, 0xEB9E, 0x9B79, 0x8B58, 0xBB3B, 0xAB1A,
+      0x6CA6, 0x7C87, 0x4CE4, 0x5CC5, 0x2C22, 0x3C03, 0x0C60, 0x1C41,
+      0xEDAE, 0xFD8F, 0xCDEC, 0xDDCD, 0xAD2A, 0xBD0B, 0x8D68, 0x9D49,
+      0x7E97, 0x6EB6, 0x5ED5, 0x4EF4, 0x3E13, 0x2E32, 0x1E51, 0x0E70,
+      0xFF9F, 0xEFBE, 0xDFDD, 0xCFFC, 0xBF1B, 0xAF3A, 0x9F59, 0x8F78,
+      0x9188, 0x81A9, 0xB1CA, 0xA1EB, 0xD10C, 0xC12D, 0xF14E, 0xE16F,
+      0x1080, 0x00A1, 0x30C2, 0x20E3, 0x5004, 0x4025, 0x7046, 0x6067,
+      0x83B9, 0x9398, 0xA3FB, 0xB3DA, 0xC33D, 0xD31C, 0xE37F, 0xF35E,
+      0x02B1, 0x1290, 0x22F3, 0x32D2, 0x4235, 0x5214, 0x6277, 0x7256,
+      0xB5EA, 0xA5CB, 0x95A8, 0x8589, 0xF56E, 0xE54F, 0xD52C, 0xC50D,
+      0x34E2, 0x24C3, 0x14A0, 0x0481, 0x7466, 0x6447, 0x5424, 0x4405,
+      0xA7DB, 0xB7FA, 0x8799, 0x97B8, 0xE75F, 0xF77E, 0xC71D, 0xD73C,
+      0x26D3, 0x36F2, 0x0691, 0x16B0, 0x6657, 0x7676, 0x4615, 0x5634,
+      0xD94C, 0xC96D, 0xF90E, 0xE92F, 0x99C8, 0x89E9, 0xB98A, 0xA9AB,
+      0x5844, 0x4865, 0x7806, 0x6827, 0x18C0, 0x08E1, 0x3882, 0x28A3,
+      0xCB7D, 0xDB5C, 0xEB3F, 0xFB1E, 0x8BF9, 0x9BD8, 0xABBB, 0xBB9A,
+      0x4A75, 0x5A54, 0x6A37, 0x7A16, 0x0AF1, 0x1AD0, 0x2AB3, 0x3A92,
+      0xFD2E, 0xED0F, 0xDD6C, 0xCD4D, 0xBDAA, 0xAD8B, 0x9DE8, 0x8DC9,
+      0x7C26, 0x6C07, 0x5C64, 0x4C45, 0x3CA2, 0x2C83, 0x1CE0, 0x0CC1,
+      0xEF1F, 0xFF3E, 0xCF5D, 0xDF7C, 0xAF9B, 0xBFBA, 0x8FD9, 0x9FF8,
+      0x6E17, 0x7E36, 0x4E55, 0x5E74, 0x2E93, 0x3EB2, 0x0ED1, 0x1EF0
+    };
+  crc = 0xFFFF;
+    
+  for(i = 0;i < len;i++)
+  {
+    tmp = (crc>>8)^buff[i];
+    crc = (crc<<8)^crctab[tmp];
+  }
+  return crc&0xFFFF;
+}
+/// <CRC>
+dword crc32CheckSum(long buff[],dword len)
+{
+  dword temp,Check;
+  dword Size;
+  dword crc32_table[256] =
+    {
+       0x00000000, 0x77073096, 0xEE0E612C, 0x990951BA,
+       0x076DC419, 0x706AF48F, 0xE963A535, 0x9E6495A3,
+       0x0EDB8832, 0x79DCB8A4, 0xE0D5E91E, 0x97D2D988,
+       0x09B64C2B, 0x7EB17CBD, 0xE7B82D07, 0x90BF1D91,
+       0x1DB71064, 0x6AB020F2, 0xF3B97148, 0x84BE41DE,
+       0x1ADAD47D, 0x6DDDE4EB, 0xF4D4B551, 0x83D385C7,
+       0x136C9856, 0x646BA8C0, 0xFD62F97A, 0x8A65C9EC,
+       0x14015C4F, 0x63066CD9, 0xFA0F3D63, 0x8D080DF5,
+       0x3B6E20C8, 0x4C69105E, 0xD56041E4, 0xA2677172,
+       0x3C03E4D1, 0x4B04D447, 0xD20D85FD, 0xA50AB56B,
+       0x35B5A8FA, 0x42B2986C, 0xDBBBC9D6, 0xACBCF940,
+       0x32D86CE3, 0x45DF5C75, 0xDCD60DCF, 0xABD13D59,
+       0x26D930AC, 0x51DE003A, 0xC8D75180, 0xBFD06116,
+       0x21B4F4B5, 0x56B3C423, 0xCFBA9599, 0xB8BDA50F,
+       0x2802B89E, 0x5F058808, 0xC60CD9B2, 0xB10BE924,
+       0x2F6F7C87, 0x58684C11, 0xC1611DAB, 0xB6662D3D,
+       0x76DC4190, 0x01DB7106, 0x98D220BC, 0xEFD5102A,
+       0x71B18589, 0x06B6B51F, 0x9FBFE4A5, 0xE8B8D433,
+       0x7807C9A2, 0x0F00F934, 0x9609A88E, 0xE10E9818,
+       0x7F6A0DBB, 0x086D3D2D, 0x91646C97, 0xE6635C01,
+       0x6B6B51F4, 0x1C6C6162, 0x856530D8, 0xF262004E,
+       0x6C0695ED, 0x1B01A57B, 0x8208F4C1, 0xF50FC457,
+       0x65B0D9C6, 0x12B7E950, 0x8BBEB8EA, 0xFCB9887C,
+       0x62DD1DDF, 0x15DA2D49, 0x8CD37CF3, 0xFBD44C65,
+       0x4DB26158, 0x3AB551CE, 0xA3BC0074, 0xD4BB30E2,
+       0x4ADFA541, 0x3DD895D7, 0xA4D1C46D, 0xD3D6F4FB,
+       0x4369E96A, 0x346ED9FC, 0xAD678846, 0xDA60B8D0,
+       0x44042D73, 0x33031DE5, 0xAA0A4C5F, 0xDD0D7CC9,
+       0x5005713C, 0x270241AA, 0xBE0B1010, 0xC90C2086,
+       0x5768B525, 0x206F85B3, 0xB966D409, 0xCE61E49F,
+       0x5EDEF90E, 0x29D9C998, 0xB0D09822, 0xC7D7A8B4,
+       0x59B33D17, 0x2EB40D81, 0xB7BD5C3B, 0xC0BA6CAD,
+       0xEDB88320, 0x9ABFB3B6, 0x03B6E20C, 0x74B1D29A,
+       0xEAD54739, 0x9DD277AF, 0x04DB2615, 0x73DC1683,
+       0xE3630B12, 0x94643B84, 0x0D6D6A3E, 0x7A6A5AA8,
+       0xE40ECF0B, 0x9309FF9D, 0x0A00AE27, 0x7D079EB1,
+       0xF00F9344, 0x8708A3D2, 0x1E01F268, 0x6906C2FE,
+       0xF762575D, 0x806567CB, 0x196C3671, 0x6E6B06E7,
+       0xFED41B76, 0x89D32BE0, 0x10DA7A5A, 0x67DD4ACC,
+       0xF9B9DF6F, 0x8EBEEFF9, 0x17B7BE43, 0x60B08ED5,
+       0xD6D6A3E8, 0xA1D1937E, 0x38D8C2C4, 0x4FDFF252,
+       0xD1BB67F1, 0xA6BC5767, 0x3FB506DD, 0x48B2364B,
+       0xD80D2BDA, 0xAF0A1B4C, 0x36034AF6, 0x41047A60,
+       0xDF60EFC3, 0xA867DF55, 0x316E8EEF, 0x4669BE79,
+       0xCB61B38C, 0xBC66831A, 0x256FD2A0, 0x5268E236,
+       0xCC0C7795, 0xBB0B4703, 0x220216B9, 0x5505262F,
+       0xC5BA3BBE, 0xB2BD0B28, 0x2BB45A92, 0x5CB36A04,
+       0xC2D7FFA7, 0xB5D0CF31, 0x2CD99E8B, 0x5BDEAE1D,
+       0x9B64C2B0, 0xEC63F226, 0x756AA39C, 0x026D930A,
+       0x9C0906A9, 0xEB0E363F, 0x72076785, 0x05005713,
+       0x95BF4A82, 0xE2B87A14, 0x7BB12BAE, 0x0CB61B38,
+       0x92D28E9B, 0xE5D5BE0D, 0x7CDCEFB7, 0x0BDBDF21,
+       0x86D3D2D4, 0xF1D4E242, 0x68DDB3F8, 0x1FDA836E,
+       0x81BE16CD, 0xF6B9265B, 0x6FB077E1, 0x18B74777,
+       0x88085AE6, 0xFF0F6A70, 0x66063BCA, 0x11010B5C,
+       0x8F659EFF, 0xF862AE69, 0x616BFFD3, 0x166CCF45,
+       0xA00AE278, 0xD70DD2EE, 0x4E048354, 0x3903B3C2,
+       0xA7672661, 0xD06016F7, 0x4969474D, 0x3E6E77DB,
+       0xAED16A4A, 0xD9D65ADC, 0x40DF0B66, 0x37D83BF0,
+       0xA9BCAE53, 0xDEBB9EC5, 0x47B2CF7F, 0x30B5FFE9,
+       0xBDBDF21C, 0xCABAC28A, 0x53B39330, 0x24B4A3A6,
+       0xBAD03605, 0xCDD70693, 0x54DE5729, 0x23D967BF,
+       0xB3667A2E, 0xC4614AB8, 0x5D681B02, 0x2A6F2B94,
+       0xB40BBE37, 0xC30C8EA1, 0x5A05DF1B, 0x2D02EF8D
+    };
+    
+  Size     = 0;
+  Check = 0xffffffff;
+    
+  while(len--)
+  {
+    temp     = (Check ^ buff[Size]) & 0x000000FF;
+    Check = ((Check >> 8) & 0x00FFFFFF) ^ crc32_table[temp];
+    Size++;
+  }
+  
+  Check = ~Check;
+  
+  return Check;
+}
+
+/// <Init>
+byte FileCheckSum(dword  buff[],dword len)
+{
+  dword i;
+  byte Sum;
+  Sum    = 0x00;
+  for(i = 0 ;i < len ;i++)
+  {
+    Sum += buff[i];
+  }
+  Sum = (byte)(0xFF - Sum);
+  return Sum;
+}
+
+/// <Init>
+void FileInit()
+{
+  dword i;
+  dword j;
+  dword k;
+  char  FilePath1[512];//驱动程序
+  dword FileHandle1;
+  
+  char  FilePath2[512];//APP程序
+  dword FileHandle2;
+    
+  char  cbuf[512];//驱动程序
+  long  copiedBytes;
+  
+  char  Buff[256];
+  dword Data[256];
+  
+  
+  dword FileRow;        //文件的行数
+  
+  byte  TempLen;
+  dword CurrentrowAdressLen;
+  int   status;
+  dword CurrentrowStartaddress;
+  dword byte_addr;
+  
+  
+  FileRow                = 0;
+  CurrentrowAdressLen    = 0;
+  CurrentrowStartaddress = 0;
+  
+  testWaitForEnvVar(Flash_set,0);
+  
+  
+  for(i = 0; i < 0x04000;i++)
+  {
+    g_Data.buffDriver[i] = 0xFF;
+  }
+  
+  
+  //首先解析驱动程序
+  getValue(FilePath_Driver,FilePath1);
+  FileHandle1 = openFileRead(FilePath1,0);  //打开文件进行读取（0：ASCII ,1：binary）
+  
+  if(FileHandle1 != 0)
+  {
+    while(fileGetString(Buff,elCount(Buff),FileHandle1) != 0)
+    {
+      if((Buff[0] == 'S') && ((Buff[1] == '1') ||(Buff[1] == '2') ||(Buff[1] == '3')))
+      {
+        FileRow++;
+        TempLen = (byte)((HexToChar(Buff[2]) << 4) + HexToChar(Buff[3]) + 1);  //该行的总长度
+        CurrentrowAdressLen = HexToChar(Buff[1]) + 1;
+        for(i = 0;i < TempLen ;i++)
+        {
+          Data[i] = (byte)((HexToChar(Buff[(i + 1)*2]) << 4) + HexToChar(Buff[(i + 1)*2 + 1]));
+          
+          for(i = 0;i < TempLen ;i++)
+          {
+            Data[i] = (byte)((HexToChar(Buff[(i + 1)*2]) << 4) + HexToChar(Buff[(i + 1)*2 + 1])); //以字节形式存放
+            
+            if(HexToChar(Buff[1]) + 1 == i)
+            {
+              if(HexToChar(Buff[1]) == 1)
+              {
+                if(((Data[1] << 8) + Data[2] ) < DriverStartAdress)
+                {
+                  status = 1;
+                  break;
+                }
+              }
+              if(HexToChar(Buff[1]) == 2)
+              {
+                if(((Data[1] << 16) + (Data[2] << 8) + Data[3]) < DriverStartAdress)
+                {
+                  status = 1;
+                  break;
+                }
+              }
+              if(HexToChar(Buff[1]) == 3)
+              {
+                if(((Data[1] << 24) + (Data[2] << 16) + (Data[3] << 8) + Data[4]) < DriverStartAdress)
+                {
+                  status = 1;
+                  break;
+                }
+              }
+            }
+            
+            status = 0;
+          }
+        }
+        if(status == 1)
+        {
+          continue;
+        }
+        
+        if(Data[TempLen - 1] == FileCheckSum(Data,TempLen -1))
+        {
+          CurrentrowStartaddress = 0;
+          
+          for(i = 0;i < CurrentrowAdressLen;i++)//数据的地址
+          {
+            CurrentrowStartaddress += Data[i+1] << (8 * (CurrentrowAdressLen - i - 1));
+          }
+          for(i = 0;i < (TempLen - 2 - CurrentrowAdressLen);i++)
+          {
+            byte_addr = CurrentrowStartaddress + i;
+            g_Data.buffDriver[byte_addr - DriverStartAdress] = Data[i + CurrentrowAdressLen + 1]; //前面八个字节用于存放地址跟长度
+          }
+        }
+        else
+        {
+          testStepFail("fail","%d line checksum error!",FileRow);
+        }
+      }
+    }
+  }
+  fileClose(FileHandle1);
+
+  
+  //解析APP报文
+  FileRow                = 0;
+  CurrentrowAdressLen    = 0;
+  CurrentrowStartaddress = 0;
+  
+  for(i = 0 ; i < 0x00180000;i++)
+  {
+     g_Data.buff[i] = 0xFF;
+  }
+  
+  getValue(FilePath,FilePath2);
+  FileHandle2 = openFileRead(FilePath2,0);  //打开文件进行读取（0：ASCII ,1：binary）
+  
+  if(FileHandle2 != 0)
+  {
+    while(fileGetString(Buff,elCount(Buff),FileHandle2) != 0)
+    {
+      if((Buff[0] == 'S') && ((Buff[1] == '1') ||(Buff[1] == '2') ||(Buff[1] == '3')))
+      {
+        FileRow++;
+        TempLen = (byte)((HexToChar(Buff[2]) << 4) + HexToChar(Buff[3]) + 1);  //该行的总长度
+        CurrentrowAdressLen = HexToChar(Buff[1]) + 1;
+        for(i = 0;i < TempLen ;i++)
+        {
+          Data[i] = (byte)((HexToChar(Buff[(i + 1)*2]) << 4) + HexToChar(Buff[(i + 1)*2 + 1])); //以字节形式存放
+          
+          if(HexToChar(Buff[1]) + 1 == i)
+          {
+            if(HexToChar(Buff[1]) == 1)
+            {
+//              if(((Data[1] << 24) + (Data[2] << 16) + (Data[3] << 8) + Data[4]) < 0x0C0000)
+//              {
+//                status = 1;
+//                break;
+//              }
+            }
+            if(HexToChar(Buff[1]) == 2)
+            {
+              if(((Data[1] << 16) + (Data[2] << 8) + Data[3]) < AppStartAdress)
+              {
+                status = 1;
+                break;
+              }
+            }
+            if(HexToChar(Buff[1]) == 3)
+            {
+              if(((Data[1] << 24) + (Data[2] << 16) + (Data[3] << 8) + Data[4]) < AppStartAdress)
+              {
+                status = 1;
+                break;
+              }
+            }
+          }
+          status = 0;
+        }
+        if(status == 1)
+        {
+          continue;
+        }
+        if(Data[TempLen - 1] == FileCheckSum(Data,TempLen -1))
+        {
+          CurrentrowStartaddress = 0;
+          for(i = 0;i < CurrentrowAdressLen ;i++)
+          {
+            CurrentrowStartaddress += Data[i+1] << (8*(CurrentrowAdressLen -1-i));
+          }
+          for(i = 0;i < TempLen -(CurrentrowAdressLen + 2);i++) //数据长度
+          {
+            byte_addr = CurrentrowStartaddress + i;
+            g_Data.buff[byte_addr - AppStartAdress] = Data[i + CurrentrowAdressLen + 1];
+          }
+        }
+        else
+        {
+          testStepFail("fail","%d line checksum error!",FileRow);
+        }
+      }
+    }
+  }
+  fileClose(FileHandle2);
+}
+
+
+/// <Server>
+server_10(byte response,dword id,byte Subfunction)
+{
+  dword length;  //该命令长度
+  length            = 0;
+  
+  Tx_Data[length++] = 0x10;
+  Tx_Data[length++] = Subfunction;
+  
+  TxMsgSrever(response,id,length,Tx_Data);
+  
+  
+  
+  
+  if(ResetFlag == 1)
+  {
+    testWaitForTimeout(2000);
+  }
+  ResetFlag = 0;
+}
+
+
+/// <Server>
+server_31(byte response,dword id,byte Subfunction,dword RID,dword data,dword flag)
+{
+  int i;
+  dword length;
+  length =0 ;
+  
+    Tx_Data[length++] = 0x31;
+    Tx_Data[length++] = Subfunction;
+    if(flag == 0) //擦除内存
+    {
+      Tx_Data[length++] = (byte)((RID >> 8)   & 0xFF);
+      Tx_Data[length++] = (byte)( RID         & 0xFF);      
+      Tx_Data[length++] = 0x44;
+      Tx_Data[length++] = (byte)((AppStartAdress >> 24) & 0xFF);//擦除地址
+      Tx_Data[length++] = (byte)((AppStartAdress >> 16) & 0xFF);
+      Tx_Data[length++] = (byte)((AppStartAdress >> 8)  & 0xFF);
+      Tx_Data[length++] = (byte)( AppStartAdress        & 0xFF);
+//      Tx_Data[length++] = 0x00;//错误擦除地址
+//      Tx_Data[length++] = 0x24;//错误擦除地址
+//      Tx_Data[length++] = 0x00;//错误擦除地址
+//      Tx_Data[length++] = 0x01;//错误擦除地址
+      Tx_Data[length++] = (byte)((AppLength >> 24) & 0xFF);//擦除长度
+      Tx_Data[length++] = (byte)((AppLength >> 16) & 0xFF);
+      Tx_Data[length++] = (byte)((AppLength >> 8)  & 0xFF);
+      Tx_Data[length++] = (byte)( AppLength        & 0xFF);
+    }
+    if(flag == 1) //校验
+    {
+      Tx_Data[length++] = (byte)((RID >> 8)   & 0xFF);
+      Tx_Data[length++] = (byte)( RID         & 0xFF);
+      Tx_Data[length++] = (byte)((data >> 24) & 0xFF);
+      Tx_Data[length++] = (byte)((data >> 16) & 0xFF);
+      Tx_Data[length++] = (byte)((data >>  8) & 0xFF);
+      Tx_Data[length++] = (byte)( data        & 0xFF);      
+    }
+    if(flag == 2) //只发DID
+    {
+      Tx_Data[length++] = (byte)((RID >> 8)   & 0xFF);
+      Tx_Data[length++] = (byte)( RID         & 0xFF);
+    }
+    if(flag == 3) //检查文件合法性
+    {
+      Tx_Data[length++] = (byte)((RID >> 8)   & 0xFF);
+      Tx_Data[length++] = (byte)( RID         & 0xFF);
+      
+      for(i = 0;i< 10;i++)
+      {
+        Tx_Data[length++] = FileValid[i];
+      }
+    }
+    if(flag == 4)//检查版本
+    {
+      Tx_Data[length++] = (byte)((RID >> 8)   & 0xFF);
+      Tx_Data[length++] = (byte)( RID         & 0xFF);
+      
+      for(i = 0;i < 1322;i++)
+      {
+        Tx_Data[length++] = VerCheck[i];
+      }
+    }
+  TxMsgSrever(response,id,length,Tx_Data);
+    
+  
+  if(_Sid31CheckFlag == 0)
+  {
+    if(g_Rx.byte(5) != 0x04)  //肯定响应参数为0x00时，pass
+    {
+      testStepFail("fail","Routine Completed unsuccessfully");
+    }
+  }
+}
+/// <Server>
+void server_85(byte response,dword id,byte subfunction)
+{
+  dword length;
+  length = 0;
+  
+  Tx_Data[length++] = 0x85;
+  Tx_Data[length++] = subfunction;
+  
+ /* if(g_Data.State == MsgTrue)
+  {
+    TxMsgSrever(response,id,length,Tx_Data);
+  }*/
+  TxMsgSrever(response,id,length,Tx_Data);
+  
+}
+
+/// <Server>
+void server_28(byte response,dword id,byte subfunction,byte data)
+{
+  dword length;
+  length = 0;
+  
+  Tx_Data[length++] = 0x28;
+  Tx_Data[length++] = subfunction;
+  Tx_Data[length++] = data;
+  
+  TxMsgSrever(response,id,length,Tx_Data);
+}
+
+/// <Server>
+void server_27(byte response,dword id,byte subfunction,byte flag)
+{
+  dword length;
+  byte  Seed_Key[4] = {0,0,0,0};
+  length = 0;
+  
+  if(subfunction == 0x11)
+  {
+    Tx_Data[length++] = 0x27;
+    Tx_Data[length++] = subfunction;
+  }
+  if(subfunction == 0x12)
+  {
+    if(flag == 0)
+    {
+      Cal_key(0x11,seed_L2,Seed_Key);
+      write("%x %x %x %x",seed_L2[0],seed_L2[1],seed_L2[2],seed_L2[3]);
+      write("%x %x %x %x",Seed_Key[0],Seed_Key[1],Seed_Key[2],Seed_Key[3]);
+    }
+    else
+    {
+      Seed_Key[0] = 0;
+    }
+    Tx_Data[length++] = 0x27;
+    Tx_Data[length++] = subfunction;
+    
+    Tx_Data[length++] = Seed_Key[0];
+    Tx_Data[length++] = Seed_Key[1];
+    Tx_Data[length++] = Seed_Key[2];
+    Tx_Data[length++] = Seed_Key[3];
+  }
+  TxMsgSrever(response,id,length,Tx_Data);
+}
+
+/// <Server>
+void server_2E(byte response,dword id,dword DID,dword DataRecord[],dword len)
+{
+  dword length;
+  int   i;
+  int   saveData;
+  length = 0;
+  saveData = 0;
+  
+  Tx_Data[length++] = 0x2E;
+  Tx_Data[length++] = (DID >> 8) & 0xFF ;
+  Tx_Data[length++] =  DID       & 0xFF;
+  
+  for(i = 0;i < len;i++)
+  {
+    Tx_Data[length++] = DataRecord[i];
+  }
+
+  TxMsgSrever(response,id,length,Tx_Data);
+}
+
+
+/// <Server>
+void server_22(byte response,dword id,dword DID)
+{
+  dword length;
+  length = 0;
+  
+  Tx_Data[length++] = 0x22;
+  Tx_Data[length++] = (DID >> 8) & 0xFF ;
+  Tx_Data[length++] =  DID       & 0xFF;
+  
+  CurDidData[0] = (DID >> 8) & 0xFF;
+  CurDidData[1] =  DID       & 0xFF;
+  
+  TxMsgSrever(response,id,length,Tx_Data);
+}
+
+
+
+/// <Server>
+void server_34(byte response,dword id,dword DataStartAddress,dword DataLen)
+{
+  dword length;
+  length      = 0;
+  
+  Tx_Data[length++] = 0x34;
+  Tx_Data[length++] = 0x00;
+  Tx_Data[length++] = 0x44;
+  Tx_Data[length++] = (byte)((DataStartAddress >> 24) & 0xFF);
+  Tx_Data[length++] = (byte)((DataStartAddress >> 16) & 0xFF);
+  Tx_Data[length++] = (byte)((DataStartAddress >>  8) & 0xFF);
+  Tx_Data[length++] = (byte)((DataStartAddress)       & 0xFF);
+  Tx_Data[length++] = (byte)((DataLen          >> 24) & 0xFF);
+  Tx_Data[length++] = (byte)((DataLen          >> 16) & 0xFF);
+  Tx_Data[length++] = (byte)((DataLen          >>  8) & 0xFF);
+  Tx_Data[length++] = (byte)((DataLen)                & 0xFF);
+  
+  TxMsgSrever(response,id,length,Tx_Data);
+  
+  block_length = (g_Rx.byte(3) <<8) + g_Rx.byte(4);//获取传输的块数据长度
+}
+
+
+//allDataLen:此次需要刷的总长度，blockLen：每一块能刷的长度，buffData[]：要刷的数据，extraData:0正常下载，其他不正常下载
+/// <Server>
+void server_36(byte response,dword id,dword allDataLen,dword blockLen,long buffData[],dword extraData)
+{
+  dword i,k,j;
+  dword length;
+  dword blockNum;
+  dword lastBlockLen;
+  
+  dword DataBlockLen[4096];//每个块的有效长度（不含头部的长度）
+  dword BlockData[4096][4096];//存储分块后的数据
+  dword blockIndex;//当前处理的块号
+  dword Tx_Data1[13]={0x36,0x01,0x4d,0x53,0x54,0x52,0x03,0x00,0x00,0x00,0x37,0x00,0x00};
+  blockNum = 0;
+  lastBlockLen = 0;
+  length = 0;
+  j = 0;
+  
+  if(allDataLen == FileLen)                             //进行APP下载，判断是否为完整文件下载
+  {
+    download_progress_flag = 1;                         //设置下载进度标志
+  }
+  
+  blockNum = allDataLen/(blockLen - 2);                 //计算要传输的块数量=app长度/雷达返回的blocksize-2
+
+  if((allDataLen % (blockLen - 2)) != 0){               //处理剩余数据
+    lastBlockLen = allDataLen%(blockLen - 2) + 2;       //最后一块长度，剩余数据加上36与块序列   
+    blockNum++;
+  }
+
+  //将数据存储起来  
+  for(i = 1;i <= blockNum;i++)
+  {
+    //计算每一块数据长度
+    if(i<blockNum) {
+      DataBlockLen[i] = blockLen - 2;  //正常块数据长度
+
+    } else {
+      DataBlockLen[i] = (lastBlockLen != 0) ? (lastBlockLen - 2) : (blockLen - 2);
+    }
+    
+    //填充块数据，对每一块数据进行赋值
+    for(k = 0;k < DataBlockLen[i];k++) {
+      BlockData[i][k] = buffData[(j++)];
+    }
+  }
+
+  //传输数据  
+  if(extraData == 0){                                   //正常下载模式
+    for(blockIndex = 1; blockIndex <= blockNum;blockIndex++){
+      length = 0;
+      Tx_Data[length++] = 0x36;                         //服务id字节位        
+      if(blockIndex==9) {
+        Tx_Data[length++] = 0x9;                        //正常块号9,验证块号不连续时改成B
+      }
+      else{Tx_Data[length++] = blockIndex;}             //正常块号
+//      Tx_Data[length++] = blockIndex;                 //正常块号
+//      Tx_Data[length++] = 1;                          //块号固定1
+        
+      for(i = 0;i < DataBlockLen[blockIndex];i++){  
+        Tx_Data[length++] =  BlockData[blockIndex][i];
+      }
+      if (allDataLen == FileLen) {                      //刷写app文件时
+        
+        if (blockIndex==1){                             //刷写第一个块时刷写2次
+              //TxMsgSrever(response,id,length,Tx_Data);//多发一个index=1的block
+              //TxMsgSrever1(0x0,id,13,Tx_Data1);       //连续帧丢失，1st Block发2帧后重发首帧
+              testWaitForTimeout(2);
+              TxMsgSrever(response,id,length,Tx_Data);
+          }else{
+              TxMsgSrever(response,id,length,Tx_Data);  //注释后数据块未完整传输
+          }
+      }
+    else{     TxMsgSrever(response,id,length,Tx_Data);
+    }        
+    }
+  }
+  else{
+    length = 0;
+    blockIndex = 0x02;
+    Tx_Data[length++] = 0x36;
+    Tx_Data[length++] = blockIndex;
+    for(i = 0;i < DataBlockLen[blockIndex];i++) {
+      Tx_Data[length++] =  BlockData[blockIndex][i];
+    }
+    TxMsgSrever(response,id,length,Tx_Data);
+  }
+
+//  crc_8 = crc8CheckSum(buffData,allDataLen);
+//  crc_16 = crc16CheckSum(buffData,allDataLen);  
+  CheckSum = crc32CheckSum(buffData,allDataLen);
+  
+  if(allDataLen == FileLen){
+     putvalue(Download,100);
+     putvalue(FlashRate,100);
+     download_progress_flag = 0;
+  }
+}
+/// <Server>
+void server_37(byte response,dword id,dword extraData){
+  dword length;
+  length = 0;
+  
+  if(extraData == 0x00)  {
+    Tx_Data[length++] = 0x37;
+  }
+  else  {
+    Tx_Data[length++] = 0x37;
+    Tx_Data[length++] = extraData;
+  }
+  
+  TxMsgSrever(response,id,length,Tx_Data);
+  
+  if(response == 0x77)  {
+    if(g_Rx.byte(0) != 1)    {
+      testStepFail("fail","37 server length error!");
+    }
+  }  
+}
+
+/// <Server>
+void server_11(byte response,dword id,byte subfunction)
+{
+  dword length;
+  length = 0;
+  
+  Tx_Data[length++] = 0x11;
+  Tx_Data[length++] = subfunction;
+  
+  TxMsgSrever(response,id,length,Tx_Data);
+  testWaitForTimeout(6000);
+}
+/// <Server>
+void server_14(byte response,dword id,dword data)
+{
+  dword length;
+  length = 0;
+  
+  Tx_Data[length++] = 0x14;
+  Tx_Data[length++] = (data >> 16) & 0xFF;
+  Tx_Data[length++] = (data >>  8) & 0xFF;
+  Tx_Data[length++] =  data        & 0xFF;
+  TxMsgSrever(response,id,length,Tx_Data);
+}
+testcase Download()
+{
+  float time;
+  float interval;
+  long Curtime[8];
+  message 0x771 sendone;
+  int i;
+  
+  time     = 0;
+  interval = 0;
+  setLogFileName("Logging", ".\\Logging\\Start_Stop_Logging{LocalTime}.blf");//设置日志文件的名称：相对路径+文件名（添加当前时间）
+  startLogging("Logging",1000);//开始录制log（提前1秒开始记录）
+    
+  time = timeNow()/100000.0;
+  
+  ResetFlag = 1;
+  putValueToControl("Flash","CAPL Output View","Enter Default session-进入默认会话");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_10(0x50,gFunId,0x01);
+  
+  if(getValue(FTOrAPP) == 1)
+  {
+    putValueToControl("Flash","CAPL Output View","Read DID-ECU产品型号");
+    putValueToControl("Flash","CAPL Output View",1,1);  
+    curDidlength = 16;
+    server_22(0x62,gPhyId,0xF197);
+    
+    putValueToControl("Flash","CAPL Output View","Read DID-ECU硬件版本号");
+    putValueToControl("Flash","CAPL Output View",1,1);  
+    curDidlength = 10;
+    server_22(0x62,gPhyId,0xF150);
+    
+    putValueToControl("Flash","CAPL Output View","Read DID-ECU软件版本号");
+    putValueToControl("Flash","CAPL Output View",1,1);  
+    curDidlength = 10;
+    server_22(0x62,gPhyId,0xF189);
+    for(i = 0;i < 10;i++) {
+      FileValid[i] = g_Did.readDID[i];
+    }
+    
+    curDidlength = 0;  
+  }
+      
+  putValueToControl("Flash","CAPL Output View","Enter Extended session-进入扩展会话");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_10(0x50,gFunId,0x03);
+  
+  if(getValue(FTOrAPP) == 1)  {
+    putValueToControl("Flash","CAPL Output View","Control DTC Off-关闭DTC设置");
+    putValueToControl("Flash","CAPL Output View",1,1);  
+    server_85(0xC5,gFunId,0x02);
+    
+    putValueToControl("Flash","CAPL Output View","Communication Control-关闭通讯");
+    putValueToControl("Flash","CAPL Output View",1,1);  
+    server_28(0x68,gFunId,0x03,0x01);
+  }
+  
+  putValueToControl("Flash","CAPL Output View","Enter Programming session-进入编程会话");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+
+  if(getValue(BOOT_Proto) == 0){
+    g_Tx.BRS = 0;
+    g_Tx.FDF = 0;
+    g_server3E.FDF = 0;
+    g_server3E.BRS = 0;
+  }
+  else  {
+    g_Tx.BRS = 1;
+    g_Tx.FDF = 1;
+    g_server3E.FDF = 1;
+    g_server3E.BRS = 1;
+  }
+  
+  gPhyId = getValue(PhyID);
+  gFunId = 0x7DF;
+  
+  sendone.DataLength=8;
+  sendone.BRS = 0;
+  sendone.FDF = 0;
+  sendone.byte(0) = 0x3;
+  sendone.byte(1) = 0xFB;
+  sendone.byte(2) = 0xA5;
+  sendone.byte(3) = 0x00;
+  testWaitForTimeout(10);
+  output(sendone);//升级不带验签文件时使用,完整性校验时去掉
+  testWaitForTimeout(30);
+
+  putValueToControl("Flash","CAPL Output View","Process Security Access-解密");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  
+  server_27(0x67,gPhyId,0x11,0);
+  
+//  testWaitForTimeout(1000);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  putValueToControl("FlashChery","CAPL Output View","check Routine-检查文件合法性");
+  putValueToControl("FlashChery","CAPL Output View",1,1);
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性,验签asc文件
+  
+  
+  putValueToControl("FlashChery","CAPL Output View","check Routine-检查版本");
+  putValueToControl("FlashChery","CAPL Output View",1,1);  
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  putValueToControl("Flash","CAPL Output View","Write ProgrammingDate-写序列号");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  putValueToControl("Flash","CAPL Output View","Write ProgrammingDate-编程日期");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  putValueToControl("Flash","CAPL Output View","Request Download-请求驱动下载");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+//  stop();
+  ////  
+  putValueToControl("Flash","CAPL Output View","Transfer Data-驱动下载");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+//  
+  putValueToControl("Flash","CAPL Output View","Transfer Exit-驱动下载完成");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_37(0x77,gPhyId,0x00);
+  
+  putValueToControl("FlashChery","CAPL Output View","check Routine-驱动校验");
+  putValueToControl("FlashChery","CAPL Output View",1,1);  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  //server_31(0x71,gPhyId,0x01,0x0202,0x01020304,1);//最后1：校验码错误
+
+  putValueToControl("Flash","CAPL Output View","Routine Control – erase Memory-擦除内存");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+    
+  putValueToControl("Flash","CAPL Output View","Request Download-请求软件下载");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  //server_34(0x74,gPhyId,0x000D0000,0x00180000);   //测试错误刷写地址，同时修改31服务中擦地址
+  server_34(0x74,gPhyId,AppStartAdress,FileLen);//正常刷写内容地址
+  
+  putValueToControl("Flash","CAPL Output View","Transfer Data-软件下载");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  //server_36(0x76,gPhyId,0x00740000,block_length,g_Data.buff,0x00);
+  server_36(0x76,gPhyId,FileLen,block_length,g_Data.buff,0x00);//正常
+  //server_36(0x76,gPhyId,FileLen,block_length+2,g_Data.buff,0x00);//块长度大于反馈长度，NRC13修改block_length2049/2051
+  
+  putValueToControl("Flash","CAPL Output View","Request Transfer Exit-软件下载完成");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_37(0x77,gPhyId,0x00);
+  
+  putValueToControl("Flash","CAPL Output View","check Routine-检查已下载数据");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_31(0x71,gPhyId,0x01,0x0203,0,2);//最后2：只发送RID
+  
+  putValueToControl("flash","CAPL Output View","Check Programming Dependencies");
+  putValueToControl("flash","CAPL Output View",1,1);  
+  server_31(0x71,gPhyId,0x01,0xFF01,0,2);
+  
+  putValueToControl("Flash","CAPL Output View","ECU Reset – hard reset-硬件复位");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_11(0x51,gPhyId,0x01);
+  
+  putValueToControl("Flash","CAPL Output View","Enter Extended session-进入扩展会话");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_10(0x50,gFunId,0x03);
+  
+  putValueToControl("Flash","CAPL Output View","Communication Control-打开通讯");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_28(0x68,gFunId,0x00,0x01);
+  
+  putValueToControl("Flash","CAPL Output View","Control DTC Off-打开DTC设置");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_85(0xC5,gFunId,0x01);
+  
+  putValueToControl("Flash","CAPL Output View","Clear DTC-清除DTC");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_14(0x54,gFunId,0xFFFFFF);
+    
+  putValueToControl("Flash","CAPL Output View","Enter Default session-进入默认会话");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_10(0x50,gFunId,0x01);
+
+  interval = (timeNow()/100000.0) - time;
+  putValue(FlashTime,interval);
+  
+    stopLogging("Logging");//停止录制log（滞后1秒停止记录）
+}
+
+testcase Tc_FlowError()
+{
+  server_10(0x50,gPhyId,0x01);
+  
+  curDidlength = 8;
+  server_22(0x62,gPhyId,0xF195);
+  curDidlength = 0;
+  
+  server_10(0x00,gFunId,0x83);
+  
+  server_31(0x71,gPhyId,0x01,0x0203,0,2);
+  
+  server_85(0x00,gFunId,0x82);
+  
+  server_28(0x00,gFunId,0x81,0x03);
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  block_length = 0x802;
+  
+  server_36(0x24,gPhyId,0x00180000,block_length,g_Data.buff,0x00);
+}
+
+testcase Tc_SCError()
+{
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+  
+  curDidlength = 8;
+  server_22(0x62,gPhyId,0xF195);
+  curDidlength = 0;
+  
+  server_10(0x00,gFunId,0x83);
+  
+  server_31(0x71,gPhyId,0x01,0x0203,0,2);
+  
+  server_85(0x00,gFunId,0x82);
+  
+  server_28(0x00,gFunId,0x81,0x03);
+  
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  server_34(0x74,gPhyId,0x000C0000,0x00180000);
+
+  server_36(0x73,gPhyId,0x00180000,block_length,g_Data.buff,0x01);
+}
+
+testcase Tc_checksumError()
+{
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+  
+  curDidlength = 8;
+  server_22(0x62,gPhyId,0xF195);
+  curDidlength = 0;
+  
+  server_10(0x00,gFunId,0x83);
+  
+  server_31(0x71,gPhyId,0x01,0x0203,0,2);
+  
+  server_85(0x00,gFunId,0x82);
+  
+  server_28(0x00,gFunId,0x81,0x03);
+  
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  server_34(0x74,gPhyId,0x000C0000,0x00180000);
+
+  server_36(0x76,gPhyId,0x00180000,block_length,g_Data.buff,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  crc_16 = crc_16 + 1;
+  
+  server_31(0x71,gPhyId,0x01,0xFF01,0,1);//最后1：校验
+  
+  server_11(0x51,gPhyId,0x01);
+  
+  server_10(0x00,gFunId,0x83);
+  
+  server_14(0x54,gPhyId,0xFFFFFF);
+  
+}
+
+testcase Tc_S3Error()
+{
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+  
+  curDidlength = 8;
+  server_22(0x62,gPhyId,0xF195);
+  curDidlength = 0;
+  
+  server_10(0x00,gFunId,0x83);
+  
+  server_31(0x71,gPhyId,0x01,0x0203,0,2);
+  
+  server_85(0x00,gFunId,0x82);
+  
+  server_28(0x00,gFunId,0x81,0x03);
+  
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  server_34(0x74,gPhyId,0x000C0000,0x00180000);
+
+  server_36(0x76,gPhyId,0x00180000,block_length,g_Data.buff,0x00);
+  cancelTimer(test_online);
+  
+  testWaitForTimeout(8000);
+  
+  server_37(0x7F,gPhyId,0x00);
+    
+}
+
+testcase TC_Skip_VersionCheck_boot() //跳过版本校验
+{
+  ResetAllValue();
+  
+  testStep("","保证里面只有BOOT");
+  
+  ResetFlag = 1;
+  server_10(0x50,gFunId,0x01);
+  server_10(0x50,gFunId,0x03);
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  
+  
+  testStep("","进行第二步，跳过版本号");
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+    
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+  
+//  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x22,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x22,gPhyId,DriverStartAdress,DriverLength);
+}
+
+testcase TC_Skip_VersionCheck_APP() //跳过版本校验
+{
+  ResetAllValue();
+  
+  testStep("","保证里面有APP");
+  
+  ResetFlag = 1;
+  server_10(0x50,gFunId,0x01);
+  server_10(0x50,gFunId,0x03);
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  server_34(0x74,gPhyId,AppStartAdress,FileLen);
+  
+  server_36(0x76,gPhyId,FileLen,block_length,g_Data.buff,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0203,0,2);//最后2：只发送RID
+  
+  server_31(0x71,gPhyId,0x01,0xFF01,0,2);
+  
+  server_11(0x51,gPhyId,0x01);
+  
+  server_10(0x50,gFunId,0x03);
+  
+  server_28(0x68,gFunId,0x00,0x01);
+  
+  server_85(0xC5,gFunId,0x01);
+  
+  server_14(0x54,gFunId,0xFFFFFF);
+    
+  server_10(0x50,gFunId,0x01);
+  
+  testStep("","进行第二步，跳过版本号");
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+    
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+  
+//  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x22,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x22,gPhyId,DriverStartAdress,DriverLength);
+}
+
+
+testcase TC_CheckcertificateError_boot() //文件合法性校验失败-验签证书校验失败
+{
+  ResetAllValue();
+  testStep("","保证里面只有BOOT");
+  
+  ResetFlag = 1;
+  server_10(0x50,gFunId,0x01);
+  server_10(0x50,gFunId,0x03);
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+
+  testStep("","验签证书失败");
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+    
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  _Sid31CheckFlag = 1;
+  
+  VerCheck[40] = VerCheck[40] + 1;
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+  
+  if(g_Rx.byte(5) != 0x05)
+  {
+    testStepFail("Fail","ned receive 0x05,cur receive:%d",g_Rx.byte(5));
+  }
+  
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x22,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x22,gPhyId,DriverStartAdress,DriverLength);
+}
+testcase TC_CheckcertificateError_app() //文件合法性校验失败-验签证书校验失败
+{
+  ResetAllValue();
+  testStep("","保证里面有APP");
+  
+  ResetFlag = 1;
+  server_10(0x50,gFunId,0x01);
+  server_10(0x50,gFunId,0x03);
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  server_34(0x74,gPhyId,AppStartAdress,FileLen);
+  
+  server_36(0x76,gPhyId,FileLen,block_length,g_Data.buff,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0203,0,2);//最后2：只发送RID
+  
+  server_31(0x71,gPhyId,0x01,0xFF01,0,2);
+  
+  server_11(0x51,gPhyId,0x01);
+  
+  server_10(0x50,gFunId,0x03);
+  
+  server_28(0x68,gFunId,0x00,0x01);
+  
+  server_85(0xC5,gFunId,0x01);
+  
+  server_14(0x54,gFunId,0xFFFFFF);
+    
+  server_10(0x50,gFunId,0x01);
+
+  testStep("","验签证书失败");
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+    
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  _Sid31CheckFlag = 1;
+  
+  VerCheck[40] = VerCheck[40] + 1;
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+  
+  if(g_Rx.byte(5) != 0x05)
+  {
+    testStepFail("Fail","ned receive 0x05,cur receive:%d",g_Rx.byte(5));
+  }
+  
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x22,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x22,gPhyId,DriverStartAdress,DriverLength);
+}
+
+testcase TC_CheckSignError1_boot() //文件合法性校验失败-信息签名值校验失败
+{
+  ResetAllValue();
+  testStep("","保证里面只有BOOT");
+  
+  ResetFlag = 1;
+  server_10(0x50,gFunId,0x01);
+  server_10(0x50,gFunId,0x03);
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  
+//  curDidlength = 1;
+//  server_22(0x62,gPhyId,0x0201);
+//  curDidlength = 0;
+  
+  
+
+  testStep("","信息签名失败");
+
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+    
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  _Sid31CheckFlag = 1;
+  
+  VerCheck[1056] = 0;
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+  
+  if(g_Rx.byte(5) != 0x06)
+  {
+    testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+  }
+  
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+  
+  if(g_Rx.byte(5) != 0x05)
+  {
+    testStepFail("Fail","ned receive 0x05,cur receive:%d",g_Rx.byte(5));
+  }
+    
+  server_2E(0x22,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x22,gPhyId,DriverStartAdress,DriverLength);
+  
+//  curDidlength = 1;
+//  server_22(0x62,gPhyId,0xF1ED);
+//  curDidlength = 0;
+  
+}
+testcase TC_CheckSignError1_app() //文件合法性校验失败-信息签名值校验失败
+{
+  ResetAllValue();
+  testStep("","保证里面有APP");
+  
+  ResetFlag = 1;
+  server_10(0x50,gFunId,0x01);
+  server_10(0x50,gFunId,0x03);
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  server_34(0x74,gPhyId,AppStartAdress,FileLen);
+  
+  server_36(0x76,gPhyId,FileLen,block_length,g_Data.buff,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0203,0,2);//最后2：只发送RID
+  
+  server_31(0x71,gPhyId,0x01,0xFF01,0,2);
+  
+  server_11(0x51,gPhyId,0x01);
+  
+  server_10(0x50,gFunId,0x03);
+  
+  server_28(0x68,gFunId,0x00,0x01);
+  
+  server_85(0xC5,gFunId,0x01);
+  
+  server_14(0x54,gFunId,0xFFFFFF);
+    
+  server_10(0x50,gFunId,0x01);
+
+  testStep("","信息签名失败");
+
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+    
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  _Sid31CheckFlag = 1;
+  
+  VerCheck[1056] = 0;
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+  
+  if(g_Rx.byte(5) != 0x06)
+  {
+    testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+  }
+  
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+  
+  if(g_Rx.byte(5) != 0x05)
+  {
+    testStepFail("Fail","ned receive 0x05,cur receive:%d",g_Rx.byte(5));
+  }
+    
+  server_2E(0x22,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x22,gPhyId,DriverStartAdress,DriverLength);
+}
+
+testcase TC_CheckSignError2_boot() //文件合法性校验失败-信息签名值校验失败
+{
+  ResetAllValue();
+  testStep("","保证里面只有BOOT");
+  
+  ResetFlag = 1;
+  server_10(0x50,gFunId,0x01);
+  server_10(0x50,gFunId,0x03);
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+
+  testStep("","信息签名失败");
+
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+    
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  _Sid31CheckFlag = 1;
+  
+  VerCheck[0] = VerCheck[0]+1;
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+  
+  if(g_Rx.byte(5) != 0x06)
+  {
+    testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+  }
+  
+  _Sid31CheckFlag = 0; //只有boot情况下
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x22,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x22,gPhyId,DriverStartAdress,DriverLength);
+}
+testcase TC_CheckSignError2_app() //文件合法性校验失败-信息签名值校验失败
+{
+  ResetAllValue();
+  testStep("","保证里面有APP");
+  
+  ResetFlag = 1;
+  server_10(0x50,gFunId,0x01);
+  server_10(0x50,gFunId,0x03);
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  server_34(0x74,gPhyId,AppStartAdress,FileLen);
+  
+  server_36(0x76,gPhyId,FileLen,block_length,g_Data.buff,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0203,0,2);//最后2：只发送RID
+  
+  server_31(0x71,gPhyId,0x01,0xFF01,0,2);
+  
+  server_11(0x51,gPhyId,0x01);
+  
+  server_10(0x50,gFunId,0x03);
+  
+  server_28(0x68,gFunId,0x00,0x01);
+  
+  server_85(0xC5,gFunId,0x01);
+  
+  server_14(0x54,gFunId,0xFFFFFF);
+    
+  server_10(0x50,gFunId,0x01);
+
+  testStep("","信息签名失败");
+
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+    
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  _Sid31CheckFlag = 1;
+  
+  VerCheck[0] = VerCheck[0] + 1;
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+  
+  if(g_Rx.byte(5) != 0x06)
+  {
+    testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+  }
+  _Sid31CheckFlag = 0;
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+      
+  server_2E(0x22,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x22,gPhyId,DriverStartAdress,DriverLength);
+}
+testcase TC_CheckSignError3_boot() //文件合法性校验失败-信息签名值校验失败
+{
+  ResetAllValue();
+  testStep("","保证里面只有BOOT");
+  
+  ResetFlag = 1;
+  server_10(0x50,gFunId,0x01);
+  server_10(0x50,gFunId,0x03);
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+
+  testStep("","信息签名失败");
+
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+    
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  _Sid31CheckFlag = 1;
+  
+  VerCheck[1066] = VerCheck[1066]+1;
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+  
+  if(g_Rx.byte(5) != 0x06)
+  {
+    testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+  }
+  
+  _Sid31CheckFlag = 0; //只有boot情况下
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x22,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x22,gPhyId,DriverStartAdress,DriverLength);
+}
+testcase TC_CheckSignError3_app() //文件合法性校验失败-信息签名值校验失败
+{
+  ResetAllValue();
+  testStep("","保证里面有APP");
+  
+  ResetFlag = 1;
+  server_10(0x50,gFunId,0x01);
+  server_10(0x50,gFunId,0x03);
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  server_34(0x74,gPhyId,AppStartAdress,FileLen);
+  
+  server_36(0x76,gPhyId,FileLen,block_length,g_Data.buff,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0203,0,2);//最后2：只发送RID
+  
+  server_31(0x71,gPhyId,0x01,0xFF01,0,2);
+  
+  server_11(0x51,gPhyId,0x01);
+  
+  server_10(0x50,gFunId,0x03);
+  
+  server_28(0x68,gFunId,0x00,0x01);
+  
+  server_85(0xC5,gFunId,0x01);
+  
+  server_14(0x54,gFunId,0xFFFFFF);
+    
+  server_10(0x50,gFunId,0x01);
+
+  testStep("","信息签名失败");
+
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+    
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  _Sid31CheckFlag = 1;
+  
+  VerCheck[1066] = VerCheck[1066] + 1;
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+  
+  if(g_Rx.byte(5) != 0x06)
+  {
+    testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+  }
+  _Sid31CheckFlag = 0;
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+      
+  server_2E(0x22,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x22,gPhyId,DriverStartAdress,DriverLength);
+}
+
+
+testcase TC_Skip_Checkcertificate_boot() //未发文件合法性检查
+{
+  ResetAllValue();
+  testStep("","保证里面只有BOOT");
+  
+  ResetFlag = 1;
+  server_10(0x50,gFunId,0x01);
+  server_10(0x50,gFunId,0x03);
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+
+  testStep("","未发文件合法性检查");
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+  
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+    
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  
+  _Sid31CheckFlag = 1;
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+  
+  if(g_Rx.byte(5) != 0x05)
+  {
+    testStepFail("Fail","ned receive 0x05,cur receive:%d",g_Rx.byte(5));
+  }  
+    
+  server_2E(0x22,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x22,gPhyId,DriverStartAdress,DriverLength);
+}
+
+testcase TC_Skip_Checkcertificate_app() //未发文件合法性检查
+{
+  ResetAllValue();
+  testStep("","保证里面有APP");
+  
+  ResetFlag = 1;
+  server_10(0x50,gFunId,0x01);
+  server_10(0x50,gFunId,0x03);  
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  server_34(0x74,gPhyId,AppStartAdress,FileLen);
+  
+  server_36(0x76,gPhyId,FileLen,block_length,g_Data.buff,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0203,0,2);//最后2：只发送RID
+  
+  server_31(0x71,gPhyId,0x01,0xFF01,0,2);
+  
+  server_11(0x51,gPhyId,0x01);
+  
+  server_10(0x50,gFunId,0x03);
+  
+  server_28(0x68,gFunId,0x00,0x01);
+  
+  server_85(0xC5,gFunId,0x01);
+  
+  server_14(0x54,gFunId,0xFFFFFF);
+    
+  server_10(0x50,gFunId,0x01);
+
+  testStep("","未发文件合法性检查");
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+  
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+    
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  
+  _Sid31CheckFlag = 1;
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+  
+  if(g_Rx.byte(5) != 0x05)
+  {
+    testStepFail("Fail","ned receive 0x05,cur receive:%d",g_Rx.byte(5));
+  }  
+    
+  server_2E(0x22,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x22,gPhyId,DriverStartAdress,DriverLength);
+}
+
+testcase TC_Version_Over_byte1_boot()
+{
+  ResetAllValue();
+  testStep("","保证里面只有BOOT");
+  
+  ResetFlag = 1;
+  server_10(0x50,gFunId,0x01);
+  server_10(0x50,gFunId,0x03);
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  testStep("1","修改版本第一个byte，版本较高");
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+  
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+    
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  
+  _Sid31CheckFlag = 1;
+  
+  VerCheck[1056] = VerCheck[1056] + 1; //大版本加1，其他降为0
+  
+  VerCheck[1058] = 0x30;
+  VerCheck[1059] = 0x30;
+  
+  VerCheck[1061] = 0x30;
+  VerCheck[1062] = 0x30;
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+  
+  if(g_Rx.byte(5) != 0x06)
+  {
+    testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+  }
+  _Sid31CheckFlag = 0;
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+
+  
+  server_2E(0x22,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x22,gPhyId,DriverStartAdress,DriverLength);
+
+  
+//  testStep("2","修改版本第一个byte，版本较高");
+//  
+//  ResetFlag = 1;
+//  server_10(0x50,gPhyId,0x01);
+//  
+//  curDidlength = 16;
+//  server_22(0x62,gPhyId,0xF197);
+//  
+//  curDidlength = 10;
+//  server_22(0x62,gPhyId,0xF150);
+//  
+//  curDidlength = 10;
+//  server_22(0x62,gPhyId,0xF189);
+//  
+//  curDidlength = 0;  
+//    
+//  server_10(0x50,gFunId,0x03);
+//  
+//  server_85(0xC5,gFunId,0x02);
+//  
+//  server_28(0x68,gFunId,0x03,0x01);
+//  
+//  ResetFlag = 1;
+//  server_10(0x50,gPhyId,0x02);
+//  
+//  server_27(0x67,gPhyId,0x11,0);
+//  server_27(0x67,gPhyId,0x12,0);
+//    
+//  ReadVerSion(); //此函数用于读取VerCheck[]
+//  
+//  
+//  _Sid31CheckFlag = 1;
+//  
+//  VerCheck[1057] = VerCheck[1057] + 1;
+//  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+//  
+//  if(g_Rx.byte(5) != 0x06)
+//  {
+//    testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+//  }
+//  _Sid31CheckFlag = 0;
+//  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+//
+//  
+//  server_2E(0x22,gPhyId,0xF198,Serial,16);
+//  
+//  server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+//  
+//  server_34(0x22,gPhyId,DriverStartAdress,DriverLength);
+  
+}
+
+testcase TC_Version_Over_byte1_app()
+{
+  ResetAllValue();
+  testStep("","保证里面有APP");
+  
+  ResetFlag = 1;
+  server_10(0x50,gFunId,0x01);
+  server_10(0x50,gFunId,0x03);  
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  server_34(0x74,gPhyId,AppStartAdress,FileLen);
+  
+  server_36(0x76,gPhyId,FileLen,block_length,g_Data.buff,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0203,0,2);//最后2：只发送RID
+  
+  server_31(0x71,gPhyId,0x01,0xFF01,0,2);
+  
+  server_11(0x51,gPhyId,0x01);
+  
+  server_10(0x50,gFunId,0x03);
+  
+  server_28(0x68,gFunId,0x00,0x01);
+  
+  server_85(0xC5,gFunId,0x01);
+  
+  server_14(0x54,gFunId,0xFFFFFF);
+    
+  server_10(0x50,gFunId,0x01);
+  
+  testStep("1","修改版本第一个byte，版本较高");
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+  
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+    
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  
+  _Sid31CheckFlag = 1;
+  
+  VerCheck[1056] = VerCheck[1056] + 1; //大版本加1，其他降为0
+  
+  VerCheck[1058] = 0x30;
+  VerCheck[1059] = 0x30;
+  
+  VerCheck[1061] = 0x30;
+  VerCheck[1062] = 0x30;
+
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+  
+  if(g_Rx.byte(5) != 0x06)
+  {
+    testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+  }
+  _Sid31CheckFlag = 0;
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+
+  
+  server_2E(0x22,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x22,gPhyId,DriverStartAdress,DriverLength);
+
+//  testStep("","保证里面有APP");
+//  
+//  ResetFlag = 1;
+//  server_10(0x50,gFunId,0x01);
+//  server_10(0x50,gFunId,0x03);  
+//  server_10(0x50,gPhyId,0x02);
+//  
+//  server_27(0x67,gPhyId,0x11,0);
+//  server_27(0x67,gPhyId,0x12,0);
+//  
+//  ReadVerSion(); //此函数用于读取VerCheck[]
+//  
+//  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+//
+//  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+//    
+//  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+//  
+//  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+//  
+//  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+//  
+//  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+//  
+//  server_37(0x77,gPhyId,0x00);
+//  
+//  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+//  
+//  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+//  
+//  server_34(0x74,gPhyId,AppStartAdress,FileLen);
+//  
+//  server_36(0x76,gPhyId,FileLen,block_length,g_Data.buff,0x00);
+//  
+//  server_37(0x77,gPhyId,0x00);
+//  
+//  server_31(0x71,gPhyId,0x01,0x0203,0,2);//最后2：只发送RID
+//  
+//  server_31(0x71,gPhyId,0x01,0xFF01,0,2);
+//  
+//  server_11(0x51,gPhyId,0x01);
+//  
+//  server_10(0x50,gFunId,0x03);
+//  
+//  server_28(0x68,gFunId,0x00,0x01);
+//  
+//  server_85(0xC5,gFunId,0x01);
+//  
+//  server_14(0x54,gFunId,0xFFFFFF);
+//    
+//  server_10(0x50,gFunId,0x01);
+//
+//  testStep("2","修改版本第一个byte，版本较高");
+//  
+//  ResetFlag = 1;
+//  server_10(0x50,gPhyId,0x01);
+//  
+//  curDidlength = 16;
+//  server_22(0x62,gPhyId,0xF197);
+//  
+//  curDidlength = 10;
+//  server_22(0x62,gPhyId,0xF150);
+//  
+//  curDidlength = 10;
+//  server_22(0x62,gPhyId,0xF189);
+//  
+//  curDidlength = 0;  
+//    
+//  server_10(0x50,gFunId,0x03);
+//  
+//  server_85(0xC5,gFunId,0x02);
+//  
+//  server_28(0x68,gFunId,0x03,0x01);
+//  
+//  ResetFlag = 1;
+//  server_10(0x50,gPhyId,0x02);
+//  
+//  server_27(0x67,gPhyId,0x11,0);
+//  server_27(0x67,gPhyId,0x12,0);
+//    
+//  ReadVerSion(); //此函数用于读取VerCheck[]
+//  
+//  
+//  _Sid31CheckFlag = 1;
+//  
+//  VerCheck[1057] = VerCheck[1057] + 1;
+//  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+//  
+//  if(g_Rx.byte(5) != 0x06)
+//  {
+//    testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+//  }
+//  _Sid31CheckFlag = 0;
+//  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+//
+//  
+//  server_2E(0x22,gPhyId,0xF198,Serial,16);
+//  
+//  server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+//  
+//  server_34(0x22,gPhyId,DriverStartAdress,DriverLength);
+  
+}
+testcase TC_Version_Over_byte2_boot()
+{
+  ResetAllValue();
+  testStep("","保证里面只有BOOT");
+  
+  ResetFlag = 1;
+  server_10(0x50,gFunId,0x01);
+  server_10(0x50,gFunId,0x03);
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  testStep("1","修改版本第2个byte，版本较高");
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+  
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+    
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  
+  _Sid31CheckFlag = 1;
+  
+  VerCheck[1058] = VerCheck[1058] + 1;
+  
+  VerCheck[1059] = 0x30;
+  
+  VerCheck[1061] = 0x30;
+  VerCheck[1062] = 0x30;
+  
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+  
+  if(g_Rx.byte(5) != 0x06)
+  {
+    testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+  }
+  _Sid31CheckFlag = 0;
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+
+  
+  server_2E(0x22,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x22,gPhyId,DriverStartAdress,DriverLength);
+  
+  
+  testStep("2","修改版本第2个byte，版本较高");
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+  
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+    
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  
+  _Sid31CheckFlag = 1;
+  
+  VerCheck[1059] = VerCheck[1059] + 1;
+    
+  VerCheck[1061] = 0x30;
+  VerCheck[1062] = 0x30;
+  
+  
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+  
+  if(g_Rx.byte(5) != 0x06)
+  {
+    testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+  }
+  _Sid31CheckFlag = 0;
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+
+  
+  server_2E(0x22,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x22,gPhyId,DriverStartAdress,DriverLength);
+  
+}
+
+testcase TC_Version_Over_byte2_app()
+{
+  ResetAllValue();
+  testStep("","保证里面有APP");
+  
+  ResetFlag = 1;
+  server_10(0x50,gFunId,0x01);
+  server_10(0x50,gFunId,0x03);  
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  server_34(0x74,gPhyId,AppStartAdress,FileLen);
+  
+  server_36(0x76,gPhyId,FileLen,block_length,g_Data.buff,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0203,0,2);//最后2：只发送RID
+  
+  server_31(0x71,gPhyId,0x01,0xFF01,0,2);
+  
+  server_11(0x51,gPhyId,0x01);
+  
+  server_10(0x50,gFunId,0x03);
+  
+  server_28(0x68,gFunId,0x00,0x01);
+  
+  server_85(0xC5,gFunId,0x01);
+  
+  server_14(0x54,gFunId,0xFFFFFF);
+    
+  server_10(0x50,gFunId,0x01);
+  
+  testStep("1","修改版本第2个byte，版本较高");
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+  
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+    
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  
+  _Sid31CheckFlag = 1;
+  
+  VerCheck[1058] = VerCheck[1058] + 1;
+  
+  
+  VerCheck[1059] = 0x30;
+  
+  VerCheck[1061] = 0x30;
+  VerCheck[1062] = 0x30;
+  
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+  
+  if(g_Rx.byte(5) != 0x06)
+  {
+    testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+  }
+  _Sid31CheckFlag = 0;
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+
+  
+  server_2E(0x22,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x22,gPhyId,DriverStartAdress,DriverLength);
+  
+//  testStep("","保证里面有APP");
+//  
+//  ResetFlag = 1;
+//  server_10(0x50,gFunId,0x01);
+//  server_10(0x50,gFunId,0x03);  
+//  server_10(0x50,gPhyId,0x02);
+//  
+//  server_27(0x67,gPhyId,0x11,0);
+//  server_27(0x67,gPhyId,0x12,0);
+//  
+//  ReadVerSion(); //此函数用于读取VerCheck[]
+//  
+//  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+//
+//  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+//    
+//  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+//  
+//  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+//  
+//  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+//  
+//  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+//  
+//  server_37(0x77,gPhyId,0x00);
+//  
+//  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+//  
+//  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+//  
+//  server_34(0x74,gPhyId,AppStartAdress,FileLen);
+//  
+//  server_36(0x76,gPhyId,FileLen,block_length,g_Data.buff,0x00);
+//  
+//  server_37(0x77,gPhyId,0x00);
+//  
+//  server_31(0x71,gPhyId,0x01,0x0203,0,2);//最后2：只发送RID
+//  
+//  server_31(0x71,gPhyId,0x01,0xFF01,0,2);
+//  
+//  server_11(0x51,gPhyId,0x01);
+//  
+//  server_10(0x50,gFunId,0x03);
+//  
+//  server_28(0x68,gFunId,0x00,0x01);
+//  
+//  server_85(0xC5,gFunId,0x01);
+//  
+//  server_14(0x54,gFunId,0xFFFFFF);
+//    
+//  server_10(0x50,gFunId,0x01);
+  
+  testStep("2","修改版本第一个byte，版本较高");
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+  
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+    
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  
+  _Sid31CheckFlag = 1;
+  
+  VerCheck[1059] = VerCheck[1059] + 1;
+    
+  VerCheck[1061] = 0x30;
+  VerCheck[1062] = 0x30;
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+  
+  if(g_Rx.byte(5) != 0x06)
+  {
+    testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+  }
+  _Sid31CheckFlag = 0;
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+
+  
+  server_2E(0x22,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x22,gPhyId,DriverStartAdress,DriverLength);
+  
+}
+
+testcase TC_Version_Over_byte3_boot()
+{
+  ResetAllValue();
+  testStep("","保证里面只有BOOT");
+  
+  ResetFlag = 1;
+  server_10(0x50,gFunId,0x01);
+  server_10(0x50,gFunId,0x03);
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  testStep("1","修改版本第2个byte，版本较高");
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+  
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+    
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  
+  _Sid31CheckFlag = 1;
+  
+  VerCheck[1061] = VerCheck[1061] + 1;
+  
+  VerCheck[1062] = 0x30;
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+  
+  if(g_Rx.byte(5) != 0x06)
+  {
+    testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+  }
+  _Sid31CheckFlag = 0;
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+
+  
+  server_2E(0x22,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x22,gPhyId,DriverStartAdress,DriverLength);
+  
+  
+  testStep("2","修改版本第2个byte，版本较高");
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+  
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+    
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  
+  _Sid31CheckFlag = 1;
+  
+  VerCheck[1062] = VerCheck[1062] + 1;
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+  
+  if(g_Rx.byte(5) != 0x06)
+  {
+    testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+  }
+  _Sid31CheckFlag = 0;
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+
+  
+  server_2E(0x22,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x22,gPhyId,DriverStartAdress,DriverLength);
+  
+}
+
+testcase TC_Version_Over_byte3_app()
+{
+  ResetAllValue();
+  testStep("","保证里面有APP");
+  
+  ResetFlag = 1;
+  server_10(0x50,gFunId,0x01);
+  server_10(0x50,gFunId,0x03);  
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  server_34(0x74,gPhyId,AppStartAdress,FileLen);
+  
+  server_36(0x76,gPhyId,FileLen,block_length,g_Data.buff,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0203,0,2);//最后2：只发送RID
+  
+  server_31(0x71,gPhyId,0x01,0xFF01,0,2);
+  
+  server_11(0x51,gPhyId,0x01);
+  
+  server_10(0x50,gFunId,0x03);
+  
+  server_28(0x68,gFunId,0x00,0x01);
+  
+  server_85(0xC5,gFunId,0x01);
+  
+  server_14(0x54,gFunId,0xFFFFFF);
+    
+  server_10(0x50,gFunId,0x01);
+  
+  testStep("1","修改版本第2个byte，版本较高");
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+  
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+    
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  
+  _Sid31CheckFlag = 1;
+  
+  VerCheck[1061] = VerCheck[1061] + 1;
+  
+  VerCheck[1062] = 0x30;
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+  
+  if(g_Rx.byte(5) != 0x06)
+  {
+    testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+  }
+  _Sid31CheckFlag = 0;
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+
+  
+  server_2E(0x22,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x22,gPhyId,DriverStartAdress,DriverLength);
+  
+//  testStep("","保证里面有APP");
+//  
+//  ResetFlag = 1;
+//  server_10(0x50,gFunId,0x01);
+//  server_10(0x50,gFunId,0x03);  
+//  server_10(0x50,gPhyId,0x02);
+//  
+//  server_27(0x67,gPhyId,0x11,0);
+//  server_27(0x67,gPhyId,0x12,0);
+//  
+//  ReadVerSion(); //此函数用于读取VerCheck[]
+//  
+//  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+//
+//  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+//    
+//  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+//  
+//  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+//  
+//  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+//  
+//  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+//  
+//  server_37(0x77,gPhyId,0x00);
+//  
+//  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+//  
+//  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+//  
+//  server_34(0x74,gPhyId,AppStartAdress,FileLen);
+//  
+//  server_36(0x76,gPhyId,FileLen,block_length,g_Data.buff,0x00);
+//  
+//  server_37(0x77,gPhyId,0x00);
+//  
+//  server_31(0x71,gPhyId,0x01,0x0203,0,2);//最后2：只发送RID
+//  
+//  server_31(0x71,gPhyId,0x01,0xFF01,0,2);
+//  
+//  server_11(0x51,gPhyId,0x01);
+//  
+//  server_10(0x50,gFunId,0x03);
+//  
+//  server_28(0x68,gFunId,0x00,0x01);
+//  
+//  server_85(0xC5,gFunId,0x01);
+//  
+//  server_14(0x54,gFunId,0xFFFFFF);
+//    
+//  server_10(0x50,gFunId,0x01);
+  
+  testStep("2","修改版本第一个byte，版本较高");
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+  
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+    
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  
+  _Sid31CheckFlag = 1;
+  
+  VerCheck[1062] = VerCheck[1062] + 1;
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+  
+  if(g_Rx.byte(5) != 0x06)
+  {
+    testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+  }
+  _Sid31CheckFlag = 0;
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+
+  
+  server_2E(0x22,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x22,gPhyId,DriverStartAdress,DriverLength);
+  
+}
+
+
+testcase TC_Version_under_boot()
+{
+  int i;
+  ResetAllValue();
+  testStep("","保证里面只有BOOT");
+  
+  ResetFlag = 1;
+  server_10(0x50,gFunId,0x01);
+  server_10(0x50,gFunId,0x03);
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  
+//  curDidlength = 1;
+//  server_22(0x62,gPhyId,0x0201);
+//  curDidlength = 0;
+  
+  
+
+  testStep("","信息签名失败");
+
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+    
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  _Sid31CheckFlag = 1;
+  
+  
+  if(VerCheck[1056] >0x30) //大版本降低，其他版本上升
+  {
+    testStep("","修改byte1");
+    
+    VerCheck[1056] = VerCheck[1056] - 1 ;
+    
+    VerCheck[1058] = VerCheck[1058] + 1 ;
+    VerCheck[1059] = VerCheck[1059] + 1 ;
+    
+    VerCheck[1061] = VerCheck[1061] + 1 ;
+    VerCheck[1062] = VerCheck[1062] + 1 ;
+    
+    server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+    
+    if(g_Rx.byte(5) != 0x06)
+    {
+      testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+    }
+    
+    server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+    if(g_Rx.byte(5) != 0x05)
+    {
+      testStepFail("Fail","ned receive 0x05,cur receive:%d",g_Rx.byte(5));
+    }
+      
+    server_2E(0x22,gPhyId,0xF198,Serial,16);
+    
+    server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+    
+    server_34(0x22,gPhyId,DriverStartAdress,DriverLength);
+  }
+
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  if(VerCheck[1058] >0x30)
+  {
+    testStep("","修改byte3");
+    VerCheck[1058] = VerCheck[1058] - 1 ;
+    
+    VerCheck[1059] = VerCheck[1059] + 1 ;
+    
+    VerCheck[1061] = VerCheck[1061] + 1 ;
+    VerCheck[1062] = VerCheck[1062] + 1 ;
+    
+    server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+    
+    if(g_Rx.byte(5) != 0x06)
+    {
+      testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+    }
+    
+    server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+    if(g_Rx.byte(5) != 0x05)
+    {
+      testStepFail("Fail","ned receive 0x05,cur receive:%d",g_Rx.byte(5));
+    }
+      
+    server_2E(0x22,gPhyId,0xF198,Serial,16);
+    
+    server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+    
+    server_34(0x22,gPhyId,DriverStartAdress,DriverLength);    
+  }
+  
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  if(VerCheck[1059] >0x30)
+  {
+    testStep("","修改byte4");
+    VerCheck[1059] = VerCheck[1059] - 1 ;
+    
+    VerCheck[1061] = VerCheck[1061] + 1 ;
+    VerCheck[1062] = VerCheck[1062] + 1 ;
+    
+    server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+    
+    if(g_Rx.byte(5) != 0x06)
+    {
+      testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+    }
+    
+    server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+    if(g_Rx.byte(5) != 0x05)
+    {
+      testStepFail("Fail","ned receive 0x05,cur receive:%d",g_Rx.byte(5));
+    }
+      
+    server_2E(0x22,gPhyId,0xF198,Serial,16);
+    
+    server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+    
+    server_34(0x22,gPhyId,DriverStartAdress,DriverLength);    
+  }
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  if(VerCheck[1061] >0x30)
+  {
+    testStep("","修改byte6");
+    VerCheck[1061] = VerCheck[1061] - 1 ;
+    
+    VerCheck[1062] = VerCheck[1062] + 1 ;
+    
+    server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+    
+    if(g_Rx.byte(5) != 0x06)
+    {
+      testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+    }
+    
+    server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+    if(g_Rx.byte(5) != 0x05)
+    {
+      testStepFail("Fail","ned receive 0x05,cur receive:%d",g_Rx.byte(5));
+    }
+      
+    server_2E(0x22,gPhyId,0xF198,Serial,16);
+    
+    server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+    
+    server_34(0x22,gPhyId,DriverStartAdress,DriverLength);    
+  }
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  if(VerCheck[1062] >0x30)
+  {
+    testStep("","修改byte7");
+    VerCheck[1062] = VerCheck[1062] - 1 ;
+    server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+    
+    if(g_Rx.byte(5) != 0x06)
+    {
+      testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+    }
+    
+    server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+    if(g_Rx.byte(5) != 0x05)
+    {
+      testStepFail("Fail","ned receive 0x05,cur receive:%d",g_Rx.byte(5));
+    }
+      
+    server_2E(0x22,gPhyId,0xF198,Serial,16);
+    
+    server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+    
+    server_34(0x22,gPhyId,DriverStartAdress,DriverLength);    
+  }
+  
+  
+//  VerCheck[1056] = 0;
+//  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+//  
+//  if(g_Rx.byte(5) != 0x06)
+//  {
+//    testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+//  }
+//  
+//  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+//  
+//  if(g_Rx.byte(5) != 0x05)
+//  {
+//    testStepFail("Fail","ned receive 0x05,cur receive:%d",g_Rx.byte(5));
+//  }
+//    
+//  server_2E(0x22,gPhyId,0xF198,Serial,16);
+//  
+//  server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+//  
+//  server_34(0x22,gPhyId,DriverStartAdress,DriverLength);
+}
+
+testcase TC_Version_under_app()
+{
+  int i;
+  ResetAllValue();
+  testStep("","保证里面有APP");
+  
+  ResetFlag = 1;
+  server_10(0x50,gFunId,0x01);
+  server_10(0x50,gFunId,0x03);  
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  server_34(0x74,gPhyId,AppStartAdress,FileLen);
+  
+  server_36(0x76,gPhyId,FileLen,block_length,g_Data.buff,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0203,0,2);//最后2：只发送RID
+  
+  server_31(0x71,gPhyId,0x01,0xFF01,0,2);
+  
+  server_11(0x51,gPhyId,0x01);
+  
+  server_10(0x50,gFunId,0x03);
+  
+  server_28(0x68,gFunId,0x00,0x01);
+  
+  server_85(0xC5,gFunId,0x01);
+  
+  server_14(0x54,gFunId,0xFFFFFF);
+    
+  server_10(0x50,gFunId,0x01);
+    
+  
+
+  testStep("","信息签名失败");
+
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+    
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  _Sid31CheckFlag = 1;
+  
+  
+  if(VerCheck[1056] >0x30)
+  {
+    testStep("","修改byte1");
+    
+    VerCheck[1056] = VerCheck[1056] - 1 ;
+    
+    VerCheck[1058] = VerCheck[1058] + 1 ;
+    VerCheck[1059] = VerCheck[1059] + 1 ;
+    
+    VerCheck[1061] = VerCheck[1061] + 1 ;
+    VerCheck[1062] = VerCheck[1062] + 1 ;
+    
+    
+    server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+    
+    if(g_Rx.byte(5) != 0x06)
+    {
+      testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+    }
+    
+    server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+    if(g_Rx.byte(5) != 0x05)
+    {
+      testStepFail("Fail","ned receive 0x05,cur receive:%d",g_Rx.byte(5));
+    }
+      
+    server_2E(0x22,gPhyId,0xF198,Serial,16);
+    
+    server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+    
+    server_34(0x22,gPhyId,DriverStartAdress,DriverLength);
+  }
+
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  if(VerCheck[1058] >0x30)
+  {
+    testStep("","修改byte3");
+    VerCheck[1058] = VerCheck[1058] - 1 ;
+    
+    VerCheck[1059] = VerCheck[1059] + 1 ;
+    
+    VerCheck[1061] = VerCheck[1061] + 1 ;
+    VerCheck[1062] = VerCheck[1062] + 1 ;
+    
+    
+    server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+    
+    if(g_Rx.byte(5) != 0x06)
+    {
+      testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+    }
+    
+    server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+    if(g_Rx.byte(5) != 0x05)
+    {
+      testStepFail("Fail","ned receive 0x05,cur receive:%d",g_Rx.byte(5));
+    }
+      
+    server_2E(0x22,gPhyId,0xF198,Serial,16);
+    
+    server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+    
+    server_34(0x22,gPhyId,DriverStartAdress,DriverLength);    
+  }
+  
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  if(VerCheck[1059] >0x30)
+  {
+    testStep("","修改byte4");
+    VerCheck[1059] = VerCheck[1059] - 1 ;
+        
+    VerCheck[1061] = VerCheck[1061] + 1 ;
+    VerCheck[1062] = VerCheck[1062] + 1 ;
+    
+    server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+    
+    if(g_Rx.byte(5) != 0x06)
+    {
+      testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+    }
+    
+    server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+    if(g_Rx.byte(5) != 0x05)
+    {
+      testStepFail("Fail","ned receive 0x05,cur receive:%d",g_Rx.byte(5));
+    }
+      
+    server_2E(0x22,gPhyId,0xF198,Serial,16);
+    
+    server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+    
+    server_34(0x22,gPhyId,DriverStartAdress,DriverLength);    
+  }
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  if(VerCheck[1061] >0x30)
+  {
+    testStep("","修改byte6");
+    VerCheck[1061] = VerCheck[1061] - 1 ;
+    
+    VerCheck[1062] = VerCheck[1062] + 1 ;
+    
+    server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+    
+    if(g_Rx.byte(5) != 0x06)
+    {
+      testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+    }
+    
+    server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+    if(g_Rx.byte(5) != 0x05)
+    {
+      testStepFail("Fail","ned receive 0x05,cur receive:%d",g_Rx.byte(5));
+    }
+      
+    server_2E(0x22,gPhyId,0xF198,Serial,16);
+    
+    server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+    
+    server_34(0x22,gPhyId,DriverStartAdress,DriverLength);    
+  }
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  if(VerCheck[1062] >0x30)
+  {
+    testStep("","修改byte7");
+    VerCheck[1062] = VerCheck[1062] - 1 ;
+    server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+    
+    if(g_Rx.byte(5) != 0x06)
+    {
+      testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+    }
+    
+    server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+    if(g_Rx.byte(5) != 0x05)
+    {
+      testStepFail("Fail","ned receive 0x05,cur receive:%d",g_Rx.byte(5));
+    }
+      
+    server_2E(0x22,gPhyId,0xF198,Serial,16);
+    
+    server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+    
+    server_34(0x22,gPhyId,DriverStartAdress,DriverLength);    
+  }
+  
+}
+
+
+testcase TC_SafeError() //安全访问失败
+{
+  ResetAllValue();
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+  
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x35,gPhyId,0x12,1);
+    
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  _Sid31CheckFlag = 1;
+  server_31(0x33,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+      
+  server_31(0x33,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x33,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x33,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x33,gPhyId,0,0x00004000);
+}
+
+testcase TC_Skip_Safe() //跳过安全访问
+{
+  ResetAllValue();
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+  
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+//  server_27(0x67,gPhyId,0x11,0);
+//  server_27(0x35,gPhyId,0x12,1);
+    
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  _Sid31CheckFlag = 1;
+  server_31(0x33,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+      
+  server_31(0x33,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x33,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x33,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x33,gPhyId,0,0x00004000);
+}
+
+testcase TC_DriverError() //check32不一致
+{
+  ResetAllValue();
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+  
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+  
+  
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  _Sid31CheckFlag = 1;
+  CheckSum = CheckSum+1;
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  
+  if(g_Rx.byte(5) != 0x05)
+  {
+    testStepFail("Fail","ned receive 0x05,cur receive:%d",g_Rx.byte(5));
+  }
+  
+}
+
+testcase TC_APPError_1() //APP不一致
+{
+  ResetAllValue();
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+  
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+  
+  
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+    
+//  server_34(0x74,gPhyId,0x000C0000,0x00740000);
+  server_34(0x74,gPhyId,AppStartAdress,FileLen);
+  
+  
+  g_Data.buff[0] = g_Data.buff[0] +1;
+ // server_36(0x76,gPhyId,0x00740000,block_length,g_Data.buff,0x00);
+  server_36(0x76,gPhyId,FileLen,block_length,g_Data.buff,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  _Sid31CheckFlag = 1;
+  server_31(0x71,gPhyId,0x01,0x0203,0,2);//最后2：只发送RID
+  
+  if(g_Rx.byte(5) != 0x05)
+  {
+    testStepFail("Fail","ned receive 0x05,cur receive:%d",g_Rx.byte(5));
+  }    
+}
+
+
+testcase TC_3E80_befor() //APP不一致
+{
+  ResetAllValue();
+  
+  ResetFlag = 1;
+  output(g_server3E);
+  server_10(0x50,gPhyId,0x01);
+  output(g_server3E);
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  output(g_server3E);
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  output(g_server3E);
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  output(g_server3E);
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  output(g_server3E);
+  server_85(0xC5,gFunId,0x02);
+  output(g_server3E);
+  server_28(0x68,gFunId,0x03,0x01);
+  output(g_server3E);
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  output(g_server3E);
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  output(g_server3E);
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+  
+  output(g_server3E);
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+  output(g_server3E);
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  output(g_server3E);
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  output(g_server3E);
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  output(g_server3E);
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  output(g_server3E);
+  server_37(0x77,gPhyId,0x00);
+  output(g_server3E);
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  output(g_server3E);
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  output(g_server3E);
+//  server_34(0x74,gPhyId,0x000C0000,0x00740000);
+  server_34(0x74,gPhyId,AppStartAdress,FileLen);
+  
+  output(g_server3E);
+ // server_36(0x76,gPhyId,0x00740000,block_length,g_Data.buff,0x00);
+  server_36(0x76,gPhyId,FileLen,block_length,g_Data.buff,0x00);
+  output(g_server3E);
+  server_37(0x77,gPhyId,0x00);
+  
+  output(g_server3E);
+  server_31(0x71,gPhyId,0x01,0x0203,0,2);//最后2：只发送RID
+  
+  output(g_server3E);
+  server_31(0x71,gPhyId,0x01,0xFF01,0,2);
+  
+  output(g_server3E);
+  server_11(0x51,gPhyId,0x01);
+  
+  output(g_server3E);
+  server_10(0x50,gFunId,0x03);
+  
+  output(g_server3E);
+  server_28(0x68,gFunId,0x00,0x01);
+  
+  output(g_server3E);
+  server_85(0xC5,gFunId,0x01);
+  
+  output(g_server3E);
+  server_14(0x54,gFunId,0xFFFFFF);
+    
+  output(g_server3E);
+  server_10(0x50,gFunId,0x01);
+  
+  
+}
+testcase TC_3E80_after() //APP不一致
+{
+  ResetAllValue();
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+  output(g_server3E);
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  output(g_server3E);
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  output(g_server3E);
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  output(g_server3E);
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  output(g_server3E);
+  server_85(0xC5,gFunId,0x02);
+  output(g_server3E);
+  server_28(0x68,gFunId,0x03,0x01);
+  output(g_server3E);
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  output(g_server3E);
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  output(g_server3E);
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+  
+  output(g_server3E);
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+  output(g_server3E);
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  output(g_server3E);
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  output(g_server3E);
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  output(g_server3E);
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  output(g_server3E);
+  server_37(0x77,gPhyId,0x00);
+  output(g_server3E);
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  output(g_server3E);
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  output(g_server3E);
+//  server_34(0x74,gPhyId,0x000C0000,0x00740000);
+  server_34(0x74,gPhyId,AppStartAdress,FileLen);
+  
+  output(g_server3E);
+ // server_36(0x76,gPhyId,0x00740000,block_length,g_Data.buff,0x00);
+  server_36(0x76,gPhyId,FileLen,block_length,g_Data.buff,0x00);
+  output(g_server3E);
+  server_37(0x77,gPhyId,0x00);
+  
+  output(g_server3E);
+  server_31(0x71,gPhyId,0x01,0x0203,0,2);//最后2：只发送RID
+  
+  output(g_server3E);
+  server_31(0x71,gPhyId,0x01,0xFF01,0,2);
+  
+  output(g_server3E);
+  server_11(0x51,gPhyId,0x01);
+  
+  output(g_server3E);
+  server_10(0x50,gFunId,0x03);
+  
+  output(g_server3E);
+  server_28(0x68,gFunId,0x00,0x01);
+  
+  output(g_server3E);
+  server_85(0xC5,gFunId,0x01);
+  
+  output(g_server3E);
+  server_14(0x54,gFunId,0xFFFFFF);
+    
+  output(g_server3E);
+  server_10(0x50,gFunId,0x01);
+  output(g_server3E);
+  
+}
+
+testcase TC_1() //文件合法性校验失败-信息签名值校验失败
+{
+  ResetAllValue();
+  testStep("","保证里面只有BOOT");
+  
+  ResetFlag = 1;
+  server_10(0x50,gFunId,0x01);
+  server_10(0x50,gFunId,0x03);
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  testWaitForTimeout(1000);
+  curDidlength = 1;
+  server_22(0x62,gPhyId,0x0201);
+  curDidlength = 0;
+  
+  if(g_Did.readDID[0] != 1)
+  {
+    testStepFail("Fail","02 01 不对：%d",g_Did.readDID[0]);
+  }
+
+  testStep("","信息签名失败");
+
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x01);
+
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  
+  curDidlength = 0;  
+    
+  server_10(0x50,gFunId,0x03);
+  
+  server_85(0xC5,gFunId,0x02);
+  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+    
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  _Sid31CheckFlag = 1;
+  
+  VerCheck[1056] = 0;
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+  
+  if(g_Rx.byte(5) != 0x06)
+  {
+    testStepFail("Fail","ned receive 0x06,cur receive:%d",g_Rx.byte(5));
+  }
+  
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+  
+  if(g_Rx.byte(5) != 0x05)
+  {
+    testStepFail("Fail","ned receive 0x05,cur receive:%d",g_Rx.byte(5));
+  }
+    
+  server_2E(0x22,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x22,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x22,gPhyId,DriverStartAdress,DriverLength);
+  
+  
+  curDidlength = 1;
+  server_22(0x62,gPhyId,0xF1ED);
+  curDidlength = 0;
+  if(g_Did.readDID[0] != 1)
+  {
+    testStepFail("Fail","F1 ED 不对：%d",g_Did.readDID[0]);
+  }
+  
+  
+  curDidlength = 1;
+  server_22(0x62,gPhyId,0x0201);
+  curDidlength = 0;
+  
+  if(g_Did.readDID[0] != 1)
+  {
+    testStepFail("Fail","02 01 不对：%d",g_Did.readDID[0]);
+  }
+  
+  ResetFlag = 1;
+  server_10(0x50,gFunId,0x01);
+  server_10(0x50,gFunId,0x03);
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  server_34(0x74,gPhyId,AppStartAdress,FileLen);
+  
+  server_36(0x76,gPhyId,FileLen,block_length,g_Data.buff,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0203,0,2);//最后2：只发送RID
+  
+  server_31(0x71,gPhyId,0x01,0xFF01,0,2);
+  
+  server_11(0x51,gPhyId,0x01);
+  
+  server_10(0x50,gFunId,0x03);
+  
+  server_28(0x68,gFunId,0x00,0x01);
+  
+  server_85(0xC5,gFunId,0x01);
+  
+  server_14(0x54,gFunId,0xFFFFFF);
+    
+  server_10(0x50,gFunId,0x01);
+  
+  curDidlength = 1;
+  server_22(0x62,gPhyId,0x0201);
+  curDidlength = 0;
+  
+  if(g_Did.readDID[0] != 0)
+  {
+    testStepFail("Fail","02 01 不对：%d",g_Did.readDID[0]);
+  }
+  
+  
+  curDidlength = 1;
+  server_22(0x62,gPhyId,0xF1ED);
+  
+  curDidlength = 0;
+  if(g_Did.readDID[0] != 0)
+  {
+    testStepFail("Fail","F1 ED 不对：%d",g_Did.readDID[0]);
+  }
+  
+  
+}
+
+testcase TC_2() //跳过版本校验
+{
+  ResetFlag = 1;
+  
+  server_10(0x50,gFunId,0x01);
+  server_10(0x50,gFunId,0x03);
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  
+  testWaitForTimeout(1000);
+  
+  curDidlength = 1;
+  server_22(0x62,gPhyId,0x0201);
+  curDidlength = 0;
+  
+  if(g_Did.readDID[0] != 1)
+  {
+    testStepFail("Fail","02 01 不对：%d",g_Did.readDID[0]);
+  }
+  
+  ResetFlag = 1;
+  server_10(0x50,gFunId,0x01);
+  server_10(0x50,gFunId,0x03);
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  testWaitForTimeout(1000);
+  curDidlength = 1;
+  server_22(0x62,gPhyId,0x0201);
+  curDidlength = 0;
+  
+  if(g_Did.readDID[0] != 2)
+  {
+    testStepFail("Fail","02 01 不对：%d",g_Did.readDID[0]);
+  }
+  
+  
+  ResetFlag = 1;
+  server_10(0x50,gFunId,0x01);
+  server_10(0x50,gFunId,0x03);
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  testWaitForTimeout(1000);
+  curDidlength = 1;
+  server_22(0x62,gPhyId,0x0201);
+  curDidlength = 0;
+
+  if(g_Did.readDID[0] != 2)
+  {
+    testStepFail("Fail","02 01 不对：%d",g_Did.readDID[0]);
+  }
+  
+  
+}
+testcase TC_3() //文件合法性校验失败-信息签名值校验失败
+{
+  
+  ResetFlag = 1;
+  server_10(0x50,gFunId,0x01);
+  server_10(0x50,gFunId,0x03);
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  server_34(0x74,gPhyId,AppStartAdress,FileLen);
+  
+  g_Data.buff[0] = g_Data.buff[0] + 1;
+  
+  server_36(0x76,gPhyId,FileLen,block_length,g_Data.buff,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0203,0,2);//最后2：只发送RID
+  
+  server_31(0x71,gPhyId,0x01,0xFF01,0,2);
+  
+  curDidlength = 1;
+  server_22(0x62,gPhyId,0xF1ED);
+  curDidlength = 0;
+  
+  if(g_Did.readDID[0] != 2)
+  {
+    testStepFail("Fail","F1 ED 不对：%d",g_Did.readDID[0]);
+  }
+  
+  
+  server_11(0x51,gPhyId,0x01);
+  
+  server_10(0x50,gFunId,0x03);
+  
+//  server_28(0x68,gFunId,0x00,0x01);
+//  
+//  server_85(0xC5,gFunId,0x01);
+//  
+//  server_14(0x54,gFunId,0xFFFFFF);
+//    
+//  server_10(0x50,gFunId,0x01);
+  
+  curDidlength = 1;
+  server_22(0x62,gPhyId,0x0201);
+  curDidlength = 0;
+  
+  curDidlength = 1;
+  server_22(0x62,gPhyId,0xF1ED);
+  curDidlength = 0;
+  
+  
+  ResetFlag = 1;
+  server_10(0x50,gFunId,0x01);
+  server_10(0x50,gFunId,0x03);
+  server_10(0x50,gPhyId,0x02);
+  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum,1);//最后1：校验
+  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+  
+  server_34(0x74,gPhyId,AppStartAdress,FileLen);
+  
+  g_Data.buff[0] = g_Data.buff[0] - 1;
+  server_36(0x76,gPhyId,FileLen,block_length,g_Data.buff,0x00);
+  
+  server_37(0x77,gPhyId,0x00);
+  
+  server_31(0x71,gPhyId,0x01,0x0203,0,2);//最后2：只发送RID
+  
+  server_31(0x71,gPhyId,0x01,0xFF01,0,2);
+  
+  server_11(0x51,gPhyId,0x01);
+  
+  server_10(0x50,gFunId,0x03);
+  
+  server_28(0x68,gFunId,0x00,0x01);
+  
+  server_85(0xC5,gFunId,0x01);
+  
+  server_14(0x54,gFunId,0xFFFFFF);
+    
+  server_10(0x50,gFunId,0x01);
+  
+  curDidlength = 1;
+  server_22(0x62,gPhyId,0x0201);
+  curDidlength = 0;
+  
+  if(g_Did.readDID[0] != 0)
+  {
+    testStepFail("Fail","02 01 不对：%d",g_Did.readDID[0]);
+  }
+  
+  
+  curDidlength = 1;
+  server_22(0x62,gPhyId,0xF1ED);
+  curDidlength = 0;
+  
+  if(g_Did.readDID[0] != 0)
+  {
+    testStepFail("Fail","F1 ED 不对：%d",g_Did.readDID[0]);
+  }
+  
+}
+
+
+
+
+
+testcase NRC73()
+{
+  float time;
+  float interval;
+  long Curtime[8];
+  int i;
+  
+  time     = 0;
+  interval = 0;
+  
+  ResetAllValue();
+  
+  time = timeNow()/100000.0;
+  
+  ResetFlag = 1;
+  putValueToControl("Flash","CAPL Output View","Enter Default session-进入默认会话");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_10(0x50,gFunId,0x01);
+  
+  
+  putValueToControl("Flash","CAPL Output View","Read DID-ECU产品型号");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  curDidlength = 16;
+  server_22(0x62,gPhyId,0xF197);
+  
+  putValueToControl("Flash","CAPL Output View","Read DID-ECU硬件版本号");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF150);
+  
+  putValueToControl("Flash","CAPL Output View","Read DID-ECU软件版本号");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  curDidlength = 10;
+  server_22(0x62,gPhyId,0xF189);
+  for(i = 0;i < 10;i++)
+  {
+    FileValid[i] = g_Did.readDID[i];
+  }
+  
+  curDidlength = 0;  
+    
+  putValueToControl("Flash","CAPL Output View","Enter Extended session-进入扩展会话");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_10(0x50,gFunId,0x03);
+  
+  putValueToControl("Flash","CAPL Output View","Control DTC Off-关闭DTC设置");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_85(0xC5,gFunId,0x02);
+  
+  putValueToControl("Flash","CAPL Output View","Communication Control-关闭通讯");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_28(0x68,gFunId,0x03,0x01);
+  
+  putValueToControl("Flash","CAPL Output View","Enter Programming session-进入编程会话");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  
+  ResetFlag = 1;
+  server_10(0x50,gPhyId,0x02);
+  
+  
+  
+  putValueToControl("Flash","CAPL Output View","Process Security Access-解密");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_27(0x67,gPhyId,0x11,0);
+  server_27(0x67,gPhyId,0x12,0);
+  
+  putValueToControl("FlashChery","CAPL Output View","check Routine-检查文件合法性");
+  putValueToControl("FlashChery","CAPL Output View",1,1);
+  
+  ReadVerSion(); //此函数用于读取VerCheck[]
+  
+  server_31(0x71,gPhyId,0x01,0x6000,0,4);//最后3：检查文件合法性
+  
+  
+  putValueToControl("FlashChery","CAPL Output View","check Routine-检查版本");
+  putValueToControl("FlashChery","CAPL Output View",1,1);  
+  server_31(0x71,gPhyId,0x01,0x6001,0,2);//最后4：检查版本
+    
+  putValueToControl("Flash","CAPL Output View","Write ProgrammingDate-写序列号");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_2E(0x6E,gPhyId,0xF198,Serial,16);
+  
+  putValueToControl("Flash","CAPL Output View","Write ProgrammingDate-编程日期");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_2E(0x6E,gPhyId,0xF199,fingerdata,4);
+  
+  putValueToControl("Flash","CAPL Output View","Request Download-请求驱动下载");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_34(0x74,gPhyId,DriverStartAdress,DriverLength);
+  
+  putValueToControl("Flash","CAPL Output View","Transfer Data-驱动下载");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_36(0x76,gPhyId,DriverLength,block_length,g_Data.buffDriver,0x00);
+  
+  putValueToControl("Flash","CAPL Output View","Transfer Exit-驱动下载完成");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_37(0x77,gPhyId,0x00);
+  
+  putValueToControl("FlashChery","CAPL Output View","check Routine-驱动校验");
+  putValueToControl("FlashChery","CAPL Output View",1,1);  
+  server_31(0x71,gPhyId,0x01,0x0202,CheckSum+1,1);//最后1：校验
+  
+  putValueToControl("Flash","CAPL Output View","Routine Control – erase Memory-擦除内存");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_31(0x71,gPhyId,0x01,0xFF00,0,0);//最后0：擦除内存
+ 
+  putValueToControl("Flash","CAPL Output View","Request Download-请求软件下载");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+//  server_34(0x74,gPhyId,0x000C0000,0x00740000);
+  server_34(0x74,gPhyId,AppStartAdress,FileLen);
+  
+  putValueToControl("Flash","CAPL Output View","Transfer Data-软件下载");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+ // server_36(0x76,gPhyId,0x00740000,block_length,g_Data.buff,0x00);
+  server_36(0x76,gPhyId,FileLen,block_length,g_Data.buff,0x00);
+  
+  putValueToControl("Flash","CAPL Output View","Request Transfer Exit-软件下载完成");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_37(0x77,gPhyId,0x00);
+  
+  putValueToControl("Flash","CAPL Output View","check Routine-检查已下载数据");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_31(0x71,gPhyId,0x01,0x0203,0,2);//最后2：只发送RID
+  
+  putValueToControl("flash","CAPL Output View","Check Programming Dependencies");
+  putValueToControl("flash","CAPL Output View",1,1);  
+  server_31(0x71,gPhyId,0x01,0xFF01,0,2);
+  
+  putValueToControl("Flash","CAPL Output View","ECU Reset – hard reset-硬件复位");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_11(0x51,gPhyId,0x01);
+  
+  putValueToControl("Flash","CAPL Output View","Enter Extended session-进入扩展会话");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_10(0x50,gFunId,0x03);
+  
+  putValueToControl("Flash","CAPL Output View","Communication Control-打开通讯");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_28(0x68,gFunId,0x00,0x01);
+  
+  putValueToControl("Flash","CAPL Output View","Control DTC Off-打开DTC设置");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_85(0xC5,gFunId,0x01);
+  
+  putValueToControl("Flash","CAPL Output View","Clear DTC-清除DTC");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_14(0x54,gFunId,0xFFFFFF);
+    
+  putValueToControl("Flash","CAPL Output View","Enter Default session-进入默认会话");
+  putValueToControl("Flash","CAPL Output View",1,1);  
+  server_10(0x50,gFunId,0x01);
+
+  interval = (timeNow()/100000.0) - time;
+  putValue(FlashTime,interval);
+}
+void maintest()
+{
+  int i;
+  
+  ResetAllValue();//将信号置0
+  FileInit();
+  
+  ResetAllValue();  
+ 
+//  gPhyId = 0x701;
+//  gFunId = 0x7DF;
+//  gResId = 0x761;
+  
+  if(getValue(FTOrAPP) == 1)
+  {
+    gPhyId = getValue(PhyID);
+    gFunId = 0x7DF;
+    gResId = getValue(ResID);
+  }
+  else
+  {
+    gPhyId = 0x701;
+    gFunId = 0x7DF;
+    gResId = 0x761;
+  }
+  
+  
+  if(getValue(APP_Proto) == 0)
+  {
+    g_Tx.BRS = 0;
+    g_Tx.FDF = 0;
+    g_server3E.FDF = 0;
+    g_server3E.BRS = 0;
+  }
+  else
+  {
+    g_Tx.BRS = 1;
+    g_Tx.FDF = 1;
+    g_server3E.FDF = 1;
+    g_server3E.BRS = 1;
+  }  
+  
+  g_Tx.msgChannel = 1;
+  g_server3E.msgChannel = 1;
+  g_Rx.msgChannel = 1;
+    
+  g_server3E.id = 0x7df;
+  g_server3E.byte(0) = 0x02;
+  g_server3E.byte(1) = 0x3E;
+  g_server3E.byte(2) = 0x80;
+  g_server3E.byte(3) = 0xcc;
+  g_server3E.byte(4) = 0xcc;
+  g_server3E.byte(5) = 0xcc;
+  g_server3E.byte(6) = 0xcc;
+  g_server3E.byte(7) = 0xcc;
+  setTimer(test_online,S3server);
+  testWaitForTimeout(1000);
+    
+////  Download();
+//  TC_1();
+////  TC_2();
+////  TC_3();
+ 
+  for(i = 0;i<getvalue(Cycle_Time);i++)
+  {
+    Download();
+    testWaitForTimeout(1000);
+    //gPhyId = 0x773;
+    //gResId = 0x77B;
+    //Download();
+    testWaitForTimeout(1000);
+  }
+// TC_Skip_VersionCheck_boot();
+////  Download();
+//  TC_Skip_VersionCheck_app();
+////  Download();
+//  TC_CheckcertificateError_boot();
+////  Download();
+//  TC_CheckcertificateError_app();
+////  Download();
+//  TC_CheckSignError1_boot();
+////  Download();
+//  TC_CheckSignError1_app();
+////  Download();
+//  TC_CheckSignError2_boot();
+//// Download();
+// TC_CheckSignError2_app();
+//// Download();
+// TC_CheckSignError3_boot();
+////Download();
+// TC_CheckSignError3_app();
+//// Download();
+// TC_Skip_Checkcertificate_boot();
+//// Download();
+// TC_Skip_Checkcertificate_app();
+////  Download();
+////  
+//  TC_Version_Over_byte1_boot();
+////  Download();
+//  TC_Version_Over_byte1_app();
+////  Download();
+//  
+//  TC_Version_Over_byte2_boot();
+////  Download();
+//  TC_Version_Over_byte2_app();
+////  Download();
+//  
+//  TC_Version_Over_byte3_boot();
+////  Download();
+//  TC_Version_Over_byte3_app();
+////  Download();
+//  
+//  TC_Version_under_boot();
+////  Download();
+//  TC_Version_under_app();
+////  Download();
+//  
+// TC_SafeError();
+////  Download();
+//  TC_Skip_Safe();
+////  Download();
+//  TC_DriverError();
+////  Download();
+//  TC_APPError_1();
+//  g_Data.buff[0] = g_Data.buff[0] - 1;
+//////  Download();
+//  ReadVerSion();
+//  TC_3E80_befor();
+//  TC_3E80_after();  
+//  
+//  Download();
+//////////  TC_1();
+//////////  TC_2();
+//////////  TC_3();
+//////////  
+//////////  
+//////////    Tc_FlowError();
+//////////  Tc_SCError();
+//////////  Tc_checksumError();
+//////////  Tc_S3Error();
+  
+//  for(i = 0;i<getvalue(Cycle_Time);i++)
+//  {
+//    Download();
+//  }
+
+ 
+}

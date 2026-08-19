@@ -1,0 +1,3 @@
+#include "resource.h"
+
+IDI_UDS_TOOL ICON "../../assets/uds_flash_tool.ico"

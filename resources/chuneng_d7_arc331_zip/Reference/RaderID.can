@@ -1,0 +1,34 @@
+/*@!Encoding:936*/
+includes
+{
+  
+}
+
+variables
+{
+  
+}
+
+on envVar Rader_ID
+{
+  if(getValue(Rader_ID) == 0)
+  {
+    putValue(PhyID,0x772);
+    putValue(ResID,0x77A);
+  }
+  if(getValue(Rader_ID) == 1)
+  {
+    putValue(PhyID,0x773);
+    putValue(ResID,0x77B);
+  }  
+  if(getValue(Rader_ID) == 2)
+  {
+    putValue(PhyID,0x771);
+    putValue(ResID,0x779);
+  }  
+  if(getValue(Rader_ID) == 3)
+  {
+    putValue(PhyID,0x770);
+    putValue(ResID,0x778);
+  }    
+}

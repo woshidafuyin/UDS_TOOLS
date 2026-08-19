@@ -1,0 +1,29 @@
+# Generated build trees and package staging
+/build/
+/dist/
+/tmp/
+/TEST/
+/out/
+/cmake-build-*/
+
+# Historical validation snapshots contain large binaries (EXE/PNG/ASC)
+/validation/
+
+# Visual Studio and editor-local state
+**/.vs/
+.vscode/
+*.suo
+*.user
+*.VC.db
+*.VC.opendb
+
+# CMake in-source generated files
+/CMakeCache.txt
+/CMakeFiles/
+/cmake_install.cmake
+/CTestTestfile.cmake
+/Makefile
+
+# Operating-system metadata
+Thumbs.db
+.DS_Store

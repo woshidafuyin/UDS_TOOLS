@@ -1,0 +1,44 @@
+zlgcan 中包含的所有文件遵循以下许可证：
+
+版权所有 (C) 2012-2025 广州致远电子股份有限公司
+保留所有权利。
+
+本软件（含源代码及二进制形式）的再发布和使用需满足以下条件：
+ - 源代码的再发布必须保留上述版权声明、本条件列表及以下免责声明；
+ - 二进制形式的再发布必须在文档或附属材料中复述上述版权声明、本条件列表及以下免责声明；
+ - 未经广州致远电子股份有限公司书面许可，不得使用“zlgcan”或贡献者名称推广衍生产品。
+
+本软件按“原样”提供，不附带任何明示或暗示的担保，包括但不限于适销性和特定用途适用性的担保。
+在任何情况下，版权持有人或贡献者均不对因使用本软件导致的直接、间接、附带、特殊、
+后果性或惩罚性损害赔偿承担责任（包括但不限于替代品采购、使用损失、数据丢失或业务中断），
+无论其责任形式（合同、侵权或其他）如何。
+
+-----------------------------------------------------------------------------------------------------------------------
+
+All files contained in zlgcan are guided by the following license:
+
+Copyright (C) 2012-2025 Guangzhou ZHIYUAN Electronics Co.,Ltd.
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+ - Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+ - Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and/or other materials provided with the distribution.
+ - Neither the name of zlgcan nor the names of its contributors may be used 
+   to endorse or promote products derived from this software without 
+   specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" 
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE 
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL COPYRIGHT HOLDERS AND CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF 
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS 
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN 
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) 
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.

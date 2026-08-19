@@ -1,0 +1,718 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+     <width>1100</width>
+     <height>720</height>
+   </rect>
+  </property>
+  <property name="minimumSize">
+   <size>
+     <width>900</width>
+     <height>620</height>
+   </size>
+  </property>
+  <property name="windowTitle">
+   <string>UDS 通用刷写工具</string>
+  </property>
+  <widget class="QWidget" name="centralWidget">
+   <layout class="QVBoxLayout" name="workspaceShellLayout">
+    <property name="spacing">
+     <number>0</number>
+    </property>
+    <property name="leftMargin">
+     <number>4</number>
+    </property>
+    <property name="topMargin">
+     <number>4</number>
+    </property>
+    <property name="rightMargin">
+     <number>4</number>
+    </property>
+    <property name="bottomMargin">
+     <number>4</number>
+    </property>
+    <item>
+     <widget class="QTabWidget" name="workspaceTabWidget">
+      <property name="currentIndex">
+       <number>0</number>
+      </property>
+      <property name="documentMode">
+        <bool>false</bool>
+      </property>
+      <widget class="QWidget" name="flashWorkspacePage">
+       <attribute name="title">
+        <string>刷写作业</string>
+       </attribute>
+       <layout class="QHBoxLayout" name="mainLayout" stretch="57,43">
+      <property name="spacing">
+       <number>6</number>
+      </property>
+    <property name="leftMargin">
+      <number>6</number>
+    </property>
+    <property name="topMargin">
+      <number>6</number>
+    </property>
+    <property name="rightMargin">
+      <number>6</number>
+    </property>
+    <property name="bottomMargin">
+      <number>6</number>
+    </property>
+    <item>
+     <widget class="QScrollArea" name="configurationScrollArea">
+      <property name="minimumSize">
+       <size><width>500</width><height>0</height></size>
+      </property>
+      <property name="frameShape"><enum>QFrame::NoFrame</enum></property>
+      <property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property>
+      <property name="widgetResizable"><bool>true</bool></property>
+      <widget class="QWidget" name="configurationScrollContents">
+       <property name="geometry">
+        <rect><x>0</x><y>0</y><width>500</width><height>600</height></rect>
+       </property>
+       <layout class="QVBoxLayout" name="configurationScrollLayout">
+        <property name="leftMargin"><number>0</number></property>
+        <property name="topMargin"><number>0</number></property>
+        <property name="rightMargin"><number>6</number></property>
+        <property name="bottomMargin"><number>0</number></property>
+        <item>
+         <widget class="QWidget" name="configurationPanel" native="true">
+      <property name="minimumSize">
+       <size>
+         <width>500</width>
+        <height>0</height>
+       </size>
+      </property>
+      <layout class="QVBoxLayout" name="configurationLayout">
+       <property name="spacing">
+        <number>6</number>
+       </property>
+       <property name="leftMargin">
+        <number>0</number>
+       </property>
+       <property name="topMargin">
+        <number>0</number>
+       </property>
+       <property name="rightMargin">
+        <number>0</number>
+       </property>
+       <property name="bottomMargin">
+        <number>0</number>
+       </property>
+       <item>
+        <widget class="QGroupBox" name="targetGroupBox">
+         <property name="title">
+          <string>目标配置</string>
+         </property>
+         <layout class="QGridLayout" name="targetGridLayout">
+          <property name="horizontalSpacing">
+           <number>10</number>
+          </property>
+          <property name="verticalSpacing">
+           <number>10</number>
+          </property>
+          <item row="0" column="0">
+           <widget class="QLabel" name="projectLabel">
+            <property name="text">
+              <string>厂商</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QComboBox" name="projectComboBox">
+           <property name="minimumHeight">
+             <number>30</number>
+            </property>
+            <item>
+             <property name="text">
+              <string>请选择项目</string>
+             </property>
+            </item>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="deviceLabel">
+            <property name="text">
+             <string>项目选择</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="QComboBox" name="deviceComboBox">
+            <property name="minimumHeight">
+             <number>30</number>
+            </property>
+            <item>
+             <property name="text">
+              <string>请选择设备</string>
+             </property>
+            </item>
+           </widget>
+          </item>
+          <item row="2" column="0">
+          <widget class="QLabel" name="radarLabel">
+            <property name="text">
+             <string>设备选择</string>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="1">
+           <widget class="QComboBox" name="radarComboBox">
+            <property name="minimumHeight">
+             <number>30</number>
+            </property>
+           </widget>
+          </item>
+          <item row="3" column="0">
+           <widget class="QLabel" name="entryModeLabel">
+            <property name="text">
+              <string>刷写模式</string>
+            </property>
+           </widget>
+          </item>
+           <item row="3" column="1">
+           <widget class="QComboBox" name="entryModeComboBox">
+            <property name="minimumHeight">
+             <number>30</number>
+            </property>
+            <item>
+             <property name="text">
+              <string>APP</string>
+             </property>
+            </item>
+            </widget>
+           </item>
+           <item row="4" column="0">
+            <widget class="QLabel" name="repeatCountLabel">
+             <property name="text">
+              <string>刷写次数</string>
+             </property>
+            </widget>
+           </item>
+           <item row="4" column="1">
+            <widget class="QSpinBox" name="repeatCountSpinBox">
+             <property name="toolTip">
+              <string>参考CANoe Para_Flash::Time；每次执行完整刷写流程，任一次失败即停止后续次数</string>
+             </property>
+             <property name="minimumHeight">
+              <number>30</number>
+             </property>
+             <property name="minimum">
+              <number>1</number>
+             </property>
+             <property name="maximum">
+              <number>10000</number>
+             </property>
+             <property name="value">
+              <number>1</number>
+             </property>
+             <property name="suffix">
+              <string> 次</string>
+             </property>
+            </widget>
+           </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="communicationGroupBox">
+         <property name="title">
+          <string>通信配置</string>
+         </property>
+         <layout class="QGridLayout" name="communicationGridLayout">
+          <property name="horizontalSpacing">
+           <number>10</number>
+          </property>
+          <property name="verticalSpacing">
+           <number>10</number>
+          </property>
+          <item row="0" column="0">
+           <widget class="QLabel" name="vectorChannelLabel">
+            <property name="text">
+             <string>CAN通道</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QComboBox" name="vectorChannelComboBox">
+            <property name="minimumHeight">
+             <number>30</number>
+            </property>
+            <property name="currentIndex">
+             <number>0</number>
+            </property>
+            <item>
+             <property name="text">
+              <string>Channel 1</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>Channel 2</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>Channel 3</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>Channel 4</string>
+             </property>
+            </item>
+           </widget>
+          </item>
+          <item row="0" column="2">
+           <widget class="QLabel" name="txIdLabel">
+            <property name="text">
+             <string>Tx ID</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="3">
+           <widget class="QLineEdit" name="txIdLineEdit">
+            <property name="minimumHeight">
+             <number>30</number>
+            </property>
+            <property name="text">
+             <string>0x772</string>
+            </property>
+            <property name="maxLength">
+             <number>10</number>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="4">
+           <widget class="QLabel" name="rxIdLabel">
+            <property name="text">
+             <string>Rx ID</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="5">
+           <widget class="QLineEdit" name="rxIdLineEdit">
+            <property name="minimumHeight">
+             <number>30</number>
+            </property>
+            <property name="text">
+             <string>0x77A</string>
+            </property>
+            <property name="maxLength">
+             <number>10</number>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="filesGroupBox">
+          <property name="minimumHeight"><number>220</number></property>
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+            <horstretch>0</horstretch><verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+         <property name="title">
+          <string>刷写文件</string>
+         </property>
+         <layout class="QGridLayout" name="filesGridLayout">
+          <property name="horizontalSpacing">
+           <number>10</number>
+          </property>
+           <property name="verticalSpacing">
+            <number>5</number>
+          </property>
+          <item row="0" column="0">
+           <widget class="QLabel" name="driverPathLabel">
+            <property name="text">
+              <string>Driver 文件</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QLineEdit" name="driverPathLineEdit">
+            <property name="minimumHeight">
+             <number>30</number>
+            </property>
+            <property name="readOnly">
+             <bool>true</bool>
+            </property>
+            <property name="placeholderText">
+             <string>请选择 Driver 文件</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="2">
+           <widget class="QPushButton" name="driverBrowseButton">
+            <property name="minimumSize">
+             <size>
+              <width>78</width>
+              <height>30</height>
+             </size>
+            </property>
+            <property name="text">
+              <string>浏览</string>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="0">
+           <widget class="QLabel" name="appPathLabel">
+            <property name="text">
+             <string>APP</string>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="1">
+           <widget class="QLineEdit" name="appPathLineEdit">
+            <property name="minimumHeight">
+             <number>30</number>
+            </property>
+            <property name="readOnly">
+             <bool>true</bool>
+            </property>
+            <property name="placeholderText">
+             <string>请选择 APP 文件</string>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="2">
+           <widget class="QPushButton" name="appBrowseButton">
+            <property name="minimumSize">
+             <size>
+              <width>78</width>
+              <height>30</height>
+             </size>
+            </property>
+            <property name="text">
+              <string>浏览</string>
+            </property>
+           </widget>
+          </item>
+          <item row="4" column="0">
+           <widget class="QLabel" name="calPathLabel">
+            <property name="text">
+             <string>CAL</string>
+            </property>
+           </widget>
+          </item>
+          <item row="4" column="1">
+           <widget class="QLineEdit" name="calPathLineEdit">
+            <property name="minimumHeight">
+             <number>30</number>
+            </property>
+            <property name="readOnly">
+             <bool>true</bool>
+            </property>
+            <property name="placeholderText">
+             <string>请选择 CAL 文件</string>
+            </property>
+           </widget>
+          </item>
+          <item row="4" column="2">
+           <widget class="QPushButton" name="calBrowseButton">
+            <property name="minimumSize">
+             <size>
+              <width>78</width>
+              <height>30</height>
+             </size>
+            </property>
+            <property name="text">
+              <string>浏览</string>
+            </property>
+           </widget>
+          </item>
+          <item row="6" column="0">
+           <widget class="QLabel" name="seedKeyDllPathLabel">
+            <property name="text">
+             <string>SeedKey</string>
+            </property>
+           </widget>
+          </item>
+          <item row="6" column="1">
+           <widget class="QLineEdit" name="seedKeyDllPathLineEdit">
+            <property name="minimumHeight">
+             <number>30</number>
+            </property>
+            <property name="readOnly">
+             <bool>true</bool>
+            </property>
+            <property name="placeholderText">
+             <string>请选择 SeedKey DLL</string>
+            </property>
+           </widget>
+          </item>
+          <item row="6" column="2">
+           <widget class="QPushButton" name="seedKeyDllBrowseButton">
+            <property name="minimumSize">
+             <size>
+              <width>78</width>
+              <height>30</height>
+             </size>
+            </property>
+             <property name="text">
+              <string>浏览</string>
+             </property>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="driverVerifyPathLabel">
+             <property name="text">
+              <string>Driver Data</string>
+             </property>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="QLineEdit" name="driverVerifyPathLineEdit">
+            <property name="minimumHeight">
+             <number>30</number>
+            </property>
+            <property name="readOnly">
+             <bool>true</bool>
+            </property>
+            <property name="placeholderText">
+             <string>请选择 Driver 校验数据</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="2">
+           <widget class="QPushButton" name="driverVerifyBrowseButton">
+            <property name="minimumSize">
+             <size><width>78</width><height>30</height></size>
+            </property>
+             <property name="text"><string>浏览</string></property>
+           </widget>
+          </item>
+          <item row="3" column="0">
+           <widget class="QLabel" name="appVerifyPathLabel">
+              <property name="text"><string>APP 校验文件</string></property>
+           </widget>
+          </item>
+          <item row="3" column="1">
+           <widget class="QLineEdit" name="appVerifyPathLineEdit">
+            <property name="minimumHeight"><number>30</number></property>
+            <property name="readOnly"><bool>true</bool></property>
+             <property name="placeholderText"><string>请选择 APP 校验文件</string></property>
+           </widget>
+          </item>
+          <item row="3" column="2">
+           <widget class="QPushButton" name="appVerifyBrowseButton">
+            <property name="minimumSize">
+             <size><width>78</width><height>30</height></size>
+            </property>
+             <property name="text"><string>浏览</string></property>
+           </widget>
+          </item>
+          <item row="5" column="0">
+           <widget class="QLabel" name="calVerifyPathLabel">
+             <property name="text"><string>CAL Data</string></property>
+           </widget>
+          </item>
+          <item row="5" column="1">
+           <widget class="QLineEdit" name="calVerifyPathLineEdit">
+            <property name="minimumHeight"><number>30</number></property>
+            <property name="readOnly"><bool>true</bool></property>
+            <property name="placeholderText"><string>请选择 CAL 校验数据</string></property>
+           </widget>
+          </item>
+          <item row="5" column="2">
+           <widget class="QPushButton" name="calVerifyBrowseButton">
+            <property name="minimumSize">
+             <size><width>78</width><height>30</height></size>
+            </property>
+             <property name="text"><string>浏览</string></property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="operationsGroupBox">
+         <property name="title">
+          <string>操作</string>
+         </property>
+         <layout class="QVBoxLayout" name="operationsLayout">
+          <property name="spacing">
+           <number>9</number>
+          </property>
+          <item>
+           <layout class="QHBoxLayout" name="secondaryActionsLayout">
+            <property name="spacing">
+             <number>8</number>
+            </property>
+            <item>
+            <widget class="QPushButton" name="probeButton">
+              <property name="toolTip">
+               <string>通过ProbeController执行UDS在线探测</string>
+              </property>
+               <property name="text">
+                <string>能否刷写</string>
+               </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="powerOnButton">
+              <property name="toolTip">
+               <string>仅对启用CANoe DOUT电源控制的Profile生效</string>
+              </property>
+              <property name="text">
+               <string>上电</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="powerOffButton">
+              <property name="toolTip">
+               <string>仅对启用CANoe DOUT电源控制的Profile生效</string>
+              </property>
+              <property name="text">
+               <string>下电</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="primaryActionsLayout">
+            <item>
+             <widget class="QPushButton" name="startFlashButton">
+              <property name="toolTip">
+               <string>通过FlashController执行完整刷写流程</string>
+              </property>
+               <property name="text"><string>开始刷写</string></property>
+              <property name="default"><bool>true</bool></property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="stopButton">
+              <property name="enabled"><bool>false</bool></property>
+              <property name="text"><string>停止</string></property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="openReportButton">
+              <property name="enabled"><bool>false</bool></property>
+              <property name="text"><string>打开最新报告</string></property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="progressGroupBox">
+         <property name="title">
+          <string>执行进度</string>
+         </property>
+         <layout class="QVBoxLayout" name="progressLayout">
+          <property name="spacing">
+           <number>7</number>
+          </property>
+          <item>
+           <widget class="QLabel" name="progressStatusLabel">
+            <property name="text">
+             <string>界面就绪（探测与刷写均已连接）</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QProgressBar" name="progressBar">
+            <property name="minimum">
+             <number>0</number>
+            </property>
+            <property name="maximum">
+             <number>100</number>
+            </property>
+            <property name="value">
+             <number>0</number>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <spacer name="configurationBottomSpacer">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>10</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+       </layout>
+      </widget>
+     </item>
+    </layout>
+    </widget>
+   </widget>
+     </item>
+    <item>
+     <widget class="QGroupBox" name="logGroupBox">
+      <property name="minimumSize">
+       <size>
+        <width>380</width>
+        <height>0</height>
+       </size>
+      </property>
+      <property name="title">
+       <string>运行日志</string>
+      </property>
+      <layout class="QVBoxLayout" name="logLayout">
+       <item>
+        <widget class="QPlainTextEdit" name="logPlainTextEdit">
+         <property name="font">
+          <font>
+           <family>Consolas</family>
+           <pointsize>9</pointsize>
+          </font>
+         </property>
+         <property name="readOnly">
+          <bool>true</bool>
+         </property>
+         <property name="placeholderText">
+          <string>操作日志将在此显示</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     </item>
+    </layout>
+      </widget>
+     </widget>
+    </item>
+   </layout>
+   </widget>
+  </widget>
+ <tabstops>
+  <tabstop>projectComboBox</tabstop>
+  <tabstop>deviceComboBox</tabstop>
+  <tabstop>radarComboBox</tabstop>
+  <tabstop>vectorChannelComboBox</tabstop>
+  <tabstop>txIdLineEdit</tabstop>
+  <tabstop>rxIdLineEdit</tabstop>
+  <tabstop>driverBrowseButton</tabstop>
+  <tabstop>appBrowseButton</tabstop>
+  <tabstop>calBrowseButton</tabstop>
+  <tabstop>seedKeyDllBrowseButton</tabstop>
+  <tabstop>probeButton</tabstop>
+  <tabstop>powerOnButton</tabstop>
+  <tabstop>powerOffButton</tabstop>
+  <tabstop>startFlashButton</tabstop>
+ </tabstops>
+ <resources/>
+ <connections/>
+</ui>
