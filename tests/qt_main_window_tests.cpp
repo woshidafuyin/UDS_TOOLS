@@ -522,12 +522,9 @@ int main(int argc, char* argv[]) {
                         false, false, false, false});
       check(bus_monitor_table->rowCount() == 2 &&
                 bus_monitor_table->item(1, 0)->data(Qt::UserRole) ==
-                    QStringLiteral("pending") &&
-                bus_monitor_table->item(1, 0)->foreground().color() ==
-                    QColor(QStringLiteral("#A85D00")) &&
-                bus_monitor_table->item(1, 6)->text().contains(
-                    QStringLiteral("不是最终失败")),
-            "Bus monitor incorrectly rendered NRC78 as a final failure");
+                    QStringLiteral("normal") &&
+                bus_monitor_table->item(1, 6)->text().isEmpty(),
+            "Bus monitor should retain NRC78 as an unannotated raw frame");
       bus_monitor_page->appendObservedFrame(
           uds::CanFrame{0x72F,
                         {0x05, 0x71, 0x01, 0x02, 0x02, 0x05, 0x55, 0x55},
@@ -747,20 +744,16 @@ int main(int argc, char* argv[]) {
                     QColor(QStringLiteral("#C62828")) &&
                 nrc_reason_format.fontWeight() == QFont::Bold,
             "Execution log did not explain and emphasize the concrete NRC31");
+      const auto blocks_before_pending = log_view->document()->blockCount();
       check(QMetaObject::invokeMethod(
                 bus_monitor_page, "monitorMessage", Qt::DirectConnection,
                 Q_ARG(QString,
                       QStringLiteral("RX [0x72F] 7F 31 78"))),
             "Pending log injection failed");
-      result_block = log_view->document()->lastBlock();
-      result_format = result_block.begin().fragment().charFormat();
-      check(result_block.text().contains(
-                QStringLiteral("NRC 0x78")) &&
-                result_block.text().contains(
-                    QStringLiteral("不是最终失败")) &&
-                result_format.foreground().color() ==
-                    QColor(QStringLiteral("#A85D00")),
-            "Execution log incorrectly rendered NRC78 as a final failure");
+      check(log_view->document()->blockCount() == blocks_before_pending &&
+                !log_view->document()->lastBlock().text().contains(
+                    QStringLiteral("NRC 0x78")),
+            "Execution log should suppress expected NRC78 wait states");
       check(QMetaObject::invokeMethod(
                 bus_monitor_page, "monitorMessage", Qt::DirectConnection,
                 Q_ARG(QString,

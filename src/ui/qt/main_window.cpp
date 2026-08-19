@@ -1712,6 +1712,11 @@ void MainWindow::appendUiLog(const QString& message, UiLogTone tone) {
   auto displayed_message = message;
   const auto nrc = nrcFromLogLine(displayed_message);
   if (nrc) {
+    // ResponsePending is expected while the ECU processes long-running
+    // services (ARC331 returns it for every TransferData block). The raw frame
+    // remains available in the bus monitor and ASC trace; suppressing it here
+    // keeps the operator log focused on final responses and actual failures.
+    if (*nrc == 0x78U) return;
     // Remove the old ambiguous prefix once a concrete ECU NRC is known.
     displayed_message.replace(QStringLiteral("NRC/timeout "), QString{},
                               Qt::CaseInsensitive);
@@ -1726,9 +1731,7 @@ void MainWindow::appendUiLog(const QString& message, UiLogTone tone) {
       displayed_message += QStringLiteral(" | %1").arg(
           QString::fromUtf8(detail.data(), static_cast<int>(detail.size())));
     }
-    if (tone == UiLogTone::Normal) {
-      tone = *nrc == 0x78U ? UiLogTone::Pending : UiLogTone::Failure;
-    }
+    if (tone == UiLogTone::Normal) tone = UiLogTone::Failure;
   } else if (const auto routine = failedRoutineFromLogLine(displayed_message)) {
     const auto detail = format_uds_routine_result(*routine);
     const auto detail_text = QString::fromUtf8(

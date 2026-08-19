@@ -293,13 +293,15 @@ void BusMonitorPage::appendObservedFrame(const CanFrame& frame) {
   if (!frame.transmitted) {
     if (const auto negative =
             parse_isotp_single_frame_negative_response(frame.data)) {
-      const auto detail = format_uds_nrc(negative->nrc);
-      row.diagnostic = QString::fromUtf8(
-          detail.data(), static_cast<int>(detail.size()));
-      row.diagnostic_tone =
-          negative->kind == UdsNegativeResponseKind::pending
-              ? DiagnosticTone::Pending
-              : DiagnosticTone::Failure;
+      // NRC 0x78 is the normal asynchronous wait state used for every
+      // TransferData block on ARC331. Keep its raw CAN frame visible without
+      // an alarm-like diagnostic/color; only a final NRC is emphasized.
+      if (negative->kind == UdsNegativeResponseKind::failure) {
+        const auto detail = format_uds_nrc(negative->nrc);
+        row.diagnostic = QString::fromUtf8(
+            detail.data(), static_cast<int>(detail.size()));
+        row.diagnostic_tone = DiagnosticTone::Failure;
+      }
     } else if (const auto routine =
                    parse_isotp_single_frame_routine_result(frame.data);
                routine && routine->failure) {
