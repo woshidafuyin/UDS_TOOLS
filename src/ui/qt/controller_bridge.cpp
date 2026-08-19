@@ -633,6 +633,8 @@ void ControllerBridge::buildProfileOptions() {
           pathText(record.profile.cal_verify_file),
          pathText(record.profile.security_dll)});
     auto& option = profile_options_.back();
+    option.ft_tx_id = record.profile.ft_tx_id;
+    option.ft_rx_id = record.profile.ft_rx_id;
     try {
       const auto plan = load_version_check_plan(record.source, {});
       option.version_check_available = !plan.items.empty();
@@ -661,6 +663,8 @@ void ControllerBridge::buildProfileOptions() {
            targetPathText(target.cal_verify_file,
                           record.profile.cal_verify_file),
             targetPathText(target.security_dll, record.profile.security_dll)});
+      option.target_options.back().ft_tx_id = target.ft_tx_id;
+      option.target_options.back().ft_rx_id = target.ft_rx_id;
       try {
         const auto plan = load_version_check_plan(record.source, target.id);
         option.target_options.back().version_check_available =

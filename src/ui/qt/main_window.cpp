@@ -794,9 +794,15 @@ void MainWindow::connectActions() {
             followSelectedBusMonitorContext();
           });
   connect(ui_->txIdLineEdit, &QLineEdit::editingFinished, this,
-          [this] { syncVersionContext(); });
+          [this] {
+            syncVersionContext();
+            syncBusMonitorContext();
+          });
   connect(ui_->rxIdLineEdit, &QLineEdit::editingFinished, this,
-          [this] { syncVersionContext(); });
+          [this] {
+            syncVersionContext();
+            syncBusMonitorContext();
+          });
   connect(ui_->entryModeComboBox,
           QOverload<int>::of(&QComboBox::currentIndexChanged), this,
           [this] { saveComboSelections(); });
@@ -1321,6 +1327,35 @@ void MainWindow::syncBusMonitorContext() {
   if (!valid || profile_index < 0 ||
       static_cast<std::size_t>(profile_index) >= profiles.size()) return;
   const auto& profile = profiles[profile_index];
+  bool tx_ok{};
+  bool rx_ok{};
+  const auto displayed_tx_id = ui_->txIdLineEdit->text().toUInt(&tx_ok, 0);
+  const auto displayed_rx_id = ui_->rxIdLineEdit->text().toUInt(&rx_ok, 0);
+  std::vector<std::uint32_t> diagnostic_ids{
+      tx_ok ? displayed_tx_id : profile.tx_id,
+      rx_ok ? displayed_rx_id : profile.rx_id,
+      profile.functional_id};
+
+  auto ft_tx_id = profile.ft_tx_id;
+  auto ft_rx_id = profile.ft_rx_id;
+  if (hasRadarSelector()) {
+    const auto target_id = selectedTargetId();
+    const auto selected = std::find_if(
+        profile.target_options.cbegin(), profile.target_options.cend(),
+        [&target_id](const ControllerTargetOption& target) {
+          return target.target_id == target_id;
+        });
+    if (selected != profile.target_options.cend() &&
+        selected->ft_tx_id != 0 && selected->ft_rx_id != 0) {
+      ft_tx_id = selected->ft_tx_id;
+      ft_rx_id = selected->ft_rx_id;
+    }
+  }
+  if (profile.supports_ft_entry && ft_tx_id != 0 && ft_rx_id != 0) {
+    diagnostic_ids.push_back(ft_tx_id);
+    diagnostic_ids.push_back(ft_rx_id);
+  }
+  bus_monitor_page_->setDiagnosticIds(std::move(diagnostic_ids));
   bus_monitor_page_->setContext(
       ui_->vectorChannelComboBox->currentData().toUInt(),
       profile.nominal_bitrate, profile.data_bitrate, profile.can_fd);

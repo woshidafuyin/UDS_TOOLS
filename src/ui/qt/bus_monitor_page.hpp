@@ -28,6 +28,7 @@ public:
   };
 
   struct Row {
+    std::uint32_t can_id{};
     QString time;
     QString direction;
     QString id;
@@ -43,6 +44,7 @@ public:
 
   void setContext(unsigned channel, unsigned nominal_bitrate,
                   unsigned data_bitrate, bool can_fd);
+  void setDiagnosticIds(std::vector<std::uint32_t> diagnostic_ids);
   void setOperationBusy(bool busy);
   // Accepts one already-observed frame for classification and display.  The
   // passive receiver uses the same input boundary as tests and future bus
@@ -79,6 +81,7 @@ private:
   std::atomic_bool stop_requested_{};
   std::jthread worker_;
   std::deque<Row> rows_;
+  std::vector<std::uint32_t> diagnostic_ids_;
   bool batch_appending_{};
 
   QLabel* context_label_{};
@@ -86,6 +89,7 @@ private:
   QLabel* count_label_{};
   QLineEdit* id_filter_{};
   QLineEdit* data_filter_{};
+  QCheckBox* diagnostic_only_filter_{};
   QCheckBox* tx_filter_{};
   QCheckBox* rx_filter_{};
   QCheckBox* standard_filter_{};

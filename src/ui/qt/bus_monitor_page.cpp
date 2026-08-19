@@ -100,6 +100,13 @@ BusMonitorPage::BusMonitorPage(QWidget* parent) : QWidget(parent) {
   data_filter_ = new QLineEdit(filter);
   data_filter_->setPlaceholderText(QStringLiteral("如 10 02；空=全部"));
   filter_layout->addWidget(data_filter_, 0, 3);
+  diagnostic_only_filter_ =
+      new QCheckBox(QStringLiteral("仅显示诊断 ID"), filter);
+  diagnostic_only_filter_->setObjectName(
+      QStringLiteral("busMonitorDiagnosticOnlyFilter"));
+  diagnostic_only_filter_->setChecked(true);
+  diagnostic_only_filter_->setToolTip(
+      QStringLiteral("只影响表格显示；后台仍接收、缓存并导出全部帧。"));
   tx_filter_ = new QCheckBox(QStringLiteral("TX"), filter);
   tx_filter_->setObjectName(QStringLiteral("busMonitorTxFilter"));
   rx_filter_ = new QCheckBox(QStringLiteral("RX"), filter);
@@ -115,13 +122,14 @@ BusMonitorPage::BusMonitorPage(QWidget* parent) : QWidget(parent) {
   fd_filter_->setChecked(true);
   tx_filter_->setChecked(true);
   rx_filter_->setChecked(true);
-  filter_layout->addWidget(tx_filter_, 1, 1);
-  filter_layout->addWidget(rx_filter_, 1, 2);
-  filter_layout->addWidget(standard_filter_, 1, 3);
-  filter_layout->addWidget(extended_filter_, 1, 4);
-  filter_layout->addWidget(can_filter_, 1, 5);
-  filter_layout->addWidget(fd_filter_, 1, 6);
-  filter_layout->addWidget(brs_filter_, 1, 7);
+  filter_layout->addWidget(diagnostic_only_filter_, 1, 0, 1, 2);
+  filter_layout->addWidget(tx_filter_, 1, 2);
+  filter_layout->addWidget(rx_filter_, 1, 3);
+  filter_layout->addWidget(standard_filter_, 1, 4);
+  filter_layout->addWidget(extended_filter_, 1, 5);
+  filter_layout->addWidget(can_filter_, 1, 6);
+  filter_layout->addWidget(fd_filter_, 1, 7);
+  filter_layout->addWidget(brs_filter_, 1, 8);
   count_label_ = new QLabel(filter);
   filter_layout->addWidget(count_label_, 0, 5);
   layout->addWidget(filter);
@@ -145,7 +153,11 @@ BusMonitorPage::BusMonitorPage(QWidget* parent) : QWidget(parent) {
   };
   connect(id_filter_, &QLineEdit::textChanged, this, refresh);
   connect(data_filter_, &QLineEdit::textChanged, this, refresh);
-  for (auto* check : {tx_filter_, rx_filter_, standard_filter_, extended_filter_, can_filter_, fd_filter_, brs_filter_}) connect(check, &QCheckBox::toggled, this, refresh);
+  for (auto* check : {diagnostic_only_filter_, tx_filter_, rx_filter_,
+                      standard_filter_, extended_filter_, can_filter_,
+                      fd_filter_, brs_filter_}) {
+    connect(check, &QCheckBox::toggled, this, refresh);
+  }
   setContext(channel_, nominal_bitrate_, data_bitrate_, can_fd_);
   clearFrames();
   updateControls();
@@ -191,6 +203,33 @@ void BusMonitorPage::setOperationBusy(bool busy) {
   // QTableWidget thousands of times. Rebuild once when the operation ends.
   if (!operation_busy_) rebuildTable();
   updateControls();
+}
+
+void BusMonitorPage::setDiagnosticIds(
+    std::vector<std::uint32_t> diagnostic_ids) {
+  std::sort(diagnostic_ids.begin(), diagnostic_ids.end());
+  diagnostic_ids.erase(
+      std::remove(diagnostic_ids.begin(), diagnostic_ids.end(), 0U),
+      diagnostic_ids.end());
+  diagnostic_ids.erase(
+      std::unique(diagnostic_ids.begin(), diagnostic_ids.end()),
+      diagnostic_ids.end());
+  if (diagnostic_ids_ == diagnostic_ids) return;
+  diagnostic_ids_ = std::move(diagnostic_ids);
+
+  QString id_summary;
+  for (const auto id : diagnostic_ids_) {
+    if (!id_summary.isEmpty()) id_summary += QStringLiteral("、");
+    id_summary += QStringLiteral("0x%1").arg(id, 0, 16).toUpper();
+  }
+  diagnostic_only_filter_->setToolTip(
+      diagnostic_ids_.empty()
+          ? QStringLiteral(
+                "当前未配置诊断 ID，因此不限制表格显示；后台始终接收、缓存并导出全部帧。")
+          : QStringLiteral(
+                "当前诊断 ID：%1。只影响表格显示；后台仍接收、缓存并导出全部帧。")
+                .arg(id_summary));
+  rebuildTable();
 }
 
 bool BusMonitorPage::matchesContext(unsigned channel, unsigned nominal_bitrate,
@@ -264,6 +303,11 @@ void BusMonitorPage::stopMonitoring() {
 }
 
 bool BusMonitorPage::matchesFilter(const Row& row) const {
+  if (diagnostic_only_filter_->isChecked() && !diagnostic_ids_.empty() &&
+      !std::binary_search(diagnostic_ids_.cbegin(), diagnostic_ids_.cend(),
+                          row.can_id)) {
+    return false;
+  }
   if (row.direction == QStringLiteral("TX") && !tx_filter_->isChecked()) return false;
   if (row.direction == QStringLiteral("RX") && !rx_filter_->isChecked()) return false;
   const auto id = id_filter_->text().trimmed().remove(QStringLiteral("0x"), Qt::CaseInsensitive).toUpper();
@@ -278,7 +322,8 @@ bool BusMonitorPage::matchesFilter(const Row& row) const {
 }
 
 void BusMonitorPage::appendObservedFrame(const CanFrame& frame) {
-  Row row{QDateTime::currentDateTime().toString(
+  Row row{frame.id,
+          QDateTime::currentDateTime().toString(
               QStringLiteral("HH:mm:ss.zzz")),
           frame.transmitted ? QStringLiteral("TX") : QStringLiteral("RX"),
           QStringLiteral("0x%1").arg(frame.id, 0, 16).toUpper(),

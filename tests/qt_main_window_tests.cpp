@@ -458,6 +458,8 @@ int main(int argc, char* argv[]) {
           QStringLiteral("busMonitorTxFilter"));
       auto* bus_monitor_rx_filter = window.findChild<QCheckBox*>(
           QStringLiteral("busMonitorRxFilter"));
+      auto* bus_monitor_diagnostic_filter = window.findChild<QCheckBox*>(
+          QStringLiteral("busMonitorDiagnosticOnlyFilter"));
       auto* bus_monitor_clear = window.findChild<QPushButton*>(
           QStringLiteral("busMonitorClearButton"));
       auto* bus_monitor_export = window.findChild<QPushButton*>(
@@ -485,6 +487,8 @@ int main(int argc, char* argv[]) {
       check(projects && project_label && devices && device_label && entries &&
                 bus_monitor_tx_filter && bus_monitor_tx_filter->isChecked() &&
                 bus_monitor_rx_filter && bus_monitor_rx_filter->isChecked() &&
+                bus_monitor_diagnostic_filter &&
+                bus_monitor_diagnostic_filter->isChecked() &&
                 bus_monitor_clear &&
                 bus_monitor_clear->text() == QStringLiteral("清空列表") &&
                 bus_monitor_export &&
@@ -504,6 +508,13 @@ int main(int argc, char* argv[]) {
                 bus_monitor_page, "runningChanged", Qt::DirectConnection,
                 Q_ARG(bool, false)),
             "Failed to restore simulated bus-monitor state");
+      bus_monitor_page->setDiagnosticIds({0x72E, 0x72F, 0x7DF});
+      bus_monitor_page->appendObservedFrame(
+          uds::CanFrame{0x123,
+                        {0x01, 0x02, 0x03, 0x04, 0, 0, 0, 0},
+                        false, false, false, false});
+      check(bus_monitor_table->rowCount() == 0,
+            "Default diagnostic-ID filter did not hide a non-diagnostic frame");
       bus_monitor_page->appendObservedFrame(
           uds::CanFrame{0x72F,
                         {0x03, 0x7F, 0x31, 0x31, 0, 0, 0, 0},
@@ -540,6 +551,11 @@ int main(int argc, char* argv[]) {
                     QStringLiteral("状态 0x05")),
             "Bus monitor did not render RoutineControl 0202 status 05 as a "
             "red explained failure row");
+      bus_monitor_diagnostic_filter->setChecked(false);
+      check(bus_monitor_table->rowCount() == 4 &&
+                bus_monitor_table->item(0, 2)->text().compare(
+                    QStringLiteral("0x123"), Qt::CaseInsensitive) == 0,
+            "Disabling the diagnostic-ID filter did not restore retained raw frames");
       bus_monitor_clear->click();
       check(bus_monitor_table->rowCount() == 0,
             "Bus monitor diagnostic-style test did not restore an empty table");

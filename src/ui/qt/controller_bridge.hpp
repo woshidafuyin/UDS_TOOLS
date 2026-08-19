@@ -34,6 +34,8 @@ struct ControllerTargetOption {
   QString seed_key_dll_path;
   bool version_check_available{};
   VersionReadItems version_items;
+  quint32 ft_tx_id{};
+  quint32 ft_rx_id{};
 };
 
 struct ControllerProfileOption {
@@ -69,6 +71,8 @@ struct ControllerProfileOption {
   std::vector<ControllerTargetOption> target_options;
   bool version_check_available{};
   VersionReadItems version_items;
+  quint32 ft_tx_id{};
+  quint32 ft_rx_id{};
 };
 
 // Owns the application-layer controllers and adapts their standard C++ worker
