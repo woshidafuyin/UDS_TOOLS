@@ -5,6 +5,7 @@
 #include <QWidget>
 
 #include <atomic>
+#include <deque>
 #include <thread>
 #include <vector>
 
@@ -61,7 +62,9 @@ signals:
 private:
   void startMonitoring();
   void stopMonitoring();
+  void appendObservedFrames(std::vector<CanFrame> frames);
   void appendFrame(Row row);
+  void rebuildTable();
   void clearFrames();
   void exportAsc();
   void updateControls();
@@ -75,7 +78,8 @@ private:
   bool operation_busy_{};
   std::atomic_bool stop_requested_{};
   std::jthread worker_;
-  std::vector<Row> rows_;
+  std::deque<Row> rows_;
+  bool batch_appending_{};
 
   QLabel* context_label_{};
   QLabel* status_label_{};

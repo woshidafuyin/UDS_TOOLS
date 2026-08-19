@@ -528,6 +528,21 @@ int main(int argc, char* argv[]) {
                 bus_monitor_table->item(1, 6)->text().contains(
                     QStringLiteral("不是最终失败")),
             "Bus monitor incorrectly rendered NRC78 as a final failure");
+      bus_monitor_page->appendObservedFrame(
+          uds::CanFrame{0x72F,
+                        {0x05, 0x71, 0x01, 0x02, 0x02, 0x05, 0x55, 0x55},
+                        false, false, false, false});
+      check(bus_monitor_table->rowCount() == 3 &&
+                bus_monitor_table->item(2, 0)->data(Qt::UserRole) ==
+                    QStringLiteral("failure") &&
+                bus_monitor_table->item(2, 0)->foreground().color() ==
+                    QColor(QStringLiteral("#B71C1C")) &&
+                bus_monitor_table->item(2, 6)->text().contains(
+                    QStringLiteral("数据/软件签名校验")) &&
+                bus_monitor_table->item(2, 6)->text().contains(
+                    QStringLiteral("状态 0x05")),
+            "Bus monitor did not render RoutineControl 0202 status 05 as a "
+            "red explained failure row");
       bus_monitor_clear->click();
       check(bus_monitor_table->rowCount() == 0,
             "Bus monitor diagnostic-style test did not restore an empty table");
@@ -746,6 +761,23 @@ int main(int argc, char* argv[]) {
                 result_format.foreground().color() ==
                     QColor(QStringLiteral("#A85D00")),
             "Execution log incorrectly rendered NRC78 as a final failure");
+      check(QMetaObject::invokeMethod(
+                bus_monitor_page, "monitorMessage", Qt::DirectConnection,
+                Q_ARG(QString,
+                      QStringLiteral("RX [0x72F] 71 01 02 02 05"))),
+            "Routine failure log injection failed");
+      result_block = log_view->document()->lastBlock();
+      result_format = result_block.begin().fragment().charFormat();
+      check(result_block.text().contains(
+                QStringLiteral("RoutineControl 0x0202")) &&
+                result_block.text().contains(
+                    QStringLiteral("数据/软件签名校验")) &&
+                result_block.text().contains(QStringLiteral("状态 0x05")) &&
+                result_format.foreground().color() ==
+                    QColor(QStringLiteral("#C62828")) &&
+                result_format.fontWeight() == QFont::Bold,
+            "Execution log did not explain and emphasize routine 0202 "
+            "status 05");
       const auto invoke_probe_result = [&](bool success) {
         return QMetaObject::invokeMethod(
             &window, "handleProbeFinished", Qt::DirectConnection,

@@ -4,6 +4,25 @@
 #include <sstream>
 
 namespace uds {
+namespace {
+
+std::optional<std::span<const std::uint8_t>>
+isotp_single_frame_payload(std::span<const std::uint8_t> frame_data) noexcept {
+  if (frame_data.empty() || (frame_data[0] & 0xF0U) != 0x00U) {
+    return std::nullopt;
+  }
+  std::size_t payload_offset{1U};
+  std::size_t payload_length{frame_data[0] & 0x0FU};
+  if (payload_length == 0U) {
+    if (frame_data.size() < 2U) return std::nullopt;
+    payload_offset = 2U;
+    payload_length = frame_data[1];
+  }
+  if (payload_offset + payload_length > frame_data.size()) return std::nullopt;
+  return frame_data.subspan(payload_offset, payload_length);
+}
+
+} // namespace
 
 std::optional<UdsNegativeResponse>
 parse_uds_negative_response(std::span<const std::uint8_t> payload) noexcept {
@@ -17,23 +36,25 @@ parse_uds_negative_response(std::span<const std::uint8_t> payload) noexcept {
 std::optional<UdsNegativeResponse>
 parse_isotp_single_frame_negative_response(
     std::span<const std::uint8_t> frame_data) noexcept {
-  if (frame_data.empty() || (frame_data[0] & 0xF0U) != 0x00U) {
-    return std::nullopt;
-  }
+  const auto payload = isotp_single_frame_payload(frame_data);
+  return payload ? parse_uds_negative_response(*payload) : std::nullopt;
+}
 
-  std::size_t payload_offset{1U};
-  std::size_t payload_length{frame_data[0] & 0x0FU};
-  if (payload_length == 0U) {
-    if (frame_data.size() < 2U) return std::nullopt;
-    payload_offset = 2U;
-    payload_length = frame_data[1];
-  }
-  if (payload_length < 3U ||
-      payload_offset + payload_length > frame_data.size()) {
-    return std::nullopt;
-  }
-  return parse_uds_negative_response(
-      frame_data.subspan(payload_offset, payload_length));
+std::optional<UdsRoutineResult>
+parse_uds_routine_result(std::span<const std::uint8_t> payload) noexcept {
+  if (payload.size() < 5U || payload[0] != 0x71U) return std::nullopt;
+  const auto routine_id = static_cast<std::uint16_t>(
+      (static_cast<std::uint16_t>(payload[2]) << 8U) | payload[3]);
+  const auto status = payload[4];
+  if (status != 0x04U && status != 0x05U) return std::nullopt;
+  return UdsRoutineResult{routine_id, status, status == 0x05U};
+}
+
+std::optional<UdsRoutineResult>
+parse_isotp_single_frame_routine_result(
+    std::span<const std::uint8_t> frame_data) noexcept {
+  const auto payload = isotp_single_frame_payload(frame_data);
+  return payload ? parse_uds_routine_result(*payload) : std::nullopt;
 }
 
 std::string uds_nrc_name(std::uint8_t nrc) {
@@ -92,6 +113,27 @@ std::string format_uds_nrc(std::uint8_t nrc) {
          << std::setfill('0') << static_cast<unsigned>(nrc) << ' '
          << uds_nrc_name(nrc) << "（" << uds_nrc_explanation_zh(nrc)
          << "）";
+  return stream.str();
+}
+
+std::string uds_routine_name_zh(std::uint16_t routine_id) {
+  switch (routine_id) {
+  case 0x0202: return "数据/软件签名校验";
+  case 0x0203: return "编程条件检查";
+  case 0x0301: return "Flash Driver 激活";
+  case 0xFF00: return "应用区擦除";
+  case 0xFF01: return "依赖性/兼容性检查";
+  default: return "例程执行";
+  }
+}
+
+std::string format_uds_routine_result(const UdsRoutineResult& result) {
+  std::ostringstream stream;
+  stream << "RoutineControl 0x" << std::uppercase << std::hex << std::setw(4)
+         << std::setfill('0') << result.routine_id << "（"
+         << uds_routine_name_zh(result.routine_id) << "）状态 0x"
+         << std::setw(2) << static_cast<unsigned>(result.status) << "："
+         << (result.failure ? "校验/执行失败" : "通过");
   return stream.str();
 }
 

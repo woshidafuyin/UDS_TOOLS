@@ -256,9 +256,13 @@ void Chuneng331Flow::transfer_image(std::uint32_t address, std::span<const std::
          "34 " + label + " block_length=0x802, TransferData payload=0x800");
   }
   std::size_t offset = 0;
+  const auto total_blocks =
+      (image.size() + chunk_size - 1U) / chunk_size;
+  std::size_t block_index = 0;
   std::uint8_t sequence = 1;
   while (offset < image.size()) {
     check_cancelled();
+    ++block_index;
     const auto count = std::min(chunk_size, image.size() - offset);
     std::vector<std::uint8_t> transfer{0x36, sequence};
     transfer.insert(transfer.end(), image.begin() + static_cast<std::ptrdiff_t>(offset),
@@ -266,7 +270,9 @@ void Chuneng331Flow::transfer_image(std::uint32_t address, std::span<const std::
     const std::array<std::uint8_t, 2> expected{0x76, sequence};
     const auto percent = begin_percent + static_cast<int>((end_percent - begin_percent) *
                          static_cast<double>(offset + count) / static_cast<double>(image.size()));
-    expect(physical_, transfer, expected, percent, "36 " + label);
+    expect(physical_, transfer, expected, percent,
+           "36 " + label + " block " + std::to_string(block_index) +
+               "/" + std::to_string(total_blocks));
     offset += count;
     sequence = static_cast<std::uint8_t>(sequence + 1U);
   }

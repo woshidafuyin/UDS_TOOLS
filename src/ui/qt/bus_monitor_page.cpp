@@ -141,12 +141,7 @@ BusMonitorPage::BusMonitorPage(QWidget* parent) : QWidget(parent) {
   connect(clear_button_, &QPushButton::clicked, this, &BusMonitorPage::clearFrames);
   connect(export_button_, &QPushButton::clicked, this, &BusMonitorPage::exportAsc);
   const auto refresh = [this] {
-    table_->setRowCount(0);
-    for (const auto& row : rows_) {
-      if (!matchesFilter(row)) continue;
-      const auto index = table_->rowCount();
-      insertRow(table_, index, row);
-    }
+    rebuildTable();
   };
   connect(id_filter_, &QLineEdit::textChanged, this, refresh);
   connect(data_filter_, &QLineEdit::textChanged, this, refresh);
@@ -189,7 +184,14 @@ void BusMonitorPage::setContext(unsigned channel, unsigned nominal_bitrate, unsi
   if (restart) startMonitoring();
 }
 
-void BusMonitorPage::setOperationBusy(bool busy) { operation_busy_ = busy; updateControls(); }
+void BusMonitorPage::setOperationBusy(bool busy) {
+  if (operation_busy_ == busy) return;
+  operation_busy_ = busy;
+  // During flashing, retain frames in the bounded model but do not mutate the
+  // QTableWidget thousands of times. Rebuild once when the operation ends.
+  if (!operation_busy_) rebuildTable();
+  updateControls();
+}
 
 bool BusMonitorPage::matchesContext(unsigned channel, unsigned nominal_bitrate,
                                     unsigned data_bitrate, bool can_fd) const noexcept {
@@ -211,11 +213,33 @@ void BusMonitorPage::startMonitoring() {
     try {
       auto bus = provider->create({"", channel, nominal, data_bitrate, can_fd, L"UDSToolBusMonitor"});
       bus->open();
+      std::vector<CanFrame> batch;
+      batch.reserve(128);
+      auto last_flush = std::chrono::steady_clock::now();
       while (!stop.stop_requested() && !stop_requested_.load()) {
         const auto frame = bus->receive(std::chrono::milliseconds(50));
-        if (!frame) continue;
+        if (frame) batch.push_back(*frame);
+        const auto now = std::chrono::steady_clock::now();
+        if (!batch.empty() &&
+            (batch.size() >= 128U ||
+             now - last_flush >= std::chrono::milliseconds(50))) {
+          QMetaObject::invokeMethod(
+              this,
+              [this, observed = std::move(batch)]() mutable {
+                appendObservedFrames(std::move(observed));
+              },
+              Qt::QueuedConnection);
+          batch.clear();
+          batch.reserve(128);
+          last_flush = now;
+        }
+      }
+      if (!batch.empty()) {
         QMetaObject::invokeMethod(
-            this, [this, observed = *frame] { appendObservedFrame(observed); },
+            this,
+            [this, observed = std::move(batch)]() mutable {
+              appendObservedFrames(std::move(observed));
+            },
             Qt::QueuedConnection);
       }
       bus->close();
@@ -276,21 +300,67 @@ void BusMonitorPage::appendObservedFrame(const CanFrame& frame) {
           negative->kind == UdsNegativeResponseKind::pending
               ? DiagnosticTone::Pending
               : DiagnosticTone::Failure;
+    } else if (const auto routine =
+                   parse_isotp_single_frame_routine_result(frame.data);
+               routine && routine->failure) {
+      const auto detail = format_uds_routine_result(*routine);
+      row.diagnostic = QString::fromUtf8(
+          detail.data(), static_cast<int>(detail.size()));
+      row.diagnostic_tone = DiagnosticTone::Failure;
     }
   }
   appendFrame(std::move(row));
 }
 
-void BusMonitorPage::appendFrame(Row row) {
-  rows_.push_back(row);
-  if (static_cast<int>(rows_.size()) > kMaximumRows) rows_.erase(rows_.begin());
-  if (matchesFilter(row)) {
-    const auto index = table_->rowCount();
-    insertRow(table_, index, row);
+void BusMonitorPage::appendObservedFrames(std::vector<CanFrame> frames) {
+  batch_appending_ = true;
+  if (!operation_busy_) table_->setUpdatesEnabled(false);
+  for (const auto& frame : frames) appendObservedFrame(frame);
+  batch_appending_ = false;
+  if (!operation_busy_) {
+    table_->setUpdatesEnabled(true);
     table_->scrollToBottom();
   }
-  count_label_->setText(QStringLiteral("已记录：%1 帧（最多保留 %2 帧）").arg(rows_.size()).arg(kMaximumRows));
+  count_label_->setText(
+      QStringLiteral("已记录：%1 帧（最多保留 %2 帧）")
+          .arg(rows_.size())
+          .arg(kMaximumRows));
   updateControls();
+}
+
+void BusMonitorPage::appendFrame(Row row) {
+  bool evicted_visible{};
+  if (static_cast<int>(rows_.size()) >= kMaximumRows) {
+    evicted_visible = matchesFilter(rows_.front());
+    rows_.pop_front();
+  }
+  rows_.push_back(row);
+  if (!operation_busy_ && evicted_visible && table_->rowCount() > 0) {
+    table_->removeRow(0);
+  }
+  if (!operation_busy_ && matchesFilter(row)) {
+    const auto index = table_->rowCount();
+    insertRow(table_, index, row);
+  }
+  if (!batch_appending_) {
+    if (!operation_busy_) table_->scrollToBottom();
+    count_label_->setText(
+        QStringLiteral("已记录：%1 帧（最多保留 %2 帧）")
+            .arg(rows_.size())
+            .arg(kMaximumRows));
+    updateControls();
+  }
+}
+
+void BusMonitorPage::rebuildTable() {
+  table_->setUpdatesEnabled(false);
+  table_->setRowCount(0);
+  for (const auto& row : rows_) {
+    if (!matchesFilter(row)) continue;
+    insertRow(table_, table_->rowCount(), row);
+  }
+  table_->setUpdatesEnabled(true);
+  table_->scrollToBottom();
 }
 
 void BusMonitorPage::clearFrames() { rows_.clear(); table_->setRowCount(0); count_label_->setText(QStringLiteral("已接收：0 帧")); }

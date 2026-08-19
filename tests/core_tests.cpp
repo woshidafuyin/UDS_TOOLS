@@ -224,6 +224,22 @@ void test_uds_nrc_diagnostics() {
       0x02, 0x50, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00};
   check(!uds::parse_isotp_single_frame_negative_response(positive_frame),
         "positive response was incorrectly classified as an NRC");
+
+  const std::array<std::uint8_t, 8> routine_failure_frame{
+      0x05, 0x71, 0x01, 0x02, 0x02, 0x05, 0x55, 0x55};
+  const auto routine_failure =
+      uds::parse_isotp_single_frame_routine_result(routine_failure_frame);
+  check(routine_failure && routine_failure->routine_id == 0x0202 &&
+            routine_failure->status == 0x05 && routine_failure->failure &&
+            uds::format_uds_routine_result(*routine_failure).find(
+                "数据/软件签名校验") != std::string::npos,
+        "positive RoutineControl status 05 was not explained as failure");
+  const std::array<std::uint8_t, 8> routine_pass_frame{
+      0x05, 0x71, 0x01, 0x02, 0x02, 0x04, 0x55, 0x55};
+  const auto routine_pass =
+      uds::parse_isotp_single_frame_routine_result(routine_pass_frame);
+  check(routine_pass && !routine_pass->failure,
+        "positive RoutineControl status 04 was not retained as pass");
 }
 
 void test_isotp_multiframe_receive() {
@@ -881,6 +897,31 @@ void test_chuneng_cbf_software_type_compatibility() {
   }
   check(rejected_unknown,
         "ChuNeng accepted an unsupported non-CBF/non-S-record input set");
+
+  check(uds::chuneng_331_abt_sidecar_path(
+            L"package/Driver_Ver.asc") ==
+            std::filesystem::path(L"package/Driver_ABT.asc"),
+        "ChuNeng S-record ABT sidecar naming contract changed");
+  const std::vector<std::uint8_t> image{0x11, 0x22, 0x33, 0x44};
+  std::vector<std::uint8_t> abt{0x00, 0x00, 0x00, 0x01,
+                                0x10, 0x28, 0x00, 0x00,
+                                0x00, 0x00, 0x00, 0x04};
+  const auto digest = uds::sha256(image);
+  abt.insert(abt.end(), digest.begin(), digest.end());
+  const auto metadata = uds::validate_chuneng_331_abt(abt, image);
+  check(metadata.source_address == 0x10280000U &&
+            metadata.image_length == image.size(),
+        "ChuNeng S-record ABT metadata/SHA binding was not validated");
+  auto mismatched = image;
+  mismatched[0] ^= 0xFFU;
+  bool rejected_mismatched_abt = false;
+  try {
+    static_cast<void>(uds::validate_chuneng_331_abt(abt, mismatched));
+  } catch (const std::runtime_error&) {
+    rejected_mismatched_abt = true;
+  }
+  check(rejected_mismatched_abt,
+        "ChuNeng accepted an ABT from a different S-record package");
 }
 
 void test_chuneng_331_updated_protocol_contract() {
@@ -2288,6 +2329,24 @@ void test_lp_arc_protocol_and_resources() {
       chuneng_root / "CBF" / "Driver" / "driver_712345678AB.cbf");
   const auto app_cbf = uds::load_chuneng_cbf(
       chuneng_root / "CBF" / "APP" / "7052A5023002AB.cbf");
+  const auto s19_root = chuneng_root / "S19";
+  const auto driver_s19 = uds::load_srecord_window(
+      s19_root / "Driver.s19", driver_cbf.main.address,
+      driver_cbf.main.data.size());
+  const auto app_s19 = uds::load_srecord_window(
+      s19_root / "APP.s19", app_cbf.main.address, app_cbf.main.data.size());
+  const auto driver_s19_abt =
+      uds::load_asc_hex(s19_root / "Driver_ABT.asc", 0x2C, 0x2C);
+  const auto app_s19_abt =
+      uds::load_asc_hex(s19_root / "APP_ABT.asc", 0x2C, 0x2C);
+  const auto driver_s19_signature =
+      uds::load_asc_hex(s19_root / "Driver_Ver.asc", 256, 256);
+  const auto app_s19_signature =
+      uds::load_asc_hex(s19_root / "APP_Ver.asc", 256, 256);
+  const auto driver_s19_metadata =
+      uds::validate_chuneng_331_abt(driver_s19_abt, driver_s19);
+  const auto app_s19_metadata =
+      uds::validate_chuneng_331_abt(app_s19_abt, app_s19);
   constexpr std::string_view kApprovedDriverMarker{
       "FAKE_CN2944_FLASH_DRIVER_RAW_0x4000"};
   check(std::filesystem::file_size(
@@ -2317,8 +2376,56 @@ void test_lp_arc_protocol_and_resources() {
             app_cbf.main.address == 0x000C0000U &&
             app_cbf.main.data.size() == 0x180000U &&
             app_cbf.abt.data.size() == 0x2CU &&
-            app_cbf.device_signature.size() == 256U,
+            app_cbf.device_signature.size() == 256U &&
+            driver_s19 == driver_cbf.main.data &&
+            app_s19 == app_cbf.main.data &&
+            driver_s19_abt == driver_cbf.abt.data &&
+            app_s19_abt == app_cbf.abt.data &&
+            driver_s19_signature == driver_cbf.device_signature &&
+            app_s19_signature == app_cbf.device_signature &&
+            driver_s19_metadata.source_address == 0x10280000U &&
+            app_s19_metadata.source_address == 0x000C0000U,
         "ChuNeng ARC331 paired CBF main/ABT/signature or SeedKey resources mismatch");
+  uds::FlashJob s19_preflight_job;
+  s19_preflight_job.profile = chuneng_profile;
+  s19_preflight_job.executable_directory = source;
+  s19_preflight_job.driver_file =
+      L"resources/chuneng_d7_arc331_zip/S19/Driver.s19";
+  s19_preflight_job.app_file =
+      L"resources/chuneng_d7_arc331_zip/S19/APP.s19";
+  s19_preflight_job.driver_verify_file =
+      L"resources/chuneng_d7_arc331_zip/S19/Driver_Ver.asc";
+  s19_preflight_job.app_verify_file =
+      L"resources/chuneng_d7_arc331_zip/S19/APP_Ver.asc";
+  s19_preflight_job.can_bus_provider.reset();
+  std::vector<std::string> s19_preflight_reports;
+  uds::FlashWorkflowCallbacks s19_preflight_callbacks;
+  s19_preflight_callbacks.report =
+      [&s19_preflight_reports](std::string step, std::string verdict,
+                               std::string detail) {
+        s19_preflight_reports.push_back(step + ":" + verdict + ":" + detail);
+      };
+  std::stop_source stopped_preflight;
+  stopped_preflight.request_stop();
+  bool stopped_before_can = false;
+  try {
+    uds::ChunengArc331Workflow s19_workflow;
+    s19_workflow.run(s19_preflight_job, s19_preflight_callbacks,
+                     stopped_preflight.get_token());
+  } catch (const std::runtime_error& error) {
+    stopped_before_can =
+        std::string(error.what()).find("cancelled") != std::string::npos;
+  }
+  check(stopped_before_can &&
+            std::any_of(s19_preflight_reports.cbegin(),
+                        s19_preflight_reports.cend(),
+                        [](const std::string& line) {
+                          return line.find("Preflight:PASS:Files validated: "
+                                           "Driver=0x4000+ABT") !=
+                                 std::string::npos;
+                        }),
+        "ChuNeng packaged S19 pair did not pass the real workflow preflight "
+        "before CAN access");
   bool rejected = false;
   try {
     static_cast<void>(uds::resolve_lp_arc_entry_mode(L"auto"));

@@ -5,6 +5,7 @@
 #include "core/hex.hpp"
 #include "core/isotp.hpp"
 #include "core/keygen_client.hpp"
+#include "core/sha256.hpp"
 #include "core/uds_client.hpp"
 #include "flash/chuneng_331_flow.hpp"
 
@@ -67,7 +68,60 @@ std::string cbf_identity(const CbfImage& image) {
   return detail.str();
 }
 
+std::uint32_t read_be32(std::span<const std::uint8_t> bytes,
+                        std::size_t offset) {
+  return (static_cast<std::uint32_t>(bytes[offset]) << 24U) |
+         (static_cast<std::uint32_t>(bytes[offset + 1U]) << 16U) |
+         (static_cast<std::uint32_t>(bytes[offset + 2U]) << 8U) |
+         static_cast<std::uint32_t>(bytes[offset + 3U]);
+}
+
+std::string hex_u32(std::uint32_t value) {
+  std::ostringstream stream;
+  stream << "0x" << std::uppercase << std::hex << std::setw(8)
+         << std::setfill('0') << value;
+  return stream.str();
+}
+
 } // namespace
+
+std::filesystem::path chuneng_331_abt_sidecar_path(
+    const std::filesystem::path& verification_path) {
+  auto stem = verification_path.stem().wstring();
+  const auto suffix = std::wstring_view{L"_Ver"};
+  if (stem.size() < suffix.size() ||
+      stem.substr(stem.size() - suffix.size()) != suffix) {
+    throw std::invalid_argument(
+        "ChuNeng S-record verification sidecar must be named *_Ver.asc so "
+        "the paired *_ABT.asc can be resolved without mixing package sources");
+  }
+  stem.replace(stem.size() - suffix.size(), suffix.size(), L"_ABT");
+  return verification_path.parent_path() / (stem + L".asc");
+}
+
+Chuneng331AbtMetadata validate_chuneng_331_abt(
+    std::span<const std::uint8_t> abt,
+    std::span<const std::uint8_t> image) {
+  if (abt.size() != 0x2CU || abt[0] != 0x00U || abt[1] != 0x00U ||
+      abt[2] != 0x00U || abt[3] != 0x01U) {
+    throw std::runtime_error(
+        "ChuNeng ABT must be 44 bytes and start with hash-type/count "
+        "00 00 00 01");
+  }
+  const auto metadata =
+      Chuneng331AbtMetadata{read_be32(abt, 4U), read_be32(abt, 8U)};
+  if (metadata.image_length != image.size()) {
+    throw std::runtime_error(
+        "ChuNeng ABT image length does not match the selected S-record");
+  }
+  const auto digest = sha256(image);
+  if (!std::equal(digest.begin(), digest.end(), abt.begin() + 12)) {
+    throw std::runtime_error(
+        "ChuNeng ABT SHA-256 does not match the selected S-record; do not "
+        "mix Driver/APP artifacts from different CBF packages");
+  }
+  return metadata;
+}
 
 Chuneng331InputMode resolve_chuneng_331_input_mode(
     const std::filesystem::path& driver,
@@ -161,11 +215,25 @@ void Chuneng331Workflow::run(const FlashJob& job, const FlashWorkflowCallbacks& 
           "ChuNeng S-record mode requires both Driver verification ASC and "
           "APP verification ASC");
     }
+    const auto driver_verification_path = resolve(job.driver_verify_file);
+    const auto driver_abt_path =
+        chuneng_331_abt_sidecar_path(driver_verification_path);
+    images.driver_abt = load_asc_hex(driver_abt_path, 0x2C, 0x2C);
+    const auto driver_source_address = read_be32(images.driver_abt, 4U);
     images.driver_address = 0x00000000;
-    images.driver = load_srecord_window(resolve(job.driver_file), 0x00000000, 0x4000);
-    images.driver_verification = load_asc_hex(resolve(job.driver_verify_file), 256, 256);
+    images.driver = load_srecord_window(resolve(job.driver_file),
+                                        driver_source_address, 0x4000);
+    const auto driver_abt =
+        validate_chuneng_331_abt(images.driver_abt, images.driver);
+    images.driver_abt_address = 0x000C0000U;
+    images.driver_verification =
+        load_asc_hex(driver_verification_path, 256, 256);
+    log(callbacks, "Driver S-record ABT sidecar: " +
+                       driver_abt_path.string());
     record(callbacks, 0, "Driver S-record", "PASS",
-           "0x00000000/0x4000 with selected 256-byte verification data");
+           "source=" + hex_u32(driver_abt.source_address) +
+               "/0x4000; transfer=0x00000000; ABT SHA-256 matched; "
+               "256-byte verification data loaded");
   }
 
   if (cbf_pair) {
@@ -188,10 +256,21 @@ void Chuneng331Workflow::run(const FlashJob& job, const FlashWorkflowCallbacks& 
            identity + "; main and ABT extracted and integrity-checked; "
            "source equals transfer window; 256-byte dev_signature extracted");
   } else {
-    images.app = load_srecord_window(resolve(job.app_file), 0x000C0000, 0x180000);
-    images.app_verification = load_asc_hex(resolve(job.app_verify_file), 256, 256);
+    const auto app_verification_path = resolve(job.app_verify_file);
+    const auto app_abt_path =
+        chuneng_331_abt_sidecar_path(app_verification_path);
+    images.app_abt = load_asc_hex(app_abt_path, 0x2C, 0x2C);
+    const auto app_source_address = read_be32(images.app_abt, 4U);
+    images.app = load_srecord_window(resolve(job.app_file),
+                                     app_source_address, 0x180000);
+    const auto app_abt = validate_chuneng_331_abt(images.app_abt, images.app);
+    images.app_abt_address = 0x000C0000U;
+    images.app_verification = load_asc_hex(app_verification_path, 256, 256);
+    log(callbacks, "APP S-record ABT sidecar: " + app_abt_path.string());
     record(callbacks, 0, "APP S-record", "PASS",
-           "0x000C0000/0x180000 with selected 256-byte verification data");
+           "source=" + hex_u32(app_abt.source_address) +
+               "/0x180000; ABT SHA-256 matched; 256-byte verification "
+               "data loaded");
   }
   log(callbacks,
       std::string("ChuNeng ARC331 paired input preflight passed: mode=") +
@@ -200,7 +279,8 @@ void Chuneng331Workflow::run(const FlashJob& job, const FlashWorkflowCallbacks& 
           "; both roles enter the same 0202/256-byte-signature state "
           "machine");
   record(callbacks, 0, "Preflight", "PASS",
-         "Files validated: Driver=0x4000, APP=0x180000, verification=256+256");
+         "Files validated: Driver=0x4000+ABT, APP=0x180000+ABT, "
+         "verification=256+256");
   if (stop.stop_requested()) throw std::runtime_error("operation cancelled by user");
 
   if (job.profile.power_control) {

@@ -4,7 +4,10 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <span>
+#include <string>
 #include <string_view>
+#include <vector>
 
 namespace uds {
 
@@ -24,6 +27,19 @@ enum class Chuneng331InputMode {
   cbf_pair,
   srecord_pair,
 };
+
+struct Chuneng331AbtMetadata {
+  std::uint32_t source_address{};
+  std::uint32_t image_length{};
+};
+
+// S-record mode uses bridge-compatible sidecars: Driver_Ver.asc pairs with
+// Driver_ABT.asc, and APP_Ver.asc pairs with APP_ABT.asc.
+[[nodiscard]] std::filesystem::path chuneng_331_abt_sidecar_path(
+    const std::filesystem::path& verification_path);
+[[nodiscard]] Chuneng331AbtMetadata validate_chuneng_331_abt(
+    std::span<const std::uint8_t> abt,
+    std::span<const std::uint8_t> image);
 
 // A ChuNeng package is an atomic Driver/APP pair. Mixing a CBF role with an
 // S-record role would also mix signature provenance, so reject it during

@@ -91,6 +91,30 @@ std::optional<std::uint8_t> nrcFromLogLine(const QString& message) {
             : std::nullopt;
 }
 
+std::optional<UdsRoutineResult> failedRoutineFromLogLine(
+    const QString& message) {
+  const auto response_line =
+      message.trimmed().startsWith(QStringLiteral("RX ["),
+                                   Qt::CaseInsensitive) ||
+      message.contains(QStringLiteral("响应")) ||
+      message.contains(QStringLiteral("response"), Qt::CaseInsensitive);
+  if (!response_line) return std::nullopt;
+  static const QRegularExpression raw_result(
+      QStringLiteral(
+          R"((?:^|\s|\[)71\s+[0-9A-Fa-f]{2}\s+([0-9A-Fa-f]{2})\s+([0-9A-Fa-f]{2})\s+(05)(?=\s|$|\]|\|))"),
+      QRegularExpression::CaseInsensitiveOption);
+  const auto match = raw_result.match(message);
+  if (!match.hasMatch()) return std::nullopt;
+  bool high_ok{}, low_ok{}, status_ok{};
+  const auto high = match.captured(1).toUInt(&high_ok, 16);
+  const auto low = match.captured(2).toUInt(&low_ok, 16);
+  const auto status = match.captured(3).toUInt(&status_ok, 16);
+  if (!high_ok || !low_ok || !status_ok) return std::nullopt;
+  return UdsRoutineResult{
+      static_cast<std::uint16_t>((high << 8U) | low),
+      static_cast<std::uint8_t>(status), true};
+}
+
 QString fullPath(const QLineEdit* path_edit) {
   const auto stored = path_edit->property(kFullPathProperty).toString();
   return stored.isEmpty() ? path_edit->text().trimmed() : stored;
@@ -1705,6 +1729,14 @@ void MainWindow::appendUiLog(const QString& message, UiLogTone tone) {
     if (tone == UiLogTone::Normal) {
       tone = *nrc == 0x78U ? UiLogTone::Pending : UiLogTone::Failure;
     }
+  } else if (const auto routine = failedRoutineFromLogLine(displayed_message)) {
+    const auto detail = format_uds_routine_result(*routine);
+    const auto detail_text = QString::fromUtf8(
+        detail.data(), static_cast<int>(detail.size()));
+    if (!displayed_message.contains(detail_text)) {
+      displayed_message += QStringLiteral(" | %1").arg(detail_text);
+    }
+    if (tone == UiLogTone::Normal) tone = UiLogTone::Failure;
   } else if (tone == UiLogTone::Normal &&
              (displayed_message.contains(QStringLiteral("失败")) ||
               displayed_message.contains(QStringLiteral("ERROR"),

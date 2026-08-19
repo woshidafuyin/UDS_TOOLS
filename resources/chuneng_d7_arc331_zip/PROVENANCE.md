@@ -2,8 +2,9 @@
 
 The active ARC331 Profile uses one atomic Driver/APP CBF pair. The Workflow
 parses and validates both containers before creating a CAN provider. A job may
-alternatively use a complete S-record set (Driver S19/SREC + Driver ASC + APP
-S19/SREC + APP ASC), but it may not mix CBF and S-record roles.
+alternatively use a complete S-record set (Driver S19/SREC + Driver
+`*_Ver.asc` + Driver `*_ABT.asc`, and the corresponding three APP files), but
+it may not mix CBF and S-record roles or sidecars from different packages.
 
 Both input modes feed the same ChuNeng state machine and the same fixed
 download windows. Neither mode enters the LP `6000/6001` plus 1322-byte
@@ -46,8 +47,12 @@ integrity, role, address, length, ABT and signature checks still apply.
 
 The independently generated APP S19 reference has SHA-256
 `1492CAFECEE8715F23DCF0E4E5C1B549C4414DFCB27BB02DE7A123EC06AE1AAE`.
-It is not required by the default CBF Profile because the Workflow consumes
-the APP main block directly without writing an intermediate S19.
+It is packaged under `S19/` with the CBF-derived Driver S19 and both roles'
+ABT/signature sidecars. In S-record mode the Workflow derives `Driver_ABT.asc`
+from selected `Driver_Ver.asc` (and likewise for APP), validates the ABT
+address, length and SHA-256 against the selected S19 before CAN is opened, and
+then downloads the ABT before each `0202` verification. The default Profile
+continues to select the simpler two-file CBF pair.
 
 ## CBF parser contract
 
