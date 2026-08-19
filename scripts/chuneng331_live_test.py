@@ -60,6 +60,39 @@ def newest_after(directory, pattern, after):
     return max(matches, key=lambda p: p.stat().st_mtime) if matches else None
 
 
+def set_path_edit(window, app, suffix, path):
+    browse_map = {
+        "driverPathLineEdit": "driverBrowseButton",
+        "driverVerifyPathLineEdit": "driverVerifyBrowseButton",
+        "appPathLineEdit": "appBrowseButton",
+        "appVerifyPathLineEdit": "appVerifyBrowseButton",
+        "calPathLineEdit": "calBrowseButton",
+        "seedKeyDllPathLineEdit": "seedKeyDllBrowseButton",
+    }
+    browse_suffix = browse_map.get(suffix, suffix.replace("LineEdit", "BrowseButton"))
+    browse = find_by_suffix(window, browse_suffix, "Button")
+    if not browse.is_enabled():
+        raise RuntimeError(f"browse button disabled: {browse_suffix}")
+    browse.click_input()
+    time.sleep(2)
+    dlg = None
+    for win in app.windows():
+        if win.class_name() == "#32770":
+            dlg = win
+            break
+    if dlg is None:
+        raise RuntimeError(f"file dialog not opened for {suffix}")
+    dlg.wait("visible", timeout=10)
+    dlg.set_focus()
+    time.sleep(0.3)
+    dlg.type_keys("^l")  # address bar
+    time.sleep(0.3)
+    dlg.type_keys(path, with_spaces=True)
+    time.sleep(0.3)
+    dlg.type_keys("{ENTER}")
+    time.sleep(1.5)
+
+
 def wait_log_contains(log_view, needle, timeout, also_status=None):
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -82,6 +115,14 @@ def main():
                         help="run the flash after probe (default: probe only)")
     parser.add_argument("--entry", default="APP",
                         help="entry mode: APP or FT (default APP)")
+    parser.add_argument("--driver-s19")
+    parser.add_argument("--driver-verify-asc")
+    parser.add_argument("--app-s19")
+    parser.add_argument("--app-verify-asc")
+    parser.add_argument("--project-index", type=int)
+    parser.add_argument("--device-index", type=int)
+    parser.add_argument("--radar-index", type=int)
+    parser.add_argument("--entry-index", type=int)
     args = parser.parse_args()
 
     exe = Path(args.exe).resolve()
@@ -101,11 +142,19 @@ def main():
     time.sleep(1.5)
 
     try:
-        select_combo(window, "projectComboBox", "楚能")
-        select_combo(window, "deviceComboBox", "ARC331")
-        select_combo(window, "radarComboBox", "左后雷达")
-        select_combo(window, "entryModeComboBox", args.entry)
-        select_combo(window, "vectorChannelComboBox", "Channel 2")
+        # QSettings persists the previous selection (ChuNeng/ARC331/
+        # left-rear/APP/Channel 2); Chinese combo text arrives as mojibake
+        # under this locale, so rely on the persisted selection and only
+        # verify the endpoint IDs below.
+
+        if args.driver_s19:
+            set_path_edit(window, app, "driverPathLineEdit", args.driver_s19)
+        if args.driver_verify_asc:
+            set_path_edit(window, app, "driverVerifyPathLineEdit", args.driver_verify_asc)
+        if args.app_s19:
+            set_path_edit(window, app, "appPathLineEdit", args.app_s19)
+        if args.app_verify_asc:
+            set_path_edit(window, app, "appVerifyPathLineEdit", args.app_verify_asc)
 
         tx = find_by_suffix(window, "txIdLineEdit", "Edit").get_value()
         rx = find_by_suffix(window, "rxIdLineEdit", "Edit").get_value()
