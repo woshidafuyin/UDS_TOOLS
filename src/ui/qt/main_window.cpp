@@ -110,9 +110,12 @@ std::optional<UdsRoutineResult> failedRoutineFromLogLine(
   const auto low = match.captured(2).toUInt(&low_ok, 16);
   const auto status = match.captured(3).toUInt(&status_ok, 16);
   if (!high_ok || !low_ok || !status_ok) return std::nullopt;
-  return UdsRoutineResult{
+  const UdsRoutineResult result{
       static_cast<std::uint16_t>((high << 8U) | low),
-      static_cast<std::uint8_t>(status), true};
+      static_cast<std::uint8_t>(status),
+      status == 0x05U && ((high << 8U) | low) != 0x0203U};
+  return result.failure ? std::optional<UdsRoutineResult>(result)
+                        : std::nullopt;
 }
 
 QString fullPath(const QLineEdit* path_edit) {

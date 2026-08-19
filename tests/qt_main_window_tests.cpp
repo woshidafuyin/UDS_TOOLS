@@ -757,6 +757,21 @@ int main(int argc, char* argv[]) {
       check(QMetaObject::invokeMethod(
                 bus_monitor_page, "monitorMessage", Qt::DirectConnection,
                 Q_ARG(QString,
+                      QStringLiteral("RX [0x72F] 71 01 02 03 05"))),
+            "Routine 0203 warning log injection failed");
+      result_block = log_view->document()->lastBlock();
+      result_format = result_block.begin().fragment().charFormat();
+      check(result_block.text().contains(
+                QStringLiteral("71 01 02 03 05")) &&
+                !result_block.text().contains(
+                    QStringLiteral("校验/执行失败")) &&
+                result_format.foreground().color() !=
+                    QColor(QStringLiteral("#C62828")),
+            "Execution log misclassified ARC331 0203 status 05 as a red "
+            "final failure");
+      check(QMetaObject::invokeMethod(
+                bus_monitor_page, "monitorMessage", Qt::DirectConnection,
+                Q_ARG(QString,
                       QStringLiteral("RX [0x72F] 71 01 02 02 05"))),
             "Routine failure log injection failed");
       result_block = log_view->document()->lastBlock();

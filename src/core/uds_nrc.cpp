@@ -47,7 +47,12 @@ parse_uds_routine_result(std::span<const std::uint8_t> payload) noexcept {
       (static_cast<std::uint16_t>(payload[2]) << 8U) | payload[3]);
   const auto status = payload[4];
   if (status != 0x04U && status != 0x05U) return std::nullopt;
-  return UdsRoutineResult{routine_id, status, status == 0x05U};
+  // ARC331 bench/reference behavior explicitly treats 0203/05 as a warning:
+  // vehicle preconditions are unavailable on the flash bench, but the
+  // reference flow continues.  Verification routines such as 0202/05 remain
+  // final failures.
+  return UdsRoutineResult{routine_id, status,
+                          status == 0x05U && routine_id != 0x0203U};
 }
 
 std::optional<UdsRoutineResult>
@@ -132,8 +137,12 @@ std::string format_uds_routine_result(const UdsRoutineResult& result) {
   stream << "RoutineControl 0x" << std::uppercase << std::hex << std::setw(4)
          << std::setfill('0') << result.routine_id << "（"
          << uds_routine_name_zh(result.routine_id) << "）状态 0x"
-         << std::setw(2) << static_cast<unsigned>(result.status) << "："
-         << (result.failure ? "校验/执行失败" : "通过");
+         << std::setw(2) << static_cast<unsigned>(result.status) << "：";
+  if (result.routine_id == 0x0203U && result.status == 0x05U) {
+    stream << "刷新条件未满足（WARN；当前项目按参考流程继续）";
+  } else {
+    stream << (result.failure ? "校验/执行失败" : "通过");
+  }
   return stream.str();
 }
 

@@ -15,9 +15,11 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+import win32con
 
 os.add_dll_directory(os.environ["PYWIN32_DLL_DIR"])
 from pywinauto.application import Application
+from pywinauto import Desktop
 
 
 def find_by_suffix(window, suffix, control_type=None):
@@ -73,23 +75,28 @@ def set_path_edit(window, app, suffix, path):
     browse = find_by_suffix(window, browse_suffix, "Button")
     if not browse.is_enabled():
         raise RuntimeError(f"browse button disabled: {browse_suffix}")
-    browse.click_input()
+    # Activate even when the file row is outside the current scroll viewport;
+    # this avoids depending on an interactive mouse desktop.
+    browse.invoke()
     time.sleep(2)
     dlg = None
-    for win in app.windows():
-        if win.class_name() == "#32770":
+    # Native QFileDialog is exposed as a top-level Win32 dialog and is not
+    # necessarily returned by the UIA Application window enumeration.
+    for win in Desktop(backend="win32").windows(class_name="#32770"):
+        if win.is_visible():
             dlg = win
             break
     if dlg is None:
         raise RuntimeError(f"file dialog not opened for {suffix}")
-    dlg.wait("visible", timeout=10)
-    dlg.set_focus()
-    time.sleep(0.3)
-    dlg.type_keys("^l")  # address bar
-    time.sleep(0.3)
-    dlg.type_keys(path, with_spaces=True)
-    time.sleep(0.3)
-    dlg.type_keys("{ENTER}")
+    # Standard Windows Open dialog: edt1/control-id 1148 is the filename
+    # field. Set it through Win32 messages and submit IDOK so this also works
+    # in a background desktop session without synthetic mouse/keyboard input.
+    filename_edits = [control for control in dlg.descendants(class_name="Edit")
+                      if control.control_id() == 1148]
+    if not filename_edits:
+        raise RuntimeError(f"file name edit not found for {suffix}")
+    filename_edits[0].set_edit_text(path)
+    dlg.send_message(win32con.WM_COMMAND, win32con.IDOK)
     time.sleep(1.5)
 
 

@@ -240,6 +240,15 @@ void test_uds_nrc_diagnostics() {
       uds::parse_isotp_single_frame_routine_result(routine_pass_frame);
   check(routine_pass && !routine_pass->failure,
         "positive RoutineControl status 04 was not retained as pass");
+  const std::array<std::uint8_t, 8> precondition_warning_frame{
+      0x05, 0x71, 0x01, 0x02, 0x03, 0x05, 0x55, 0x55};
+  const auto precondition_warning =
+      uds::parse_isotp_single_frame_routine_result(
+          precondition_warning_frame);
+  check(precondition_warning && !precondition_warning->failure &&
+            uds::format_uds_routine_result(*precondition_warning).find(
+                "WARN") != std::string::npos,
+        "ARC331 routine 0203 status 05 was misclassified as final failure");
 }
 
 void test_isotp_multiframe_receive() {

@@ -166,7 +166,7 @@ CBF 预检包含：版本、必需 Header 字段、类型、数据格式、两�
 - `dist` 包含运行库、CAN 驱动适配、Profile、项目资源、工具和文档；
 - 当前构建命令：`scripts\build.ps1 -Config Release -DistPath dist`；
 - 2026-08-19 当前候选完成 Release 构建和 CTest 1–7（7/7）回归；第 8 项 Qt 主窗口测试在新旧二进制上均停于 `QApplication` 启动检查点，尚未形成界面运行通过证据；
-- 当前 `dist\uds_tool_qt.exe` SHA-256：`658E457FFF37A4972EF28E6F152447860434AA2261CD99CD8AC77F66038AF344`；
+- 当前 `dist\uds_tool_qt.exe` SHA-256：`5FD2EF4A60356CAE12FC94D57FC8346EDB795CE7454DCC8FC75E635804FF40B5`；
 - 楚能 ARC331 默认使用独立 Driver/APP CBF 对；`resources\chuneng_d7_arc331_zip\S19` 同时提供从该 CBF 对提取的同源 S19、`*_Ver.asc` 和 `*_ABT.asc`，S19 模式在接入 CAN 前校验 ABT 地址、长度和 SHA-256；
 - 该快照包含楚能 ARC331 专用流程的两处规范对齐修正（`chuneng_331_flow.cpp`）：预编程顺序改为物理 `10 03` → 物理 `31 01 02 03` → 功能 `10 83/85 82/28 83 03` → 物理 `10 02`；`2E F1 84` 指纹移到 `31 01 03 01` 激活 SBL 之后、`31 01 FF 00` 擦除之前（Q/CN A201-2025 5.4.5/附录 C）；修改前源码备份于 `validation\2026-08-19_flow_fix_backup`；
 - 构建、离线测试、Fake ECU、Golden Trace、历史报告和真实 ECU 台架是不同证据层级；
