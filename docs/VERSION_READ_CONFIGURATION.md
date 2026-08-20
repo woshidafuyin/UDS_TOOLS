@@ -6,10 +6,10 @@
 
 ## 当前覆盖
 
-- 19 个 Profile 均包含 `[version_check]`；
-- 合计 131 个读取项；
+- 18 个 Profile 均包含 `[version_check]`；
+- 合计 123 个读取项；
 - 18 个非占位 Profile 可进入版本读取流程；
-- 零跑 A12EV 配置了 10 项，但 `placeholder=true`，在线探测、版本读取和刷写均被禁止；
+- 零跑 ARC 统一配置 4 个设备和 10 个读取项；
 - UI 自动跟随刷写作业页的厂商、项目、设备、CAN 后端、通道和当前 Tx/Rx ID；
 - 多目标 Profile 共用读取计划，设备切换只改变目标、端点和可选的期望值覆盖。
 
@@ -30,9 +30,8 @@
 | `shidaixinan_tianwangxing_fmr.ini` | 时代新安 天王星 FMR | 9 | 无 |
 | `shidaixinan_muxing2_fmr.ini` | 时代新安 木星2代 FMR | 9 | 无 |
 | `shidaixinan_qingling_fmr.ini` | 时代新安 庆铃 FMR | 9 | 无 |
-| `lp_arc.ini` | 零跑 ARC | 8 | 无 |
+| `lp_arc.ini` | 零跑 ARC | 10 | 无 |
 | `lp_arf.ini` | 零跑 ARF631 | 8 | 无 |
-| `lp_a12ev.ini` | 零跑 A12EV | 10 | 无；占位项目禁止运行 |
 | `geely_p416.ini` | 吉利 P416 | 13 | 无 |
 
 ## 配置格式

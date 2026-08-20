@@ -48,6 +48,8 @@ endif()
 
 set(UDS_CORE_SOURCES
   src/core/asc_trace.cpp
+  src/core/bus_monitor_trace.cpp
+  src/core/can_id_filter.cpp
   src/core/isotp.cpp
   src/core/uds_client.cpp
   src/core/uds_nrc.cpp
@@ -109,7 +111,6 @@ add_library(uds_flash STATIC
   src/flash/longma_ars1_31_flow.cpp
   src/flash/longma_ars1_31_workflow.cpp
   src/flash/lingpao_radar_flow.cpp
-  src/flash/lp_a12ev_workflow.cpp
   src/flash/lp_arc_flow_configurable.cpp
   src/flash/lp_arc_workflow.cpp
   src/flash/lp_arf_flow.cpp
@@ -228,7 +229,6 @@ if(UDS_BUILD_QT_UI AND CMAKE_SIZEOF_VOID_P EQUAL 8)
       src/flash/longma_ars1_31_flow.cpp
       src/flash/longma_ars1_31_workflow.cpp
       src/flash/lingpao_radar_flow.cpp
-      src/flash/lp_a12ev_workflow.cpp
       src/flash/lp_arc_flow_configurable.cpp
       src/flash/lp_arc_workflow.cpp
       src/flash/lp_arf_flow.cpp
@@ -282,6 +282,12 @@ if(UDS_BUILD_QT_UI AND CMAKE_SIZEOF_VOID_P EQUAL 8)
     qt5_add_resources(UDS_TOOL_QT_RESOURCE_SOURCES
       src/ui/qt/uds_tool_qt.qrc
     )
+    # The Windows resource compiler does not discover files referenced from an
+    # .rc file as build dependencies.  Keep the Explorer/EXE icon in sync with
+    # the same ICO embedded by Qt whenever the centralized icon asset changes.
+    set_property(SOURCE src/app/uds_tool.rc APPEND PROPERTY OBJECT_DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/assets/uds_flash_tool.ico"
+    )
     add_executable(uds_tool_qt WIN32
       src/app/uds_tool.rc
       src/ui/qt/main_qt.cpp
@@ -312,6 +318,7 @@ if(UDS_BUILD_QT_UI AND CMAKE_SIZEOF_VOID_P EQUAL 8)
       oleaut32
     )
     set_target_properties(uds_tool_qt PROPERTIES
+      OUTPUT_NAME "UDS_Tool"
       MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
     )
     add_custom_command(TARGET uds_tool_qt POST_BUILD
@@ -385,11 +392,6 @@ if(UDS_BUILD_QT_UI AND CMAKE_SIZEOF_VOID_P EQUAL 8)
       COMMAND ${CMAKE_COMMAND} -E copy_directory
               "${CMAKE_CURRENT_SOURCE_DIR}/resources/lp_arc"
               "$<TARGET_FILE_DIR:uds_tool_qt>/resources/lp_arc"
-      COMMAND ${CMAKE_COMMAND} -E remove_directory
-              "$<TARGET_FILE_DIR:uds_tool_qt>/resources/lp_a12ev"
-      COMMAND ${CMAKE_COMMAND} -E copy_directory
-              "${CMAKE_CURRENT_SOURCE_DIR}/resources/lp_a12ev"
-              "$<TARGET_FILE_DIR:uds_tool_qt>/resources/lp_a12ev"
       COMMAND ${CMAKE_COMMAND} -E remove_directory
               "$<TARGET_FILE_DIR:uds_tool_qt>/resources/lp_arf"
       COMMAND ${CMAKE_COMMAND} -E copy_directory
@@ -573,11 +575,13 @@ install(CODE [[
   file(REMOVE "${CMAKE_INSTALL_PREFIX}/profiles/chery_ars1_31_placeholder.ini")
   file(REMOVE "${CMAKE_INSTALL_PREFIX}/profiles/c857_b216.ini")
   file(REMOVE "${CMAKE_INSTALL_PREFIX}/profiles/lp_arc_placeholder.ini")
+  file(REMOVE "${CMAKE_INSTALL_PREFIX}/profiles/lp_a12ev.ini")
   file(REMOVE "${CMAKE_INSTALL_PREFIX}/profiles/lp_arf_placeholder.ini")
   file(REMOVE "${CMAKE_INSTALL_PREFIX}/profiles/lp_arf_231_b01.ini")
   file(REMOVE "${CMAKE_INSTALL_PREFIX}/profiles/lp_arf_231_b01_placeholder.ini")
   file(REMOVE_RECURSE "${CMAKE_INSTALL_PREFIX}/resources/c857_b216")
   file(REMOVE_RECURSE "${CMAKE_INSTALL_PREFIX}/resources/lp_arf_231_b01")
+  file(REMOVE_RECURSE "${CMAKE_INSTALL_PREFIX}/resources/lp_a12ev")
 ]])
 install(DIRECTORY profiles DESTINATION .)
 install(DIRECTORY resources/chery_ars1_33 DESTINATION resources)
@@ -593,7 +597,6 @@ install(DIRECTORY resources/shidaixinan_tianwangxing_fmr DESTINATION resources)
 install(DIRECTORY resources/shidaixinan_muxing2_fmr DESTINATION resources)
 install(DIRECTORY resources/shidaixinan_qingling_fmr DESTINATION resources)
 install(DIRECTORY resources/lp_arc DESTINATION resources)
-install(DIRECTORY resources/lp_a12ev DESTINATION resources)
 install(DIRECTORY resources/lp_arf DESTINATION resources)
 install(DIRECTORY resources/geely_p416 DESTINATION resources)
 if(EXISTS "${CHUNENG_331_RESOURCES}")

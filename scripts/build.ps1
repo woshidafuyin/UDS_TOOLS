@@ -15,6 +15,7 @@ $x86Build=Join-Path $root 'build\nmake-x86'
 $x64Build=Join-Path $root 'build\nmake-x64'
 $x86Output=Join-Path $x86Build $Config
 $x64Output=Join-Path $x64Build $Config
+$qtExecutableName='UDS_Tool.exe'
 $dist=if([string]::IsNullOrWhiteSpace($DistPath)){
   Join-Path $root 'dist-ui-professional'
 } else {
@@ -60,7 +61,7 @@ Invoke-VsCommand x64 $x64Configure 'CMake x64 configure'
 $x64Compile='"{0}" --build "{1}"' -f $cmake,$x64Build
 Invoke-VsCommand x64 $x64Compile 'CMake x64 build'
 
-$buildQtExecutable=Join-Path $x64Output 'uds_tool_qt.exe'
+$buildQtExecutable=Join-Path $x64Output $qtExecutableName
 if(-not (Test-Path -LiteralPath $buildQtExecutable)){
   throw 'Qt target was not built; verify the Qt 5.15.2 CMake package'
 }
@@ -97,7 +98,7 @@ foreach($location in @($x64Output,$dist)){
   }
 }
 
-$qtExecutable=Join-Path $dist 'uds_tool_qt.exe'
+$qtExecutable=Join-Path $dist $qtExecutableName
 if(-not (Test-Path -LiteralPath $qtExecutable)){
   throw 'Qt target was not built; verify the Qt 5.15.2 CMake package'
 }

@@ -5,11 +5,13 @@
 #include <chrono>
 #include <atomic>
 #include <condition_variable>
+#include <ctime>
 #include <deque>
 #include <filesystem>
 #include <fstream>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <string_view>
 #include <thread>
 
@@ -19,6 +21,14 @@ enum class CanTraceDirection {
   transmit,
   receive,
 };
+
+// Shared Vector ASC serialization used by both live traces and the bus
+// monitor's explicit export. Keeping this in one place prevents fields such
+// as CAN ID, extended-frame suffix, CAN FD/BRS and direction from diverging.
+[[nodiscard]] std::string format_asc_header(std::time_t wall_time);
+[[nodiscard]] std::string format_asc_record(
+    double timestamp_seconds, unsigned channel,
+    CanTraceDirection direction, const CanFrame& frame);
 
 class AscTraceWriter final {
 public:

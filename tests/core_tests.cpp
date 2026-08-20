@@ -1,5 +1,7 @@
 #include "core/can_bus.hpp"
 #include "core/asc_trace.hpp"
+#include "core/bus_monitor_trace.hpp"
+#include "core/can_id_filter.hpp"
 #include "core/flash_data.hpp"
 #include "core/hex.hpp"
 #include "core/isotp.hpp"
@@ -14,7 +16,6 @@
 #include "flash/chuneng_331_workflow.hpp"
 #include "flash/flash_workflow.hpp"
 #include "flash/longma_ars1_31_flow.hpp"
-#include "flash/lp_a12ev_workflow.hpp"
 #include "flash/lp_arc_flow.hpp"
 #include "flash/lp_arf_flow.hpp"
 #include "flash/shidaixinan_hjzj_fmr_flow.hpp"
@@ -23,6 +24,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <ctime>
 #include <deque>
 #include <filesystem>
 #include <fstream>
@@ -81,6 +83,17 @@ void test_sha256() {
 }
 
 void test_asc_trace_can_bus() {
+  const auto exported_classic = uds::format_asc_record(
+      0.125, 2, uds::CanTraceDirection::transmit,
+      uds::CanFrame{0x744, {0x10, 0x01}, false, false, false});
+  const auto exported_fd = uds::format_asc_record(
+      0.250, 2, uds::CanTraceDirection::receive,
+      uds::CanFrame{0x18DAF1B7, {0x30, 0x00, 0x0A}, true, true, true});
+  check(exported_classic.find("2 744 Tx d 2 10 01") != std::string::npos &&
+            exported_fd.find("CANFD 2 Rx 18daf1b7x 1 1 3 3 30 00 0A") !=
+                std::string::npos,
+        "ASC export formatter omitted CAN ID or frame attributes");
+
   const auto trace_path =
       std::filesystem::temp_directory_path() / "uds_asc_trace_test.asc";
   std::error_code ignored;
@@ -133,6 +146,100 @@ void test_asc_trace_can_bus() {
             named.extension() == L".asc",
         "ASC trace filename does not follow the operation naming contract");
   std::filesystem::remove(trace_path, ignored);
+}
+
+void test_bus_monitor_trace_session() {
+  const auto directory = std::filesystem::temp_directory_path() /
+                         "uds_bus_monitor_trace_session_test";
+  std::error_code ignored;
+  std::filesystem::remove_all(directory, ignored);
+  std::filesystem::create_directories(directory);
+
+  const auto abandoned = directory / "bus_monitor_abandoned_CH2.asc.partial";
+  {
+    std::ofstream output(abandoned, std::ios::binary | std::ios::trunc);
+    output << uds::format_asc_header(std::time(nullptr))
+           << uds::format_asc_record(
+                  0.125, 2, uds::CanTraceDirection::receive,
+                  uds::CanFrame{0x772, {0x10, 0x01}, false, false, false});
+  }
+
+  uds::BusMonitorTraceSession session(directory);
+  const auto recovery = session.recover_incomplete();
+  check(recovery.recovered == 1 && recovery.failed == 0 &&
+            !std::filesystem::exists(abandoned) &&
+            std::filesystem::exists(
+                directory / "bus_monitor_abandoned_CH2.asc"),
+        "abandoned bus-monitor ASC trace was not recovered");
+
+  check(session.start(3) && session.is_active() &&
+            session.path().filename().string().ends_with(".asc.partial"),
+        "bus-monitor trace session did not create a partial ASC file");
+  session.append(
+      uds::CanFrame{0x744, {0x10, 0x01}, false, false, false, true});
+  session.append(uds::CanFrame{0x18DAF1B7,
+                               {0x30, 0x00, 0x0A},
+                               true,
+                               true,
+                               true,
+                               false});
+  session.flush();
+  std::string snapshot;
+  check(session.export_snapshot([&snapshot](std::string_view chunk) {
+          snapshot.append(chunk);
+          return true;
+        }) &&
+            session.frame_count() == 2 &&
+            snapshot.find("3 744 Tx d 2 10 01") != std::string::npos &&
+            snapshot.find("CANFD 3 Rx 18daf1b7x 1 1 3 3 30 00 0A") !=
+                std::string::npos &&
+            snapshot.ends_with("End TriggerBlock\r\n"),
+        "active bus-monitor trace snapshot was incomplete");
+
+  session.stop();
+  check(!session.is_active() &&
+            session.path().filename().string().ends_with(".asc") &&
+            std::filesystem::exists(session.path()),
+        "bus-monitor trace session did not finalize its ASC file");
+  std::ifstream input(session.path(), std::ios::binary);
+  const std::string completed((std::istreambuf_iterator<char>(input)),
+                              std::istreambuf_iterator<char>());
+  check(completed.ends_with("End TriggerBlock\r\n") &&
+            completed.find("End TriggerBlock\r\n") ==
+                completed.rfind("End TriggerBlock\r\n"),
+        "finalized bus-monitor ASC trace has an invalid end marker");
+
+  std::filesystem::remove_all(directory, ignored);
+}
+
+void test_can_id_filter() {
+  const auto parsed = uds::parse_can_id_filter(
+      "772、7DF 700-70F，18DAxxxx !705,!18DAF1B6");
+  const auto* filter = std::get_if<uds::CanIdFilter>(&parsed);
+  check(filter && filter->matches(0x772) && filter->matches(0x7DF) &&
+            filter->matches(0x704) && !filter->matches(0x705) &&
+            filter->matches(0x18DA1234) &&
+            !filter->matches(0x18DAF1B6) && !filter->matches(0x123),
+        "CAN ID filter exact/range/mask/exclusion grammar mismatch");
+
+  const auto only_exclusion = uds::parse_can_id_filter("!520");
+  const auto* exclusion_filter =
+      std::get_if<uds::CanIdFilter>(&only_exclusion);
+  check(exclusion_filter && !exclusion_filter->matches(0x520) &&
+            exclusion_filter->matches(0x521),
+        "CAN ID exclusion-only filter must include all other IDs");
+
+  const auto empty = uds::parse_can_id_filter("  ， 、  ");
+  const auto* empty_filter = std::get_if<uds::CanIdFilter>(&empty);
+  check(empty_filter && empty_filter->matches(0x123) &&
+            empty_filter->matches(0x18DAF1B6),
+        "empty CAN ID filter must match all valid IDs");
+
+  for (const auto expression : {"7FF-700", "18DGxxxx", "20000000", "!"}) {
+    check(std::holds_alternative<uds::CanIdFilterError>(
+              uds::parse_can_id_filter(expression)),
+          std::string("invalid CAN ID filter was accepted: ") + expression);
+  }
 }
 
 void test_uds_single_frame() {
@@ -827,8 +934,6 @@ void test_workflow_registry() {
   check(uds::is_flash_workflow_registered(
             L"shidaixinan_hjzj_fmr"),
         "Shidaixinan HJZJ_FMR workflow is not registered");
-  check(uds::is_flash_workflow_registered(L"lp_a12ev"),
-        "LP-A12EV workflow is not registered");
   check(uds::is_flash_workflow_registered(L"lp_arc"),
         "LP-ARC workflow is not registered");
   check(uds::is_flash_workflow_registered(L"chuneng_arc331"),
@@ -840,7 +945,7 @@ void test_workflow_registry() {
   check(!uds::is_flash_workflow_registered(L"future_flow"),
         "unknown workflow was reported as registered");
   const auto registered = uds::registered_flash_workflows();
-  check(registered.size() == 16 &&
+  check(registered.size() == 15 &&
             std::find(registered.begin(), registered.end(), L"chuneng_331") == registered.end() &&
             std::find(registered.begin(), registered.end(), L"chuneng_arc331") != registered.end() &&
              std::find(registered.begin(), registered.end(), L"chery_ars1_33") != registered.end() &&
@@ -855,8 +960,6 @@ void test_workflow_registry() {
              std::find(registered.begin(), registered.end(), L"xizhong_lsmr") != registered.end() &&
             std::find(registered.begin(), registered.end(),
                       L"shidaixinan_hjzj_fmr") != registered.end() &&
-            std::find(registered.begin(), registered.end(),
-                      L"lp_a12ev") != registered.end() &&
             std::find(registered.begin(), registered.end(),
                       L"lp_arc") != registered.end() &&
             std::find(registered.begin(), registered.end(),
@@ -1064,7 +1167,7 @@ void test_xizhong_rsmr_profile_and_resources() {
                           0xF195});
   check_version_requests("lp_arc",
                          {0xF187, 0xF180, 0xF189, 0xF195, 0xF182, 0xF188,
-                          0xF193, 0xF150});
+                          0xF193, 0xF150, 0xF191, 0xFF00});
   check_version_requests("lp_arf",
                          {0xF187, 0xF180, 0xF189, 0xF195, 0xF182, 0xF188,
                           0xF193, 0xF150});
@@ -1074,10 +1177,6 @@ void test_xizhong_rsmr_profile_and_resources() {
       "geely_p416",
       {0xF180, 0xF120, 0xF121, 0xF125, 0xF12A, 0xF12B, 0xF12E,
        0xF1A0, 0xF1A1, 0xF1A5, 0xF1AA, 0xF1AB, 0xF1AE});
-  check_version_requests(
-      "lp_a12ev",
-      {0xF187, 0xF180, 0xF188, 0xF189, 0xF195, 0xF182, 0xF191,
-       0xF193, 0xF150, 0xFF00});
   for (const auto* id : {"shidaixinan_muxing2_fmr",
                           "shidaixinan_qingling_fmr",
                           "shidaixinan_tianwangxing_fmr"}) {
@@ -2222,7 +2321,7 @@ void test_shidaixinan_arf232_project_profiles_and_resources() {
   }
 
   const auto catalog = uds::discover_flash_profiles(source / "profiles");
-  check(catalog.errors.empty() && catalog.profiles.size() == 19,
+  check(catalog.errors.empty() && catalog.profiles.size() == 18,
         "Shidaixinan project profiles were not discovered cleanly");
   for (const auto& project : projects) {
     check(std::any_of(
@@ -2241,7 +2340,8 @@ void test_lp_arc_protocol_and_resources() {
   check(profile.id == L"lp_arc" && profile.flow == L"lp_arc" &&
             profile.vendor_name == L"零跑" &&
             profile.project_name == L"ARC" &&
-            profile.device_name == L"LP-ARC" &&
+            profile.name == L"ARC" &&
+            profile.device_name == L"设备 0（0x772 / 0x77A）" &&
             !profile.placeholder && profile.can_fd &&
             !profile.power_control && !profile.extended_id &&
             !profile.uds_fd && !profile.uds_brs &&
@@ -2266,8 +2366,21 @@ void test_lp_arc_protocol_and_resources() {
             profile.driver_length == uds::kLpArcDriverLength &&
             profile.app_start == uds::kLpArcAppAddress &&
             profile.app_length == uds::kLpArcAppLength &&
-            profile.app_verify_label == L"Certificate",
-        "LP-ARC packaged profile mismatch");
+            profile.app_verify_label == L"Certificate" &&
+            profile.targets.size() == 4 &&
+            profile.targets[0].tx_id == 0x772 &&
+            profile.targets[0].rx_id == 0x77A &&
+            profile.targets[1].tx_id == 0x773 &&
+            profile.targets[1].rx_id == 0x77B &&
+            profile.targets[2].tx_id == 0x771 &&
+            profile.targets[2].rx_id == 0x779 &&
+            profile.targets[3].tx_id == 0x770 &&
+            profile.targets[3].rx_id == 0x778 &&
+            std::none_of(profile.targets.begin(), profile.targets.end(),
+                         [](const auto& target) {
+                           return target.pending_validation;
+                         }),
+        "ARC merged four-target packaged profile mismatch");
 
   check(uds::resolve_lp_arc_entry_mode(L"app") ==
                 uds::LpArcEntryMode::app_to_app &&
@@ -2503,47 +2616,6 @@ void test_lp_arc_protocol_and_resources() {
         "LP-ARC workflow factory/report mapping mismatch");
 }
 
-void test_lp_a12ev_profile_and_resources() {
-  const auto source = std::filesystem::path(UDS_SOURCE_DIR);
-  const auto profile =
-      uds::load_profile_ini(source / "profiles" / "lp_a12ev.ini");
-  check(profile.id == L"lp_a12ev" && profile.flow == L"lp_a12ev" &&
-            profile.vendor_name == L"零跑" &&
-            profile.project_name == L"A12EV-ARC" &&
-            profile.placeholder && profile.can_fd &&
-            profile.lock_diagnostic_ids && profile.supports_ft_entry &&
-            profile.tx_id == 0x772 && profile.rx_id == 0x77A &&
-            profile.functional_id == 0x7DF && profile.ft_tx_id == 0x701 &&
-            profile.ft_rx_id == 0x761 && profile.targets.size() == 4 &&
-            profile.targets[0].tx_id == 0x772 && profile.targets[0].rx_id == 0x77A &&
-            profile.targets[1].tx_id == 0x773 && profile.targets[1].rx_id == 0x77B &&
-            profile.targets[2].tx_id == 0x771 && profile.targets[2].rx_id == 0x779 &&
-            profile.targets[3].tx_id == 0x770 && profile.targets[3].rx_id == 0x778 &&
-            std::all_of(profile.targets.begin(), profile.targets.end(),
-                        [](const auto& target) { return target.pending_validation; }),
-        "LP-A12EV profile must remain a four-target blocked configuration");
-
-  const auto root = source / "resources" / "lp_a12ev";
-  const auto driver = uds::load_single_srecord_segment(
-      root / "Driver" / "FlashDriver.srec");
-  check(driver.address == 0x00000000 && driver.data.size() == 0x00004000 &&
-            std::filesystem::file_size(
-                root / "dll" / "lingpao_SeednKey_cdd.dll") == 777216 &&
-            std::filesystem::exists(root / "Reference" / "Flash20251103.can"),
-        "LP-A12EV source Driver, SeedKey DLL, or CAPL reference is missing");
-
-  const auto workflow = uds::create_flash_workflow(L"lp_a12ev");
-  check(workflow && workflow->id() == L"lp_a12ev" &&
-            workflow->report_title(profile).find("A12EV") != std::string::npos,
-        "LP-A12EV workflow factory/report mapping mismatch");
-  const auto spec = uds::lp_a12ev_radar_spec(profile);
-  check(spec.app_tx_id == 0x772 && spec.app_rx_id == 0x77A &&
-            spec.pls_tx_id == 0x701 && spec.pls_rx_id == 0x761 &&
-            spec.functional_id == 0x7DF &&
-            spec.raw_boot_transition_tx_id == 0x771,
-        "LP-A12EV raw boot-transition endpoint must match CANoe CAPL");
-}
-
 void test_lp_arf_protocol_and_resources() {
   const auto source = std::filesystem::path(UDS_SOURCE_DIR);
   const auto profile =
@@ -2668,6 +2740,8 @@ int main() {
     run("hex", test_hex);
     run("sha256", test_sha256);
     run("asc_trace_can_bus", test_asc_trace_can_bus);
+    run("bus_monitor_trace_session", test_bus_monitor_trace_session);
+    run("can_id_filter", test_can_id_filter);
     run("uds_single_frame", test_uds_single_frame);
     run("isotp_drains_stale_receive_queue_before_request",
         test_isotp_drains_stale_receive_queue_before_request);
@@ -2705,8 +2779,6 @@ int main() {
         test_shidaixinan_arf232_project_profiles_and_resources);
     run("lp_arc_protocol_and_resources",
         test_lp_arc_protocol_and_resources);
-    run("lp_a12ev_profile_and_resources",
-        test_lp_a12ev_profile_and_resources);
     run("lp_arf_protocol_and_resources",
         test_lp_arf_protocol_and_resources);
     std::cout << "core_tests PASS\n";

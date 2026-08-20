@@ -6,15 +6,15 @@
 
 ## 当前组成
 
-- 19 个项目 Profile；
-- 16 个已注册 Workflow ID；
+- 18 个项目 Profile；
+- 15 个已注册 Workflow ID；
 - Vector XL、Kvaser、TOSUN、ZLG CAN 后端；
 - 在线探测、版本读取、刷写、报告、日志和被动总线监听；
 - 当前综合候选发布目录：`dist`。
 
 ## 当前发布
 
-工程统一构建并发布通用版 `uds_tool_qt.exe`。`scripts\build.ps1` 加载全部项目 Profile，不再提供客户独立版本构建入口。通用界面的 Tx/Rx ID 当前允许手工修改；切换项目或设备时会恢复所选 Profile/目标的默认端点。Profile 中的 `lock_diagnostic_ids` 当前作为配置元数据加载，通用界面尚未用它锁定输入框。
+工程统一构建并发布通用版 `UDS_Tool.exe`。CMake 内部目标仍命名为 `uds_tool_qt`，用户可见产物名由目标的 `OUTPUT_NAME` 集中定义。`scripts\build.ps1` 加载全部项目 Profile，不再提供客户独立版本构建入口。通用界面的 Tx/Rx ID 当前允许手工修改；切换项目或设备时会恢复所选 Profile/目标的默认端点。Profile 中的 `lock_diagnostic_ids` 当前作为配置元数据加载，通用界面尚未用它锁定输入框。
 
 Profile 保存项目、设备、入口、诊断 ID、CAN 参数、默认文件和能力开关。Workflow 保存对应项目的刷写服务序列、文件解析、地址窗口、完整性校验、周期报文和恢复步骤。多个项目可以复用同一状态机，但仍使用各自的 Profile 和资源。
 
@@ -28,7 +28,7 @@ Profile 保存项目、设备、入口、诊断 ID、CAN 参数、默认文件�
 | `src/transport` | ISO-TP、UDS 会话、请求响应和超时处理 |
 | `src/drivers/can` | Vector XL、Kvaser、TOSUN、ZLG 适配及共享 CAN 通道 |
 | `src/flash` | 各项目 Workflow、刷写状态机和项目协议契约 |
-| `profiles` | 19 个项目配置入口 |
+| `profiles` | 18 个项目配置入口 |
 | `resources` | 项目 Driver、CDD、DLL、参考文件、校验文件和来源清单 |
 | `tests` | 核心、CAN 适配、应用状态、探测桥接和 Qt 主窗口离线测试 |
 
@@ -53,7 +53,7 @@ Profile 保存项目、设备、入口、诊断 ID、CAN 参数、默认文件�
 ### 一键版本读取
 
 - 版本读取页自动跟随刷写作业页的厂商、项目、设备、CAN 后端、通道及当前 Tx/Rx ID；手工修改 Tx/Rx ID 后，读取使用界面当前值；
-- 当前 19 个 Profile 均配置了 `[version_check]`，合计 131 个读取项；其中零跑 A12EV 为 `placeholder=true`，其在线探测、版本读取和刷写均被禁止；
+- 当前 18 个 Profile 均配置了 `[version_check]`，合计 123 个读取项；零跑 ARC 为统一的四设备项目入口；
 - 页面在读取前集中显示请求、DID、含义和必读属性，读取后显示状态、完整解码值及原始 UDS 响应；
 - 每个读取项由 Profile 配置请求、正响应前缀、解码器、期望值及是否必读，不在界面代码中按项目复制读取列表；
 - 当前支持 ASCII、十六进制、犀重 F180/F189 结构、计数 ASCII、BCD+ASCII 零件号及计数零件号列表解码；
@@ -73,8 +73,8 @@ Profile 保存项目、设备、入口、诊断 ID、CAN 参数、默认文件�
 | 犀重 RSMR / LSMR | 各 3 | 维持项目 NM，使用项目结构解码器 |
 | 时代新安 HJZJ FMR | 6 | 已配置 |
 | 时代新安 天王星 / 木星2代 / 庆铃 FMR | 各 9 | 独立 Profile 配置 |
-| 零跑 ARC / ARF631 | 各 8 | 已配置 |
-| 零跑 A12EV | 10 | `placeholder=true`，运行能力禁用 |
+| 零跑 ARC | 10 | 四设备共用读取计划；新增的 `F191`、`FF00` 为选读项 |
+| 零跑 ARF631 | 8 | 已配置 |
 | 吉利 P416 | 13 | 已配置 |
 
 ### CAN 通道与总线监听
@@ -84,8 +84,10 @@ Profile 保存项目、设备、入口、诊断 ID、CAN 参数、默认文件�
 - 总线监听页面只被动接收，不发送报文；
 - 工具启动后自动监听刷写页当前通道；切换项目、设备、CAN 通道或手工修改 Tx/Rx ID 后，监听上下文和诊断 ID 集合随当前刷写选择同步；
 - “仅显示诊断 ID”默认开启：表格只显示当前物理 Tx/Rx、功能 ID，以及项目声明的 FT Tx/Rx；没有配置诊断 ID 时不限制显示；
-- “仅显示诊断 ID”只影响表格显示，非诊断帧仍在后台接收并保留于有界缓存中，关闭过滤后可重新显示，导出 ASC 始终包含全部已缓存原始帧；
-- 仍可叠加手工 ID、数据、TX/RX、标准/扩展、CAN/CAN FD 和 BRS 过滤；
+- “仅显示诊断 ID”和其他过滤只影响表格显示；内存表格最多保留最近 10,000 帧，完整原始帧从监听开始流式写入 `logs/bus_monitor/*.asc.partial`，正常停止后封口为 `.asc`，异常退出遗留文件在下次启动时自动恢复；清空列表不清空完整 Trace，导出 ASC 使用磁盘证据源而非当前表格；
+- 手工 ID 过滤支持逗号、中文逗号、顿号或空格分隔，支持精确 ID（`772,7DF`）、范围（`700-7FF`）、半字节掩码（`18DAxxxx`）和排除项（`!520`）；非法条件标红并给出具体项和原因，修正前继续使用上一个有效条件；
+- 提供“当前项目诊断 ID”“功能寻址”“物理寻址”“周期帧”快捷过滤；其中周期帧通过排除当前项目全部诊断 ID 显示其余背景/周期报文；仍可叠加数据、TX/RX、标准/扩展、CAN/CAN FD 和 BRS 过滤；
+- 页面分别显示总接收帧数、当前显示帧数和内存已淘汰帧数，并明确显示完整 Trace 正在写入或已经保存的路径；
 - 最终 NRC 和 `0202=05` 等最终 RoutineControl 失败在表格中红色强调并解释含义；`7F xx 78` 保留原始帧但不作为失败报警，ARC331 的 `0203=05` 按当前项目参考流程显示为 WARN；
 - 监听结果可导出为 ASC 文件。
 
@@ -119,9 +121,8 @@ Profile 保存项目、设备、入口、诊断 ID、CAN 参数、默认文件�
 | 时代新安 天王星 FMR | `shidaixinan_tianwangxing_fmr.ini` / `shidaixinan_hjzj_fmr` | 复用 HJZJ 状态机；独立 Profile/资源；默认 APP 为空 |
 | 时代新安 木星2代 FMR | `shidaixinan_muxing2_fmr.ini` / `shidaixinan_hjzj_fmr` | 复用 HJZJ 状态机；独立 Profile/资源；默认 APP 为空 |
 | 时代新安 庆铃 FMR | `shidaixinan_qingling_fmr.ini` / `shidaixinan_hjzj_fmr` | 复用 HJZJ 状态机；独立 Profile/资源；默认 APP 为空 |
-| 零跑 ARC | `lp_arc.ini` / `lp_arc` | APP、FT |
+| 零跑 ARC | `lp_arc.ini` / `lp_arc` | 四设备；APP、FT；预置 Driver、APP、校验文件和安全 DLL |
 | 零跑 ARF631 | `lp_arf.ini` / `lp_arf` | APP、FT |
-| 零跑 A12EV | `lp_a12ev.ini` / `lp_a12ev` | 当前 `placeholder=true`；界面可见，在线探测、版本读取和刷写均被禁止 |
 | 吉利 P416 | `geely_p416.ini` / `geely_p416` | SBL、APP、ESS VBF 流程；支持项目 NM 唤醒和专用传输规则 |
 
 ## 楚能 ARC331 当前实现
@@ -164,102 +165,36 @@ CBF 预检包含：版本、必需 Header 字段、类型、数据格式、两�
 
 详细流程见 `docs/CHUNENG_331_FLOW_PARITY.md`。
 
-## 2026-08-19 两条最新开发支线
 
-当前 Release 可执行程序的功能基线提交为 `7d74a5d`。两条最新开发支线不是互相分叉的两个 Git 分支，而是已经按先后顺序进入同一提交链，最终 Release 同时包含二者：
+## 与公共盘 `8.12` 版本的对比
 
-1. `98f1cbd fix: clarify ARC331 flashing status diagnostics`
-   - 楚能 ARC331 Driver/APP CBF 成对输入；
-   - 楚能 ARC331 Driver/APP S19、`*_Ver.asc`、`*_ABT.asc` 成对输入；
-   - Driver、Driver ABT、APP、APP ABT 四组下载；
-   - Driver 和 APP 分别执行 `0202 + 256 字节签名`，并执行最终 `FF01` 和复位；
-   - `36 当前块/总块数` 进度；
-   - 最终失败报文/NRC 红色解释、`0x78` 等待态降噪及 `0203=05` WARN 语义。
-2. `7d74a5d feat: add diagnostic-ID filter to bus monitor`
-   - 总线监听新增默认开启的“仅显示诊断 ID”；
-   - 诊断 ID 自动取当前界面物理 Tx/Rx、功能 ID和项目 FT Tx/Rx，并随项目、目标和手工 ID 变化同步；
-   - 过滤只作用于表格显示，不丢弃后台缓存帧，也不缩减 ASC 导出证据；
-   - 保留原有手工过滤、失败红色解释及被动零发送边界。
-
-`98f1cbd` 是 `7d74a5d` 的直接祖先；本节所述 Release EXE 和最终压缩包均以 `7d74a5d` 为功能基线，不存在只打入其中一条支线的情况。后续 README 文档提交只更新交付说明，不改变该 EXE 二进制。
-
-## 相对 2026-08-03 发布包的增量
-
-对比基线：
+对比来源为：
 
 ```text
-D:\project\UDS_tools\packages\
-UDSD_7_28_dist-ui-vendor-project-device-p2fix-ui-blank_20260803_175639_release.zip
+\\njdatasrv\测试部公共盘\01_软件测试组\02_项目管理\通用测试工程\2026年_通用刷写工具\8.12
+UDS_tool_yuanma2.7z
+UDS_tools.7z
 ```
 
-该文件后来增加过一份审计 README；以下统计以保留的原始同哈希备份 `..._ORIGINAL_E914D6A1.zip` 为软件基线，原始 ZIP SHA-256 为 `E914D6A14E8BE6BE59F0150CAB4383D1B3F79A860FF44BA5AAA2A4870C0422DC`。去掉老 ZIP 最外层目录差异后，与 `build\release-stage-7d74a5d` 逐文件比较：
+本次直接读取两个 7z 内的 README 和 Profile，没有修改公共盘文件。公共盘 `8.12` 发布包包含 14 个 Profile、11 个 Workflow；当前工程包含 18 个 Profile、15 个 Workflow，公共盘当时列为待复刻的 E0Y、T22、T1EJ、LSMR 已形成当前独立 Profile。主要当前差异如下：
 
-| 项目 | 数量 |
-| --- | ---: |
-| 2026-08-03 原始基线文件 | 307 |
-| 当前 Release 暂存文件 | 371 |
-| 路径和 SHA-256 完全一致 | 286 |
-| 同路径但内容改变 | 15 |
-| 当前版本新增 | 70 |
-| 老版本存在、当前版本未携带 | 6 |
+- 零跑 `ARC` 从公共盘版本的单设备 `0x772/0x77A` 扩展为四设备，并吸收原 `A12EV-ARC` 的设备数量和补充版本 DID；运行时只保留一个 `ARC / lp_arc` 入口，仍使用公共盘 ARC 已预置的 Driver、APP、ASC 和 SeedKey DLL；
+- 楚能 Profile 已从公共盘的 `chuneng_331 + resources\chuneng_2944` 切换为 `chuneng_arc331 + resources\chuneng_d7_arc331_zip`，左右后端点仍为 `0x72C/0x72D`、`0x72E/0x72F`，但文件输入、唤醒、安全访问和校验契约按当前 ARC331 实现管理；
+- 当前 18 个 Profile 均配置版本读取，共 123 项；公共盘版本只覆盖当时已配置项目，不能作为当前 DID 总表；
+- 当前界面增加共享操作状态、被动总线监听、诊断 ID 过滤、CBF 输入和更新后的报告/日志能力；
+- 公共盘 README 中的历史实刷记录继续作为对应旧 EXE/Profile/资源组合的证据，不能自动转移为当前 EXE、四设备 ARC 或新 ARC331 输入集的台架 PASS。
 
-### 新增项目和资源
-
-- Profile 从 10 个增加到 19 个；新增奇瑞 KP31/E0Y/T22/T1EJ、零跑 A12EV、时代新安天王星/木星2代/庆铃 FMR、犀重 LSMR；
-- 新增楚能 D7 ARC331 独立资源集，包含 Driver/APP CBF、Driver/APP S19、Ver ASC、ABT ASC、SeedKey DLL、CDD 和参考工程材料；
-- 新增奇瑞 KP31、吉利 P416 正式命名 VBF、零跑 A12EV/ARF、时代新安公共及三个派生项目、犀重 LSMR 的 Profile 配套资源；
-- 19 个 Profile 均接入集中式版本读取配置，共 131 个读取项；A12EV 仍为资料占位，在线能力被明确禁止；
-- 通用界面当前保留“刷写作业、版本读取、总线监听”三页，不新增并行状态页面。
-
-新增的 9 个 Profile：
-
-```text
-chery_e0y.ini
-chery_kp31.ini
-chery_t1ej.ini
-chery_t22.ini
-lp_a12ev.ini
-shidaixinan_muxing2_fmr.ini
-shidaixinan_qingling_fmr.ini
-shidaixinan_tianwangxing_fmr.ini
-xizhong_lsmr.ini
-```
-
-### 同路径发生改变的内容
-
-- 主程序 `uds_tool_qt.exe`、`keygen_broker.exe`、CAN 硬件探测工具和 Kvaser 预检脚本更新；
-- `chery_ars1_33.ini` 增加主/从设备和版本读取，原从雷达端点保留，主雷达仍标记待台架验证；
-- `geely_p416.ini` 默认切换到正式命名 VBF 并增加版本读取；老 reconstructed VBF 仍在资源目录，可手工选择；
-- `longma_ars1_31.ini`、`lp_arc.ini`、`lp_arf.ini`、`shidaixinan_hjzj_fmr.ini` 增加版本读取或项目显示信息，原刷写字段未发现删除；
-- `chuneng_331_left_rear.ini` 已从老楚能 331/2944 定义切换为新楚能 D7 ARC331 左/右后雷达定义，属于项目替换而非原端点的普通增强。
-
-### 老版本未原样保留的内容与兼容性边界
-
-当前 Release 未携带老包中的快捷方式，以及以下 `resources\chuneng_2944` 原路径文件：
-
-```text
-APP\Awr2944_Es2_sign.appimage(1).s19
-dll\ChuNeng_D7_SeednKey_V1.0.dll
-Driver\FlashDriver.srec
-Verification\7AABB0001AA.asc
-Verification\DriverVerification.asc
-```
-
-其中 SeedKey DLL、Driver 和 Driver Verification 可在新 ARC331 资源目录找到同哈希副本；旧 APP S19 和 `7AABB0001AA.asc` 没有同哈希副本。旧 `chuneng_331_left_rear` 的 `chuneng_331`、`0x772/0x77A` 语义也已被新的 `chuneng_arc331`、右后 `0x72C/0x72D`、左后 `0x72E/0x72F` 替换。因此当前包可以证明新 ARC331 CBF/S19 流程已集成并实板通过，但不能宣称仍可直接复现老包的楚能 331/2944 刷写入口。
-
-除该已确认兼容性边界外，共有的 CAN 驱动和 Qt 运行库均保持同哈希；其余项目的离线测试通过也不替代逐项目、逐设备、逐模式的真实 ECU 回归。
+因此当前根 README 在项目清单、Profile/Workflow 数、ARC 合并、版本读取、总线监听、CBF 和发布验证信息上均晚于公共盘 `8.12`；详细项目流程继续由 `docs/*_FLOW_PARITY.md` 和对应 `validation` 记录承载，不把公共盘 41 KB 发布说明整段复制回当前入口文档。
 
 ## 当前发布与验证
 
 - 综合候选目录：`dist`；
-- 主程序：`dist/uds_tool_qt.exe`；
-- 最新干净交付包：`UDS_Tool_Release_20260819_7d74a5d.zip`；
+- 主程序：`dist/UDS_Tool.exe`；
+- 最新交付包：`UDS_Tool_Release_20260820_LATEST.zip`；
 - `dist` 包含运行库、CAN 驱动适配、Profile、项目资源、工具和文档；
 - 当前构建命令：`scripts\build.ps1 -Config Release -DistPath dist`；
-- 2026-08-19 当前候选完成 Release 构建和 CTest 1–7（7/7）回归；第 8 项 Qt 主窗口测试在新旧二进制上均停于 `QApplication` 启动检查点，尚未形成界面运行通过证据；
-- 最新 Release 暂存目录：`build\release-stage-7d74a5d`；
-- 最新 Release `uds_tool_qt.exe` SHA-256：`E1282F26027A25745ED7065F3D64618FF28FE41CF70F551DFFCBF4CEAD0EF887`；
-- 当前 `master` 同时包含 `98f1cbd` 楚能 ARC331 诊断/ABT 支线和 `7d74a5d` 总线监听诊断 ID 过滤支线；
+- 2026-08-19 本轮 ARC 合并后完成 Release 构建和 CTest 8/8 回归；Qt 主窗口测试包含四设备 ARC 切换、预置文件和 10,000 次随机操作检查；
+- 最新 Release `UDS_Tool.exe` 的 SHA-256 以最新发布包校验结果为准；
 - 楚能 ARC331 默认使用独立 Driver/APP CBF 对；`resources\chuneng_d7_arc331_zip\S19` 同时提供从该 CBF 对提取的同源 S19、`*_Ver.asc` 和 `*_ABT.asc`，S19 模式在接入 CAN 前校验 ABT 地址、长度和 SHA-256；
 - 当前 Release 对应的楚能 ARC331 CBF 与 S19/ASC 两种模式均已在左后雷达 `0x72E/0x72F` 实板完成 Driver、Driver ABT、APP、APP ABT、`0202=04`、`FF01=04` 和 `51 01` 完整闭环；右后雷达仍需独立台架确认；
 - 该快照包含楚能 ARC331 专用流程的两处规范对齐修正（`chuneng_331_flow.cpp`）：预编程顺序改为物理 `10 03` → 物理 `31 01 02 03` → 功能 `10 83/85 82/28 83 03` → 物理 `10 02`；`2E F1 84` 指纹移到 `31 01 03 01` 激活 SBL 之后、`31 01 FF 00` 擦除之前（Q/CN A201-2025 5.4.5/附录 C）；修改前源码备份于 `validation\2026-08-19_flow_fix_backup`；

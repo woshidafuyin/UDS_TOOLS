@@ -7,7 +7,9 @@
 #include <QAbstractItemView>
 #include <QCheckBox>
 #include <QColor>
+#include <QCoreApplication>
 #include <QDateTime>
+#include <QDir>
 #include <QFileDialog>
 #include <QFont>
 #include <QGridLayout>
@@ -18,6 +20,7 @@
 #include <QMetaObject>
 #include <QPushButton>
 #include <QSaveFile>
+#include <QStringList>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
@@ -25,12 +28,51 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <filesystem>
 #include <memory>
 #include <utility>
 
 namespace uds::ui::qt {
 namespace {
 constexpr int kMaximumRows = 10000;
+
+QString idFilterErrorText(const CanIdFilterError& error) {
+  QString reason;
+  switch (error.code) {
+  case CanIdFilterErrorCode::missing_expression:
+    reason = QStringLiteral("排除符号 ! 后缺少 ID、范围或掩码");
+    break;
+  case CanIdFilterErrorCode::invalid_token:
+    reason = QStringLiteral("无法识别的过滤条件");
+    break;
+  case CanIdFilterErrorCode::invalid_hex:
+    reason = QStringLiteral("包含非十六进制字符");
+    break;
+  case CanIdFilterErrorCode::identifier_out_of_range:
+    reason = QStringLiteral("CAN ID 超出 0x1FFFFFFF");
+    break;
+  case CanIdFilterErrorCode::invalid_range:
+    reason = QStringLiteral("范围格式应为 700-7FF");
+    break;
+  case CanIdFilterErrorCode::reversed_range:
+    reason = QStringLiteral("范围起点不能大于终点");
+    break;
+  case CanIdFilterErrorCode::invalid_mask:
+    reason = QStringLiteral("掩码应由十六进制数字和 x 组成，如 18DAxxxx");
+    break;
+  }
+  return QStringLiteral("第 %1 项“%2”无效：%3。")
+      .arg(error.token_index)
+      .arg(QString::fromUtf8(error.token.data(),
+                             static_cast<int>(error.token.size())))
+      .arg(reason);
+}
+
+void normalizeIds(std::vector<std::uint32_t>& ids) {
+  ids.erase(std::remove(ids.begin(), ids.end(), 0U), ids.end());
+  std::sort(ids.begin(), ids.end());
+  ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+}
 
 void insertRow(QTableWidget* table, int index,
                const BusMonitorPage::Row& row) {
@@ -69,6 +111,13 @@ void insertRow(QTableWidget* table, int index,
 } // namespace
 
 BusMonitorPage::BusMonitorPage(QWidget* parent) : QWidget(parent) {
+  const auto trace_directory =
+      std::filesystem::path(QCoreApplication::applicationDirPath().toStdWString()) /
+      L"logs" / L"bus_monitor";
+  trace_session_ =
+      std::make_unique<BusMonitorTraceSession>(trace_directory);
+  recovery_ = trace_session_->recover_incomplete();
+
   setObjectName(QStringLiteral("busMonitorWorkspacePage"));
   auto* layout = new QVBoxLayout(this);
   layout->setContentsMargins(10, 10, 10, 10);
@@ -82,19 +131,28 @@ BusMonitorPage::BusMonitorPage(QWidget* parent) : QWidget(parent) {
       QStringLiteral("工具启动后自动监听刷写作业当前通道；不会发送任何 CAN/UDS 报文。"),
       configuration);
   config_layout->addWidget(status_label_, 1, 1, 1, 5);
+  config_layout->addWidget(new QLabel(QStringLiteral("完整 Trace："), configuration),
+                           2, 0);
+  trace_status_label_ = new QLabel(configuration);
+  trace_status_label_->setObjectName(
+      QStringLiteral("busMonitorTraceStatusLabel"));
+  trace_status_label_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  config_layout->addWidget(trace_status_label_, 2, 1, 1, 5);
   clear_button_ = new QPushButton(QStringLiteral("清空列表"), configuration);
   clear_button_->setObjectName(QStringLiteral("busMonitorClearButton"));
   export_button_ = new QPushButton(QStringLiteral("导出 ASC"), configuration);
   export_button_->setObjectName(QStringLiteral("busMonitorExportButton"));
-  config_layout->addWidget(clear_button_, 2, 1);
-  config_layout->addWidget(export_button_, 2, 2);
+  config_layout->addWidget(clear_button_, 3, 1);
+  config_layout->addWidget(export_button_, 3, 2);
   layout->addWidget(configuration);
 
   auto* filter = new QGroupBox(QStringLiteral("显示过滤"), this);
   auto* filter_layout = new QGridLayout(filter);
   filter_layout->addWidget(new QLabel(QStringLiteral("ID："), filter), 0, 0);
   id_filter_ = new QLineEdit(filter);
-  id_filter_->setPlaceholderText(QStringLiteral("如 772、7DF、18DAF1B6；空=全部"));
+  id_filter_->setObjectName(QStringLiteral("busMonitorIdFilter"));
+  id_filter_->setPlaceholderText(
+      QStringLiteral("772,7DF  700-7FF  18DAxxxx  !520；空=全部"));
   filter_layout->addWidget(id_filter_, 0, 1);
   filter_layout->addWidget(new QLabel(QStringLiteral("数据："), filter), 0, 2);
   data_filter_ = new QLineEdit(filter);
@@ -130,8 +188,42 @@ BusMonitorPage::BusMonitorPage(QWidget* parent) : QWidget(parent) {
   filter_layout->addWidget(can_filter_, 1, 6);
   filter_layout->addWidget(fd_filter_, 1, 7);
   filter_layout->addWidget(brs_filter_, 1, 8);
-  count_label_ = new QLabel(filter);
-  filter_layout->addWidget(count_label_, 0, 5);
+  project_diagnostic_filter_button_ =
+      new QPushButton(QStringLiteral("当前项目诊断 ID"), filter);
+  project_diagnostic_filter_button_->setObjectName(
+      QStringLiteral("busMonitorProjectDiagnosticShortcut"));
+  functional_filter_button_ =
+      new QPushButton(QStringLiteral("功能寻址"), filter);
+  functional_filter_button_->setObjectName(
+      QStringLiteral("busMonitorFunctionalShortcut"));
+  physical_filter_button_ = new QPushButton(QStringLiteral("物理寻址"), filter);
+  physical_filter_button_->setObjectName(
+      QStringLiteral("busMonitorPhysicalShortcut"));
+  periodic_filter_button_ = new QPushButton(QStringLiteral("周期帧"), filter);
+  periodic_filter_button_->setObjectName(
+      QStringLiteral("busMonitorPeriodicShortcut"));
+  periodic_filter_button_->setToolTip(
+      QStringLiteral("排除当前项目全部诊断 ID，显示其余周期/背景报文。"));
+  filter_layout->addWidget(project_diagnostic_filter_button_, 2, 0, 1, 2);
+  filter_layout->addWidget(functional_filter_button_, 2, 2);
+  filter_layout->addWidget(physical_filter_button_, 2, 3);
+  filter_layout->addWidget(periodic_filter_button_, 2, 4);
+  id_filter_error_ = new QLabel(filter);
+  id_filter_error_->setObjectName(QStringLiteral("busMonitorIdFilterError"));
+  id_filter_error_->setStyleSheet(QStringLiteral("color: #B71C1C;"));
+  id_filter_error_->setWordWrap(true);
+  filter_layout->addWidget(id_filter_error_, 2, 5, 1, 4);
+  total_count_label_ = new QLabel(filter);
+  total_count_label_->setObjectName(QStringLiteral("busMonitorTotalCount"));
+  displayed_count_label_ = new QLabel(filter);
+  displayed_count_label_->setObjectName(
+      QStringLiteral("busMonitorDisplayedCount"));
+  evicted_count_label_ = new QLabel(filter);
+  evicted_count_label_->setObjectName(
+      QStringLiteral("busMonitorEvictedCount"));
+  filter_layout->addWidget(total_count_label_, 0, 4);
+  filter_layout->addWidget(displayed_count_label_, 0, 5);
+  filter_layout->addWidget(evicted_count_label_, 0, 6, 1, 2);
   layout->addWidget(filter);
 
   table_ = new QTableWidget(0, 7, this);
@@ -151,15 +243,27 @@ BusMonitorPage::BusMonitorPage(QWidget* parent) : QWidget(parent) {
   const auto refresh = [this] {
     rebuildTable();
   };
-  connect(id_filter_, &QLineEdit::textChanged, this, refresh);
+  connect(id_filter_, &QLineEdit::textChanged, this,
+          &BusMonitorPage::applyIdFilterText);
   connect(data_filter_, &QLineEdit::textChanged, this, refresh);
   for (auto* check : {diagnostic_only_filter_, tx_filter_, rx_filter_,
                       standard_filter_, extended_filter_, can_filter_,
                       fd_filter_, brs_filter_}) {
     connect(check, &QCheckBox::toggled, this, refresh);
   }
+  connect(project_diagnostic_filter_button_, &QPushButton::clicked, this,
+          [this] { setShortcutFilter(diagnostic_ids_, false); });
+  connect(functional_filter_button_, &QPushButton::clicked, this,
+          [this] { setShortcutFilter(functional_ids_, false); });
+  connect(physical_filter_button_, &QPushButton::clicked, this,
+          [this] { setShortcutFilter(physical_ids_, false); });
+  connect(periodic_filter_button_, &QPushButton::clicked, this,
+          [this] { setShortcutFilter(diagnostic_ids_, true); });
+  applyIdFilterText(QString{});
+  updateFilterShortcuts();
   setContext(channel_, nominal_bitrate_, data_bitrate_, can_fd_);
   clearFrames();
+  updateTraceStatus();
   updateControls();
 }
 
@@ -207,15 +311,25 @@ void BusMonitorPage::setOperationBusy(bool busy) {
 
 void BusMonitorPage::setDiagnosticIds(
     std::vector<std::uint32_t> diagnostic_ids) {
-  std::sort(diagnostic_ids.begin(), diagnostic_ids.end());
-  diagnostic_ids.erase(
-      std::remove(diagnostic_ids.begin(), diagnostic_ids.end(), 0U),
-      diagnostic_ids.end());
-  diagnostic_ids.erase(
-      std::unique(diagnostic_ids.begin(), diagnostic_ids.end()),
-      diagnostic_ids.end());
-  if (diagnostic_ids_ == diagnostic_ids) return;
+  setDiagnosticAddressing(std::move(diagnostic_ids), {});
+}
+
+void BusMonitorPage::setDiagnosticAddressing(
+    std::vector<std::uint32_t> physical_ids,
+    std::vector<std::uint32_t> functional_ids) {
+  normalizeIds(physical_ids);
+  normalizeIds(functional_ids);
+  auto diagnostic_ids = physical_ids;
+  diagnostic_ids.insert(diagnostic_ids.end(), functional_ids.begin(),
+                        functional_ids.end());
+  normalizeIds(diagnostic_ids);
+  if (diagnostic_ids_ == diagnostic_ids && physical_ids_ == physical_ids &&
+      functional_ids_ == functional_ids) {
+    return;
+  }
   diagnostic_ids_ = std::move(diagnostic_ids);
+  physical_ids_ = std::move(physical_ids);
+  functional_ids_ = std::move(functional_ids);
 
   QString id_summary;
   for (const auto id : diagnostic_ids_) {
@@ -229,6 +343,7 @@ void BusMonitorPage::setDiagnosticIds(
           : QStringLiteral(
                 "当前诊断 ID：%1。只影响表格显示；后台仍接收、缓存并导出全部帧。")
                 .arg(id_summary));
+  updateFilterShortcuts();
   rebuildTable();
 }
 
@@ -240,9 +355,16 @@ bool BusMonitorPage::matchesContext(unsigned channel, unsigned nominal_bitrate,
 
 void BusMonitorPage::startMonitoring() {
   if (running_) return;
+  resetViewForNewCapture();
+  const auto trace_started = trace_session_->start(channel_);
   stop_requested_.store(false);
   running_ = true;
-  status_label_->setText(QStringLiteral("正在被动监听 CH%1；不发送任何帧。").arg(channel_));
+  status_label_->setText(
+      trace_started
+          ? QStringLiteral("正在被动监听 CH%1；不发送任何帧。").arg(channel_)
+          : QStringLiteral("正在被动监听 CH%1；但完整 Trace 无法写入磁盘。")
+                .arg(channel_));
+  updateTraceStatus();
   updateControls();
   emit runningChanged(true);
   emit monitorMessage(QStringLiteral("总线监听已启动：CH%1，被动接收，零发送。").arg(channel_));
@@ -257,11 +379,15 @@ void BusMonitorPage::startMonitoring() {
       auto last_flush = std::chrono::steady_clock::now();
       while (!stop.stop_requested() && !stop_requested_.load()) {
         const auto frame = bus->receive(std::chrono::milliseconds(50));
-        if (frame) batch.push_back(*frame);
+        if (frame) {
+          trace_session_->append(*frame);
+          batch.push_back(*frame);
+        }
         const auto now = std::chrono::steady_clock::now();
         if (!batch.empty() &&
             (batch.size() >= 128U ||
              now - last_flush >= std::chrono::milliseconds(50))) {
+          trace_session_->flush();
           QMetaObject::invokeMethod(
               this,
               [this, observed = std::move(batch)]() mutable {
@@ -274,6 +400,7 @@ void BusMonitorPage::startMonitoring() {
         }
       }
       if (!batch.empty()) {
+        trace_session_->flush();
         QMetaObject::invokeMethod(
             this,
             [this, observed = std::move(batch)]() mutable {
@@ -294,9 +421,15 @@ void BusMonitorPage::stopMonitoring() {
   stop_requested_.store(true);
   if (worker_.joinable()) worker_.request_stop();
   if (worker_.joinable() && std::this_thread::get_id() != worker_.get_id()) worker_.join();
-  if (!running_) return;
+  if (!running_) {
+    trace_session_->stop();
+    updateTraceStatus();
+    return;
+  }
   running_ = false;
+  trace_session_->stop();
   status_label_->setText(QStringLiteral("已停止；监听期间未发送任何 CAN/UDS 报文。"));
+  updateTraceStatus();
   updateControls();
   emit runningChanged(false);
   emit monitorMessage(QStringLiteral("总线监听已停止。"));
@@ -310,8 +443,7 @@ bool BusMonitorPage::matchesFilter(const Row& row) const {
   }
   if (row.direction == QStringLiteral("TX") && !tx_filter_->isChecked()) return false;
   if (row.direction == QStringLiteral("RX") && !rx_filter_->isChecked()) return false;
-  const auto id = id_filter_->text().trimmed().remove(QStringLiteral("0x"), Qt::CaseInsensitive).toUpper();
-  if (!id.isEmpty() && !row.id.contains(id, Qt::CaseInsensitive)) return false;
+  if (active_id_filter_ && !active_id_filter_->matches(row.can_id)) return false;
   const auto data_text = data_filter_->text().simplified().toUpper();
   if (!data_text.isEmpty() && !row.data.contains(data_text, Qt::CaseInsensitive)) return false;
   if (row.type.startsWith(QStringLiteral("STD")) && !standard_filter_->isChecked()) return false;
@@ -322,6 +454,13 @@ bool BusMonitorPage::matchesFilter(const Row& row) const {
 }
 
 void BusMonitorPage::appendObservedFrame(const CanFrame& frame) {
+  trace_session_->append(frame);
+  trace_session_->flush();
+  appendFrameToView(frame);
+}
+
+void BusMonitorPage::appendFrameToView(const CanFrame& frame) {
+  ++total_frame_count_;
   Row row{frame.id,
           QDateTime::currentDateTime().toString(
               QStringLiteral("HH:mm:ss.zzz")),
@@ -362,16 +501,14 @@ void BusMonitorPage::appendObservedFrame(const CanFrame& frame) {
 void BusMonitorPage::appendObservedFrames(std::vector<CanFrame> frames) {
   batch_appending_ = true;
   if (!operation_busy_) table_->setUpdatesEnabled(false);
-  for (const auto& frame : frames) appendObservedFrame(frame);
+  for (const auto& frame : frames) appendFrameToView(frame);
   batch_appending_ = false;
   if (!operation_busy_) {
     table_->setUpdatesEnabled(true);
     table_->scrollToBottom();
   }
-  count_label_->setText(
-      QStringLiteral("已记录：%1 帧（最多保留 %2 帧）")
-          .arg(rows_.size())
-          .arg(kMaximumRows));
+  updateCounters();
+  updateTraceStatus();
   updateControls();
 }
 
@@ -380,6 +517,7 @@ void BusMonitorPage::appendFrame(Row row) {
   if (static_cast<int>(rows_.size()) >= kMaximumRows) {
     evicted_visible = matchesFilter(rows_.front());
     rows_.pop_front();
+    ++evicted_frame_count_;
   }
   rows_.push_back(row);
   if (!operation_busy_ && evicted_visible && table_->rowCount() > 0) {
@@ -391,10 +529,8 @@ void BusMonitorPage::appendFrame(Row row) {
   }
   if (!batch_appending_) {
     if (!operation_busy_) table_->scrollToBottom();
-    count_label_->setText(
-        QStringLiteral("已记录：%1 帧（最多保留 %2 帧）")
-            .arg(rows_.size())
-            .arg(kMaximumRows));
+    updateCounters();
+    updateTraceStatus();
     updateControls();
   }
 }
@@ -408,24 +544,147 @@ void BusMonitorPage::rebuildTable() {
   }
   table_->setUpdatesEnabled(true);
   table_->scrollToBottom();
+  updateCounters();
 }
 
-void BusMonitorPage::clearFrames() { rows_.clear(); table_->setRowCount(0); count_label_->setText(QStringLiteral("已接收：0 帧")); }
+void BusMonitorPage::clearFrames() {
+  rows_.clear();
+  table_->setRowCount(0);
+  updateCounters();
+  updateControls();
+}
 
 void BusMonitorPage::exportAsc() {
   const auto path = QFileDialog::getSaveFileName(this, QStringLiteral("导出监听报文"), QStringLiteral("bus_monitor_CH%1.asc").arg(channel_), QStringLiteral("ASC 文件 (*.asc)"));
   if (path.isEmpty()) return;
   QSaveFile file(path);
-  if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) { status_label_->setText(QStringLiteral("导出失败：无法写入 %1").arg(path)); return; }
-  file.write("date " + QDateTime::currentDateTime().toString(Qt::ISODate).toUtf8() + "\nbase hex  timestamps absolute\n\n");
-  for (const auto& row : rows_) file.write(QStringLiteral("%1 %2 %3 d %4 %5\n").arg(row.time, QString::number(channel_), row.direction, row.length, row.data).toUtf8());
+  if (!file.open(QIODevice::WriteOnly)) { status_label_->setText(QStringLiteral("导出失败：无法写入 %1").arg(path)); return; }
+  const auto exported = trace_session_->export_snapshot(
+      [&file](std::string_view chunk) {
+        return file.write(chunk.data(), static_cast<qint64>(chunk.size())) ==
+               static_cast<qint64>(chunk.size());
+      });
+  if (!exported) {
+    file.cancelWriting();
+    status_label_->setText(QStringLiteral("导出失败：完整 Trace 快照不可用。"));
+    updateTraceStatus();
+    return;
+  }
   if (!file.commit()) { status_label_->setText(QStringLiteral("导出失败：无法保存 %1").arg(path)); return; }
-  status_label_->setText(QStringLiteral("已导出 %1 帧到 %2").arg(rows_.size()).arg(path));
+  status_label_->setText(QStringLiteral("已导出完整 Trace（%1 帧）到 %2")
+                             .arg(trace_session_->frame_count())
+                             .arg(path));
 }
 
 void BusMonitorPage::updateControls() {
   clear_button_->setEnabled(!rows_.empty());
-  export_button_->setEnabled(!rows_.empty());
+  export_button_->setEnabled(trace_session_ && !trace_session_->path().empty());
+}
+
+void BusMonitorPage::updateCounters() {
+  total_count_label_->setText(
+      QStringLiteral("总接收：%1").arg(total_frame_count_));
+  displayed_count_label_->setText(
+      QStringLiteral("当前显示：%1").arg(table_->rowCount()));
+  evicted_count_label_->setText(
+      QStringLiteral("内存已淘汰：%1").arg(evicted_frame_count_));
+}
+
+void BusMonitorPage::updateTraceStatus() {
+  if (!trace_session_) return;
+  const auto trace_path = trace_session_->path();
+  const auto path = QString::fromStdWString(trace_path.wstring());
+  if (trace_session_->is_active()) {
+    trace_status_label_->setText(
+        QStringLiteral("完整 Trace 正在写入磁盘（%1 帧）：%2")
+            .arg(trace_session_->frame_count())
+            .arg(QDir::toNativeSeparators(path)));
+    return;
+  }
+  const auto error = trace_session_->last_error();
+  if (!error.empty()) {
+    trace_status_label_->setText(
+        QStringLiteral("完整 Trace 写入异常：%1；临时文件将于下次启动恢复。")
+            .arg(QString::fromLocal8Bit(
+                error.data(), static_cast<int>(error.size()))));
+    return;
+  }
+  if (!path.isEmpty()) {
+    trace_status_label_->setText(
+        QStringLiteral("完整 Trace 已保存（%1 帧）：%2")
+            .arg(trace_session_->frame_count())
+            .arg(QDir::toNativeSeparators(path)));
+    return;
+  }
+  if (recovery_.recovered || recovery_.failed) {
+    trace_status_label_->setText(
+        QStringLiteral("已恢复 %1 个异常 Trace；%2 个恢复失败。")
+            .arg(recovery_.recovered)
+            .arg(recovery_.failed));
+    return;
+  }
+  trace_status_label_->setText(QStringLiteral("等待监听启动后写入完整 Trace。"));
+}
+
+void BusMonitorPage::resetViewForNewCapture() {
+  rows_.clear();
+  table_->setRowCount(0);
+  total_frame_count_ = 0;
+  evicted_frame_count_ = 0;
+  updateCounters();
+}
+
+void BusMonitorPage::applyIdFilterText(const QString& text) {
+  const auto utf8 = text.trimmed().toUtf8();
+  auto parsed = parse_can_id_filter(
+      std::string_view(utf8.constData(), static_cast<std::size_t>(utf8.size())));
+  if (const auto* error = std::get_if<CanIdFilterError>(&parsed)) {
+    const auto detail = idFilterErrorText(*error);
+    id_filter_error_->setText(detail);
+    id_filter_->setToolTip(
+        detail + QStringLiteral(" 当前仍使用上一个有效过滤条件。"));
+    id_filter_->setStyleSheet(QStringLiteral(
+        "QLineEdit { border: 1px solid #C62828; background: #FFF1F1; }"));
+    return;
+  }
+  active_id_filter_ = std::get<CanIdFilter>(std::move(parsed));
+  if (!text.trimmed().isEmpty() && diagnostic_only_filter_->isChecked()) {
+    diagnostic_only_filter_->setChecked(false);
+  }
+  id_filter_error_->clear();
+  id_filter_->setToolTip(QStringLiteral(
+      "逗号、顿号或空格分隔；支持精确 ID、范围、x 掩码和 ! 排除。"));
+  id_filter_->setStyleSheet(QString{});
+  rebuildTable();
+}
+
+void BusMonitorPage::setShortcutFilter(
+    const std::vector<std::uint32_t>& included, bool exclude) {
+  if (included.empty()) return;
+  QStringList tokens;
+  for (const auto id : included) {
+    tokens.push_back(QStringLiteral("%1%2")
+                         .arg(exclude ? QStringLiteral("!") : QString{})
+                         .arg(id, 0, 16));
+  }
+  diagnostic_only_filter_->setChecked(false);
+  id_filter_->setText(tokens.join(QStringLiteral(",")));
+}
+
+void BusMonitorPage::updateFilterShortcuts() {
+  project_diagnostic_filter_button_->setEnabled(!diagnostic_ids_.empty());
+  periodic_filter_button_->setEnabled(!diagnostic_ids_.empty());
+  physical_filter_button_->setEnabled(!physical_ids_.empty());
+  functional_filter_button_->setEnabled(!functional_ids_.empty());
+  project_diagnostic_filter_button_->setToolTip(
+      QStringLiteral("当前项目全部诊断 ID，共 %1 个。")
+          .arg(diagnostic_ids_.size()));
+  physical_filter_button_->setToolTip(
+      QStringLiteral("物理请求/响应及 FT 物理寻址 ID，共 %1 个。")
+          .arg(physical_ids_.size()));
+  functional_filter_button_->setToolTip(
+      QStringLiteral("当前项目功能寻址 ID，共 %1 个。")
+          .arg(functional_ids_.size()));
 }
 
 } // namespace uds::ui::qt

@@ -464,6 +464,26 @@ int main(int argc, char* argv[]) {
           QStringLiteral("busMonitorClearButton"));
       auto* bus_monitor_export = window.findChild<QPushButton*>(
           QStringLiteral("busMonitorExportButton"));
+      auto* bus_monitor_trace_status = window.findChild<QLabel*>(
+          QStringLiteral("busMonitorTraceStatusLabel"));
+      auto* bus_monitor_total = window.findChild<QLabel*>(
+          QStringLiteral("busMonitorTotalCount"));
+      auto* bus_monitor_displayed = window.findChild<QLabel*>(
+          QStringLiteral("busMonitorDisplayedCount"));
+      auto* bus_monitor_evicted = window.findChild<QLabel*>(
+          QStringLiteral("busMonitorEvictedCount"));
+      auto* bus_monitor_id_filter = window.findChild<QLineEdit*>(
+          QStringLiteral("busMonitorIdFilter"));
+      auto* bus_monitor_id_error = window.findChild<QLabel*>(
+          QStringLiteral("busMonitorIdFilterError"));
+      auto* bus_monitor_project_shortcut = window.findChild<QPushButton*>(
+          QStringLiteral("busMonitorProjectDiagnosticShortcut"));
+      auto* bus_monitor_functional_shortcut = window.findChild<QPushButton*>(
+          QStringLiteral("busMonitorFunctionalShortcut"));
+      auto* bus_monitor_physical_shortcut = window.findChild<QPushButton*>(
+          QStringLiteral("busMonitorPhysicalShortcut"));
+      auto* bus_monitor_periodic_shortcut = window.findChild<QPushButton*>(
+          QStringLiteral("busMonitorPeriodicShortcut"));
       check(workspace_tabs && workspace_tabs->count() == 3 &&
                 workspace_tabs->currentIndex() == 0 &&
                  workspace_tabs->currentWidget() == flash_page &&
@@ -493,6 +513,22 @@ int main(int argc, char* argv[]) {
                 bus_monitor_clear->text() == QStringLiteral("清空列表") &&
                 bus_monitor_export &&
                 bus_monitor_export->text() == QStringLiteral("导出 ASC") &&
+                bus_monitor_trace_status &&
+                bus_monitor_trace_status->text().contains(
+                    QStringLiteral("完整 Trace")) &&
+                bus_monitor_total &&
+                bus_monitor_total->text() == QStringLiteral("总接收：0") &&
+                bus_monitor_displayed &&
+                bus_monitor_displayed->text() ==
+                    QStringLiteral("当前显示：0") &&
+                bus_monitor_evicted &&
+                bus_monitor_evicted->text() ==
+                    QStringLiteral("内存已淘汰：0") &&
+                bus_monitor_id_filter && bus_monitor_id_error &&
+                bus_monitor_project_shortcut &&
+                bus_monitor_functional_shortcut &&
+                bus_monitor_physical_shortcut &&
+                bus_monitor_periodic_shortcut &&
                 radar && radar_label &&
                  channels && repeat_count,
                "Qt selectors were not created");
@@ -508,7 +544,7 @@ int main(int argc, char* argv[]) {
                 bus_monitor_page, "runningChanged", Qt::DirectConnection,
                 Q_ARG(bool, false)),
             "Failed to restore simulated bus-monitor state");
-      bus_monitor_page->setDiagnosticIds({0x72E, 0x72F, 0x7DF});
+      bus_monitor_page->setDiagnosticAddressing({0x72E, 0x72F}, {0x7DF});
       bus_monitor_page->appendObservedFrame(
           uds::CanFrame{0x123,
                         {0x01, 0x02, 0x03, 0x04, 0, 0, 0, 0},
@@ -556,9 +592,58 @@ int main(int argc, char* argv[]) {
                 bus_monitor_table->item(0, 2)->text().compare(
                     QStringLiteral("0x123"), Qt::CaseInsensitive) == 0,
             "Disabling the diagnostic-ID filter did not restore retained raw frames");
+      check(bus_monitor_total->text() == QStringLiteral("总接收：4") &&
+                bus_monitor_displayed->text() ==
+                    QStringLiteral("当前显示：4") &&
+                bus_monitor_evicted->text() ==
+                    QStringLiteral("内存已淘汰：0"),
+            "Bus monitor evidence counters did not track received/displayed frames");
+      bus_monitor_id_filter->setText(QStringLiteral("72F"));
+      check(bus_monitor_table->rowCount() == 3 &&
+                bus_monitor_id_error->text().isEmpty(),
+            "Exact CAN ID filter did not match three 0x72F rows");
+      bus_monitor_id_filter->setText(QStringLiteral("120-130"));
+      check(bus_monitor_table->rowCount() == 1,
+            "CAN ID range filter did not match 0x123");
+      bus_monitor_id_filter->setText(QStringLiteral("72x"));
+      check(bus_monitor_table->rowCount() == 3,
+            "CAN ID nibble-mask filter did not match 0x72F");
+      bus_monitor_id_filter->setText(QStringLiteral("!72F"));
+      check(bus_monitor_table->rowCount() == 1,
+            "CAN ID exclusion filter did not remove 0x72F");
+      bus_monitor_id_filter->setText(QStringLiteral("123、72F"));
+      check(bus_monitor_table->rowCount() == 4,
+            "Chinese-dunhao CAN ID delimiter was not accepted");
+      bus_monitor_id_filter->setText(QStringLiteral("7FF-700"));
+      check(bus_monitor_table->rowCount() == 4 &&
+                bus_monitor_id_error->text().contains(
+                    QStringLiteral("范围起点不能大于终点")) &&
+                bus_monitor_id_filter->styleSheet().contains(
+                    QStringLiteral("C62828")),
+            "Invalid CAN ID filter was not explained and highlighted");
+      bus_monitor_functional_shortcut->click();
+      check(bus_monitor_id_filter->text().compare(
+                    QStringLiteral("7df"), Qt::CaseInsensitive) == 0 &&
+                bus_monitor_table->rowCount() == 0,
+            "Functional-addressing shortcut did not select 0x7DF");
+      bus_monitor_physical_shortcut->click();
+      check(bus_monitor_table->rowCount() == 3 &&
+                bus_monitor_id_filter->text().contains(
+                    QStringLiteral("72e"), Qt::CaseInsensitive) &&
+                bus_monitor_id_filter->text().contains(
+                    QStringLiteral("72f"), Qt::CaseInsensitive),
+            "Physical-addressing shortcut did not select project endpoints");
+      bus_monitor_periodic_shortcut->click();
+      check(bus_monitor_table->rowCount() == 1 &&
+                bus_monitor_id_filter->text().contains(
+                    QStringLiteral("!7df"), Qt::CaseInsensitive),
+            "Periodic-frame shortcut did not exclude project diagnostic IDs");
       bus_monitor_clear->click();
-      check(bus_monitor_table->rowCount() == 0,
-            "Bus monitor diagnostic-style test did not restore an empty table");
+      check(bus_monitor_table->rowCount() == 0 &&
+                bus_monitor_total->text() == QStringLiteral("总接收：4") &&
+                bus_monitor_displayed->text() ==
+                    QStringLiteral("当前显示：0"),
+            "Clearing the bus monitor view also cleared evidence counters");
       const auto monitor_buttons =
           window.findChildren<QPushButton*>(QString{},
                                             Qt::FindChildrenRecursively);
@@ -770,6 +855,20 @@ int main(int argc, char* argv[]) {
                 !log_view->document()->lastBlock().text().contains(
                     QStringLiteral("NRC 0x78")),
             "Execution log should suppress expected NRC78 wait states");
+      check(QMetaObject::invokeMethod(
+                bus_monitor_page, "monitorMessage", Qt::DirectConnection,
+                Q_ARG(QString,
+                      QStringLiteral(
+                          "RX [0x72F] 67 11 45 85 25 FF E1 D9 A4 59 9F "
+                          "40 7B 8D 3E 7F 1A CB"))),
+            "Security seed log injection failed");
+      result_block = log_view->document()->lastBlock();
+      result_format = result_block.begin().fragment().charFormat();
+      check(result_block.text().contains(QStringLiteral("67 11")) &&
+                !result_block.text().contains(QStringLiteral("NRC 0xCB")) &&
+                result_format.foreground().color() !=
+                    QColor(QStringLiteral("#C62828")),
+            "Security seed payload bytes were misclassified as an NRC");
       check(QMetaObject::invokeMethod(
                 bus_monitor_page, "monitorMessage", Qt::DirectConnection,
                 Q_ARG(QString,
@@ -1222,10 +1321,12 @@ int main(int argc, char* argv[]) {
       }
       check_project_devices(application, projects, devices,
                              QStringLiteral("零跑"),
-                             {QStringLiteral("A12EV-ARC"),
-                              QStringLiteral("ARC"), QStringLiteral("ARF631")});
-      devices->setCurrentIndex(find_text(devices, QStringLiteral("A12EV-ARC")));
+                             {QStringLiteral("ARC"),
+                              QStringLiteral("ARF631")});
+      devices->setCurrentIndex(find_text(devices, QStringLiteral("ARC")));
       application.processEvents();
+      auto* app_verify_label = window.findChild<QLabel*>(
+          QStringLiteral("appVerifyPathLabel"));
       check(!radar->isHidden() && radar->count() == 4 &&
                 radar->itemText(0) == QStringLiteral("设备 0（0x772 / 0x77A）") &&
                 radar->itemText(1) == QStringLiteral("设备 1（0x773 / 0x77B）") &&
@@ -1238,56 +1339,13 @@ int main(int argc, char* argv[]) {
                 entries->itemText(entries->findData(QStringLiteral("app"))) ==
                     QStringLiteral("APP") &&
                 entries->itemText(entries->findData(QStringLiteral("ft"))) ==
-                    QStringLiteral("PLS") &&
-                !start_flash->isEnabled() && !probe->isEnabled() &&
+                    QStringLiteral("FT") &&
                 window.findChild<QPushButton*>(
                     QStringLiteral("driverBrowseButton"))->isEnabled() &&
                 window.findChild<QPushButton*>(
                     QStringLiteral("appBrowseButton"))->isEnabled() &&
                 window.findChild<QPushButton*>(
-                    QStringLiteral("versionCheckButton"))->isEnabled(),
-            "LP-A12EV four-target placeholder UI mismatch");
-      const std::array<std::pair<QString, QString>, 4> a12ev_endpoints{{
-          {QStringLiteral("0x772"), QStringLiteral("0x77A")},
-          {QStringLiteral("0x773"), QStringLiteral("0x77B")},
-          {QStringLiteral("0x771"), QStringLiteral("0x779")},
-          {QStringLiteral("0x770"), QStringLiteral("0x778")},
-      }};
-      for (int index = 0; index < radar->count(); ++index) {
-        radar->setCurrentIndex(index);
-        application.processEvents();
-        check(tx_id->text() == a12ev_endpoints[static_cast<std::size_t>(index)].first &&
-                  rx_id->text() == a12ev_endpoints[static_cast<std::size_t>(index)].second &&
-                  !start_flash->isEnabled() && !probe->isEnabled(),
-              "LP-A12EV target selection did not lock the expected endpoint");
-      }
-      entries->setCurrentIndex(entries->findData(QStringLiteral("ft")));
-      application.processEvents();
-      check(entries->currentData().toString() == QStringLiteral("ft") &&
-                entries->currentText() == QStringLiteral("PLS") &&
-                !start_flash->isEnabled() && !probe->isEnabled(),
-            "LP-A12EV PLS selection changed the placeholder safety gate");
-      entries->setCurrentIndex(entries->findData(QStringLiteral("app")));
-      application.processEvents();
-      devices->setCurrentIndex(find_text(devices, QStringLiteral("ARC")));
-      application.processEvents();
-      auto* app_verify_label = window.findChild<QLabel*>(
-          QStringLiteral("appVerifyPathLabel"));
-      check(!radar->isHidden() && radar->count() == 1 &&
-                 radar->currentText() == QStringLiteral("LP-ARC") &&
-                tx_id->isReadOnly() &&
-                rx_id->isReadOnly() &&
-                tx_id->text() == QStringLiteral("0x772") &&
-                rx_id->text() == QStringLiteral("0x77A") &&
-                entries->count() == 2 &&
-                entries->currentData().toString() ==
-                    QStringLiteral("app") &&
-                entries->itemText(
-                    entries->findData(QStringLiteral("app"))) ==
-                    QStringLiteral("APP") &&
-                entries->itemText(
-                    entries->findData(QStringLiteral("ft"))) ==
-                    QStringLiteral("FT") &&
+                    QStringLiteral("versionCheckButton"))->isEnabled() &&
                 driver_path->text() ==
                     QStringLiteral("FlashDriver.srec") &&
                 app_path->text().contains(QStringLiteral("ARC2.36BC3")) &&
@@ -1296,7 +1354,27 @@ int main(int argc, char* argv[]) {
                 app_verify_label &&
                 app_verify_label->text() ==
                     QStringLiteral("APP 校验文件"),
-             "LP-ARC UI endpoint, entry names or resources mismatch");
+            "ARC merged four-target UI or preset resources mismatch");
+      const std::array<std::pair<QString, QString>, 4> arc_endpoints{{
+          {QStringLiteral("0x772"), QStringLiteral("0x77A")},
+          {QStringLiteral("0x773"), QStringLiteral("0x77B")},
+          {QStringLiteral("0x771"), QStringLiteral("0x779")},
+          {QStringLiteral("0x770"), QStringLiteral("0x778")},
+      }};
+      for (int index = 0; index < radar->count(); ++index) {
+        radar->setCurrentIndex(index);
+        application.processEvents();
+        check(tx_id->text() == arc_endpoints[static_cast<std::size_t>(index)].first &&
+                  rx_id->text() == arc_endpoints[static_cast<std::size_t>(index)].second,
+              "ARC target selection did not lock the expected endpoint");
+      }
+      entries->setCurrentIndex(entries->findData(QStringLiteral("ft")));
+      application.processEvents();
+      check(entries->currentData().toString() == QStringLiteral("ft") &&
+                entries->currentText() == QStringLiteral("FT"),
+            "ARC FT entry selection mismatch");
+      entries->setCurrentIndex(entries->findData(QStringLiteral("app")));
+      application.processEvents();
       check_file_panel_is_stable();
       devices->setCurrentIndex(find_text(devices, QStringLiteral("ARF631")));
       application.processEvents();

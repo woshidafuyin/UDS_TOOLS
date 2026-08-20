@@ -6,7 +6,6 @@
 #include "flash/geely_p416_workflow.hpp"
 #include "flash/c857_project_workflows.hpp"
 #include "flash/longma_ars1_31_workflow.hpp"
-#include "flash/lp_a12ev_workflow.hpp"
 #include "flash/lp_arc_workflow.hpp"
 #include "flash/lp_arf_workflow.hpp"
 #include "flash/shidaixinan_hjzj_fmr_workflow.hpp"
@@ -62,10 +61,6 @@ std::unique_ptr<FlashWorkflow> create_chuneng_arc331() {
   return std::make_unique<ChunengArc331Workflow>();
 }
 
-std::unique_ptr<FlashWorkflow> create_lp_a12ev() {
-  return std::make_unique<LpA12evWorkflow>();
-}
-
 std::unique_ptr<FlashWorkflow> create_lp_arf() {
   return std::make_unique<LpArfWorkflow>();
 }
@@ -89,7 +84,6 @@ constexpr std::array kWorkflowRegistrations{
    WorkflowRegistration{L"xizhong_lsmr", &create_xizhong_rsmr},
    WorkflowRegistration{L"shidaixinan_hjzj_fmr",
                        &create_shidaixinan_hjzj_fmr},
-  WorkflowRegistration{L"lp_a12ev", &create_lp_a12ev},
   WorkflowRegistration{L"lp_arc", &create_lp_arc},
   WorkflowRegistration{L"lp_arf", &create_lp_arf},
   WorkflowRegistration{L"geely_p416", &create_geely_p416},

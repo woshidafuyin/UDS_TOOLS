@@ -426,7 +426,13 @@ def running_conflicts() -> list[str]:
         )
     except OSError:
         return []
-    names = ("uds_tool_qt.exe", "tsmaster.exe", "canoe64.exe", "canalyzer64.exe")
+    names = (
+        "uds_tool.exe",
+        "uds_tool_qt.exe",
+        "tsmaster.exe",
+        "canoe64.exe",
+        "canalyzer64.exe",
+    )
     lowered = completed.stdout.lower()
     return [name for name in names if f'"{name}"' in lowered]
 
@@ -545,7 +551,10 @@ def run_probe(args: argparse.Namespace) -> int:
     conflicts = running_conflicts()
     if conflicts:
         print("WARN_RUNNING_PROCESSES=" + ",".join(conflicts))
-        if any(name in conflicts for name in ("uds_tool_qt.exe", "tsmaster.exe")):
+        if any(
+            name in conflicts
+            for name in ("uds_tool.exe", "uds_tool_qt.exe", "tsmaster.exe")
+        ):
             print(
                 "ERROR: close the UDS UI and TSMaster before the standalone TOSUN probe",
                 file=sys.stderr,

@@ -71,17 +71,16 @@ std::optional<std::uint8_t> nrcFromLogLine(const QString& message) {
     if (ok) return static_cast<std::uint8_t>(value);
   }
 
-  // Raw UDS lines emitted by older flows may not yet carry an NRC label.
-  // Restrict the fallback to response-looking lines so firmware payload bytes
-  // containing "7F xx yy" are not misclassified.
-  const auto response_line =
-      message.trimmed().startsWith(QStringLiteral("RX ["),
-                                   Qt::CaseInsensitive) ||
-      message.contains(QStringLiteral("响应")) ||
-      message.contains(QStringLiteral("response"), Qt::CaseInsensitive);
-  if (!response_line) return std::nullopt;
+  // Raw UDS lines emitted by older flows may not yet carry an NRC label.  A
+  // negative response is valid only when 7F is the first UDS payload byte;
+  // never scan inside a positive response's Seed, DID value or signature.
+  if (!message.trimmed().startsWith(QStringLiteral("RX ["),
+                                    Qt::CaseInsensitive)) {
+    return std::nullopt;
+  }
   static const QRegularExpression raw_negative(
-      QStringLiteral(R"((?:^|\s)7F\s+[0-9A-Fa-f]{2}\s+([0-9A-Fa-f]{2})(?=\s|$|\|))"),
+      QStringLiteral(
+          R"(^\s*RX\s*\[[^\]]+\]\s+7F\s+[0-9A-Fa-f]{2}\s+([0-9A-Fa-f]{2})(?=\s|$|\|))"),
       QRegularExpression::CaseInsensitiveOption);
   match = raw_negative.match(message);
   if (!match.hasMatch()) return std::nullopt;
@@ -1139,7 +1138,7 @@ void MainWindow::applySelectedProfile(int device_index) {
           ? QStringLiteral("APP")
           : profile.app_entry_label,
       QStringLiteral("app"));
-  if (profile.flow_id == QStringLiteral("chuneng_331")) {
+  if (profile.flow_id == QStringLiteral("chuneng_arc331")) {
     ui_->entryModeComboBox->addItem(
         QStringLiteral("BOOT→APP（仅Boot）"), QStringLiteral("boot"));
   }
@@ -1331,10 +1330,10 @@ void MainWindow::syncBusMonitorContext() {
   bool rx_ok{};
   const auto displayed_tx_id = ui_->txIdLineEdit->text().toUInt(&tx_ok, 0);
   const auto displayed_rx_id = ui_->rxIdLineEdit->text().toUInt(&rx_ok, 0);
-  std::vector<std::uint32_t> diagnostic_ids{
+  std::vector<std::uint32_t> physical_ids{
       tx_ok ? displayed_tx_id : profile.tx_id,
-      rx_ok ? displayed_rx_id : profile.rx_id,
-      profile.functional_id};
+      rx_ok ? displayed_rx_id : profile.rx_id};
+  std::vector<std::uint32_t> functional_ids{profile.functional_id};
 
   auto ft_tx_id = profile.ft_tx_id;
   auto ft_rx_id = profile.ft_rx_id;
@@ -1352,10 +1351,11 @@ void MainWindow::syncBusMonitorContext() {
     }
   }
   if (profile.supports_ft_entry && ft_tx_id != 0 && ft_rx_id != 0) {
-    diagnostic_ids.push_back(ft_tx_id);
-    diagnostic_ids.push_back(ft_rx_id);
+    physical_ids.push_back(ft_tx_id);
+    physical_ids.push_back(ft_rx_id);
   }
-  bus_monitor_page_->setDiagnosticIds(std::move(diagnostic_ids));
+  bus_monitor_page_->setDiagnosticAddressing(std::move(physical_ids),
+                                             std::move(functional_ids));
   bus_monitor_page_->setContext(
       ui_->vectorChannelComboBox->currentData().toUInt(),
       profile.nominal_bitrate, profile.data_bitrate, profile.can_fd);
@@ -1608,7 +1608,7 @@ void MainWindow::startFlashFromUi() {
         "提示：已选择FT恢复入口，将使用当前目标Profile配置的FT端点切换，"
         "随后继续执行Driver与APP下载。"));
   }
-  if (profile.flow_id == QStringLiteral("chuneng_331") &&
+  if (profile.flow_id == QStringLiteral("chuneng_arc331") &&
       entry_mode == QStringLiteral("boot")) {
     appendUiLog(QStringLiteral(
         "提示：已选择BOOT→APP入口；使用当前设备物理诊断ID，跳过APP态0203/85/28，"

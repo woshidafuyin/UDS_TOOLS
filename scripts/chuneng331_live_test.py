@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Chuneng ARC331 live bench test via pywinauto.
 
-Launches dist\\uds_tool_qt.exe, selects ChuNeng ARC331 left-rear radar,
+Launches dist\\UDS_Tool.exe, selects ChuNeng ARC331 left-rear radar,
 runs online probe, then starts flashing, and collects evidence
 (screenshots, execution log, ASC trace, HTML report).
 Usage:
   set PYWIN32_DLL_DIR=<python site-packages\\win32>
-  python chuneng331_live_test.py --exe <dist\\uds_tool_qt.exe> --evidence <dir>
+  python chuneng331_live_test.py --exe <dist\\UDS_Tool.exe> --evidence <dir>
 """
 import argparse
 import os
@@ -42,7 +42,9 @@ def select_combo(window, suffix, text):
     names = [i.window_text() for i in items]
     if text not in names:
         raise RuntimeError(f"combo {suffix} item not found: {text}; items={names}")
-    items[names.index(text)].click_input()
+    # Use the control selection pattern instead of mouse coordinates. A stale
+    # popup rectangle can otherwise click an unrelated action button.
+    items[names.index(text)].select()
     time.sleep(0.8)
     combo.expand()
     time.sleep(0.2)
@@ -121,7 +123,10 @@ def main():
     parser.add_argument("--do-flash", action="store_true",
                         help="run the flash after probe (default: probe only)")
     parser.add_argument("--entry", default="APP",
-                        help="entry mode: APP or FT (default APP)")
+                        choices=("APP", "BOOT", "FT"),
+                        help="entry mode: APP, BOOT or FT (default APP)")
+    parser.add_argument("--expected-tx", default="0x72E")
+    parser.add_argument("--expected-rx", default="0x72F")
     parser.add_argument("--driver-s19")
     parser.add_argument("--driver-verify-asc")
     parser.add_argument("--app-s19")
@@ -149,10 +154,15 @@ def main():
     time.sleep(1.5)
 
     try:
-        # QSettings persists the previous selection (ChuNeng/ARC331/
-        # left-rear/APP/Channel 2); Chinese combo text arrives as mojibake
-        # under this locale, so rely on the persisted selection and only
-        # verify the endpoint IDs below.
+        # Keep the persisted ChuNeng/ARC331/left-rear selection, but always
+        # apply the requested entry explicitly. Recovery must never inherit a
+        # stale APP/FT entry from QSettings.
+        entry_labels = {
+            "APP": "APP",
+            "BOOT": "BOOT→APP（仅Boot）",
+            "FT": "FT",
+        }
+        select_combo(window, "entryModeComboBox", entry_labels[args.entry])
 
         if args.driver_s19:
             set_path_edit(window, app, "driverPathLineEdit", args.driver_s19)
@@ -172,8 +182,10 @@ def main():
         print(f"DRIVER={driver_file}", flush=True)
         print(f"APP={app_file}", flush=True)
         print(f"SEED={seed}", flush=True)
-        if tx.upper() not in ("0X72E", "0X72C") or rx.upper() not in ("0X72F", "0X72D"):
-            raise RuntimeError(f"unexpected endpoint {tx}/{rx}")
+        if tx.upper() != args.expected_tx.upper() or rx.upper() != args.expected_rx.upper():
+            raise RuntimeError(
+                f"unexpected endpoint {tx}/{rx}; expected "
+                f"{args.expected_tx}/{args.expected_rx}")
 
         # --- step 1: online probe ---
         probe = find_by_suffix(window, "probeButton", "Button")
@@ -184,6 +196,11 @@ def main():
         status = find_by_suffix(window, "progressStatusLabel", "Text")
         log_view = find_by_suffix(window, "logPlainTextEdit", "Edit")
         log_text = wait_log_contains(log_view, "● 在线", 30, also_status=status)
+        expected_probe = ("入口=BOOT" if args.entry == "BOOT"
+                          else args.entry)
+        if expected_probe not in log_text:
+            raise RuntimeError(
+                f"probe log does not confirm {args.entry} entry")
         print("PROBE ONLINE", flush=True)
         window.capture_as_image().save(evidence / "probe_online.png")
 
@@ -235,11 +252,29 @@ def main():
         print(f"FAIL: {error}", file=sys.stderr)
         return 2
     finally:
+        safe_to_close = True
         try:
-            window.close()
-            time.sleep(2)
-            if app.is_process_running():
-                app.kill()
+            current_log = log_view.get_value() if "log_view" in locals() else ""
+            flash_started = "完整刷写开始" in current_log
+            flash_finished = any(marker in current_log for marker in (
+                "========== 刷写成功 ==========",
+                "========== 刷写失败 ==========",
+                "========== 刷写已中止 ==========",
+            ))
+            if flash_started and not flash_finished:
+                safe_to_close = False
+                print("SAFETY: flash is active; leave UI process running",
+                      file=sys.stderr, flush=True)
+        except Exception:
+            # If state inspection itself fails, preserve a running process;
+            # an operator can stop it explicitly after checking ECU state.
+            safe_to_close = not app.is_process_running()
+        try:
+            if safe_to_close:
+                window.close()
+                time.sleep(2)
+                if app.is_process_running():
+                    app.kill()
         except Exception:
             pass
         exec_log = newest_after(logs_dir, "execution_*.log", 0)

@@ -71,6 +71,46 @@ std::wstring timestamp() {
 
 } // namespace
 
+std::string format_asc_header(std::time_t wall_time) {
+  std::ostringstream output;
+  output << "date " << asc_date(wall_time) << "\r\n"
+         << "base hex  timestamps absolute\r\n"
+         << "no internal events logged\r\n"
+         << "Begin Triggerblock " << asc_date(wall_time) << "\r\n";
+  return output.str();
+}
+
+std::string format_asc_record(double timestamp_seconds, unsigned channel,
+                              CanTraceDirection direction,
+                              const CanFrame& frame) {
+  std::ostringstream output;
+  const auto id_suffix = frame.extended ? "x" : "";
+  const auto direction_text =
+      direction == CanTraceDirection::transmit ? "Tx" : "Rx";
+
+  output << std::fixed << std::setprecision(6) << std::setw(12)
+         << timestamp_seconds << ' ';
+  if (frame.fd) {
+    output << "CANFD " << std::max(channel, 1U) << ' ' << direction_text << ' '
+           << std::hex << frame.id << id_suffix << std::dec << " 1 "
+           << (frame.brs ? 1 : 0) << ' ' << std::hex
+           << fd_dlc(frame.data.size()) << ' ' << frame.data.size()
+           << std::dec;
+  } else {
+    output << std::max(channel, 1U) << ' ' << std::hex << frame.id << id_suffix
+           << std::dec << ' ' << direction_text << " d "
+           << frame.data.size();
+  }
+  for (const auto byte : frame.data) {
+    output << ' ' << std::uppercase << std::hex << std::setw(2)
+           << std::setfill('0') << static_cast<unsigned>(byte)
+           << std::nouppercase << std::dec << std::setfill(' ');
+  }
+  if (frame.fd) output << " 0 0 0 0 0";
+  output << "\r\n";
+  return output.str();
+}
+
 AscTraceWriter::AscTraceWriter(std::filesystem::path path,
                                unsigned channel) noexcept
     : path_(std::move(path)), channel_(std::max(channel, 1U)),
@@ -114,11 +154,7 @@ bool AscTraceWriter::is_open() const noexcept {
 
 void AscTraceWriter::write_header() noexcept {
   try {
-    const auto now = std::time(nullptr);
-    stream_ << "date " << asc_date(now) << "\r\n"
-            << "base hex  timestamps absolute\r\n"
-            << "no internal events logged\r\n"
-            << "Begin Triggerblock " << asc_date(now) << "\r\n";
+    stream_ << format_asc_header(std::time(nullptr));
     stream_.flush();
   } catch (...) {
   }
@@ -148,31 +184,8 @@ void AscTraceWriter::write(CanTraceDirection direction,
 
 void AscTraceWriter::write_record(const Record& record) noexcept {
   try {
-    const auto& frame = record.frame;
-    const auto id_suffix = frame.extended ? "x" : "";
-    const auto direction_text =
-        record.direction == CanTraceDirection::transmit ? "Tx" : "Rx";
-
-    stream_ << std::fixed << std::setprecision(6) << std::setw(12)
-            << record.timestamp_seconds << ' ';
-    if (frame.fd) {
-      stream_ << "CANFD " << channel_ << ' ' << direction_text << ' '
-              << std::hex << frame.id << id_suffix << std::dec << " 1 "
-              << (frame.brs ? 1 : 0) << ' ' << std::hex
-              << fd_dlc(frame.data.size()) << ' ' << frame.data.size()
-              << std::dec;
-    } else {
-      stream_ << channel_ << ' ' << std::hex << frame.id << id_suffix
-              << std::dec << ' ' << direction_text << " d "
-              << frame.data.size();
-    }
-    for (const auto byte : frame.data) {
-      stream_ << ' ' << std::uppercase << std::hex << std::setw(2)
-              << std::setfill('0') << static_cast<unsigned>(byte)
-              << std::nouppercase << std::dec << std::setfill(' ');
-    }
-    if (frame.fd) stream_ << " 0 0 0 0 0";
-    stream_ << "\r\n";
+    stream_ << format_asc_record(record.timestamp_seconds, channel_,
+                                 record.direction, record.frame);
   } catch (...) {
     open_.store(false);
   }

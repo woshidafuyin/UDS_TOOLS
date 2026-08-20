@@ -6,10 +6,10 @@
 
 ## 当前基线
 
-- 工程统一构建通用版 `uds_tool_qt.exe`，不提供客户独立版本构建入口；
+- 工程统一构建通用版 `UDS_Tool.exe`，不提供客户独立版本构建入口；
 - 当前综合候选运行目录：`dist`；
-- 当前源码配置 19 个项目 Profile、16 个注册 Workflow ID；
-- 19 个 Profile 均包含 `[version_check]`，合计 131 个读取项；零跑 A12EV 为占位项目，运行能力禁用；
+- 当前源码配置 18 个项目 Profile、15 个注册 Workflow ID；
+- 18 个 Profile 均包含 `[version_check]`，合计 123 个读取项；零跑 ARC 为统一的四设备项目入口并保留预置文件；
 - 当前工程根目录没有对应的最新源码 ZIP，因此不登记或虚构源码压缩包名称。
 
 ## 当前已接入项目
@@ -32,7 +32,6 @@
 时代新安 庆铃 FMR
 零跑 ARC
 零跑 ARF631
-零跑 A12EV（placeholder，运行能力禁用）
 吉利 P416
 ```
 
@@ -47,18 +46,18 @@ scripts\build.ps1 -Config Release -DistPath dist
 构建脚本完成 x86 SeedKey Broker、x64 主程序、CTest、Qt 运行库部署、安装和已知 SeedKey 向量检查。正式运行入口为：
 
 ```text
-dist\uds_tool_qt.exe
+dist\UDS_Tool.exe
 ```
 
-2026-08-19 14:09 最近一次完整离线验证快照：
+2026-08-19 本轮 ARC 合并后的完整离线验证快照：
 
 - Release 构建：PASS；
 - CTest：8/8 PASS；
 - Qt 主窗口默认 10,000 次随机操作回归：PASS；
 - 长马、犀重、长安 C857/B216、楚能、奇瑞 KP31、时代新安、零跑 SeedKey 已知向量：PASS；
-- `dist\uds_tool_qt.exe` SHA-256：`FF3479055F0EFA09D2809D554F12D3C4F7ACD4C85D32403F73E45E8B533FACEA`。
+- `dist\UDS_Tool.exe` 的 SHA-256 以对应发布包校验结果为准。
 
-以上结果来自 14:09 完成的工作区构建输出，不把 2026-08-12 的时代新安专项验证材料合并为同一次验证证据。该验证结束后，`src/app/probe_service.cpp` 与 `src/flash/lingpao_radar_flow.cpp` 于 14:14 更新；两项最新源码尚未重新构建和执行完整 CTest，因此当前 `dist` 是最近一次已验证快照，不是这两项修改后的新候选包。
+以上结果来自本轮工作区构建输出，不把 2026-08-12 的时代新安专项验证材料合并为同一次验证证据。本轮验证后未再修改主程序源码或 Profile；随后只更新 README 并同步到发布目录。
 
 ## 源码包应包含
 

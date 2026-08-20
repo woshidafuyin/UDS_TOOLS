@@ -4,7 +4,7 @@
 
 ## 当前结论
 
-当前 `lp_arc` Workflow 支持 APP→APP 与 PLS/FT→APP 两个入口，只下载 Driver + APP，不支持 CAL。
+当前 `lp_arc` Workflow 统一承载 ARC 四设备，支持 APP→APP 与 PLS/FT→APP 两个入口，只下载 Driver + APP，不支持 CAL。四个设备共用预置 Driver、APP、校验文件和安全 DLL，设备选择只切换 APP 物理诊断端点。
 
 ## 当前配置
 

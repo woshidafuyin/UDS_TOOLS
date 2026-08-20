@@ -550,7 +550,9 @@ ProbeResult ProbeService::run(const ProbeRequest& requested,
                     " APP→APP 先向功能ID/APP响应ID发送10 01；收到50 01后再发送10 03，不执行10 02或刷写。";
     } else if (chuneng_arc331 && !ft_probe) {
       probe_description =
-          "在线探测：楚能ARC331持续发送0x520唤醒，向所选雷达物理端点发送10 03；收到对应响应ID的50 03即判定在线，不进入编程会话或刷写。";
+          boot_probe
+              ? "在线探测：楚能ARC331 BOOT→APP入口持续发送0x520唤醒，向所选雷达物理端点发送10 03；收到50 03即确认诊断在线，不发送仅APP入口适用的31 01 02 03，也不进入编程会话或刷写。"
+              : "在线探测：楚能ARC331持续发送0x520唤醒，向所选雷达物理端点发送10 03；收到对应响应ID的50 03即判定在线，不进入编程会话或刷写。";
     } else if (chuneng_331 && !ft_probe) {
       probe_description =
           boot_probe
@@ -677,7 +679,11 @@ ProbeResult ProbeService::run(const ProbeRequest& requested,
     if (chuneng_functional_fallback) {
       response_summary += "（功能寻址Boot兼容入口）";
     }
-    if (chuneng_arc331 && !ft_probe) {
+    if (chuneng_arc331 && !ft_probe && boot_probe) {
+      log(callbacks,
+          "PASS：楚能ARC331 BOOT→APP入口已收到所选物理响应ID的50 03；"
+          "本按钮不发送31 01 02 03、10 02或任何刷写数据。");
+    } else if (chuneng_arc331 && !ft_probe) {
       log(callbacks,
           "PASS：楚能ARC331所选物理诊断响应ID已返回50 03；目标在线。"
           "本按钮不发送31 01 02 03、10 02或任何刷写数据。");
