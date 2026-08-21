@@ -12,6 +12,7 @@ enum class OperationKind {
   probe,
   flash,
   version_check,
+  diagnostic_request,
 };
 
 enum class OperationPhase {

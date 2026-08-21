@@ -21,6 +21,7 @@ namespace uds::ui::qt {
 class ControllerBridge;
 class BusMonitorPage;
 class VersionConfirmationPage;
+class DiagnosticRequestPage;
 struct ControllerProfileOption;
 
 class MainWindow final : public QMainWindow {
@@ -89,6 +90,7 @@ private:
   void requestPowerFromUi(bool enabled);
   void syncVersionContext(bool recent_flash = false);
   void syncBusMonitorContext();
+  void syncDiagnosticRequestContext();
   void followSelectedBusMonitorContext();
   [[nodiscard]] bool monitorMatchesSelectedHardware(int profile_index) const;
   void updateStatusBar();
@@ -116,6 +118,7 @@ private:
   bool flash_stop_requested_{};
   bool power_running_{};
   bool version_check_running_{};
+  bool diagnostic_request_running_{};
   bool bus_monitor_running_{};
   bool restoring_combo_selections_{};
   int flash_progress_{};
@@ -127,6 +130,7 @@ private:
   bool execution_log_follow_tail_{true};
   VersionConfirmationPage* version_page_{};
   BusMonitorPage* bus_monitor_page_{};
+  DiagnosticRequestPage* diagnostic_request_page_{};
 };
 
 } // namespace uds::ui::qt

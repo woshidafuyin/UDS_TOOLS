@@ -249,7 +249,7 @@ void run_ui_monkey_test(QApplication& application,
       std::count_if(backend_actions.cbegin(), backend_actions.cend(),
                     [](const QAction* action) { return action->isChecked(); });
   check(projects->count() == project_count && channels->count() == 4 &&
-            workspace_tabs->count() == 3 && checked_backends == 1,
+            workspace_tabs->count() == 4 && checked_backends == 1,
         "UI monkey changed selector structure or backend exclusivity");
   workspace_tabs->setCurrentIndex(0);
   projects->setCurrentIndex(0);
@@ -453,6 +453,22 @@ int main(int argc, char* argv[]) {
           QStringLiteral("versionSelectionSummary"));
       auto* version_address = window.findChild<QLabel*>(
           QStringLiteral("versionAddressSummary"));
+      auto* diagnostic_page = window.findChild<QWidget*>(
+          QStringLiteral("diagnosticRequestPage"));
+      auto* diagnostic_context = window.findChild<QLabel*>(
+          QStringLiteral("diagnosticRequestContext"));
+      auto* diagnostic_addressing = window.findChild<QComboBox*>(
+          QStringLiteral("diagnosticAddressingComboBox"));
+      auto* diagnostic_payload = window.findChild<QLineEdit*>(
+          QStringLiteral("diagnosticPayloadLineEdit"));
+      auto* diagnostic_timeout = window.findChild<QSpinBox*>(
+          QStringLiteral("diagnosticTimeoutSpinBox"));
+      auto* diagnostic_send = window.findChild<QPushButton*>(
+          QStringLiteral("diagnosticSendButton"));
+      auto* diagnostic_stop = window.findChild<QPushButton*>(
+          QStringLiteral("diagnosticStopButton"));
+      auto* diagnostic_raw = window.findChild<QPlainTextEdit*>(
+          QStringLiteral("diagnosticRawCommunication"));
       auto* bus_monitor_page =
           window.findChild<uds::ui::qt::BusMonitorPage*>(
           QStringLiteral("busMonitorWorkspacePage"));
@@ -490,13 +506,21 @@ int main(int argc, char* argv[]) {
           QStringLiteral("busMonitorPhysicalShortcut"));
       auto* bus_monitor_periodic_shortcut = window.findChild<QPushButton*>(
           QStringLiteral("busMonitorPeriodicShortcut"));
-      check(workspace_tabs && workspace_tabs->count() == 3 &&
+      check(workspace_tabs && workspace_tabs->count() == 4 &&
                 workspace_tabs->currentIndex() == 0 &&
                  workspace_tabs->currentWidget() == flash_page &&
                  version_page && version_table &&
                  version_table->columnCount() == 5 && version_button &&
                  version_selection && version_address &&
                  version_button->text() == QStringLiteral("一键读取") &&
+                diagnostic_page && diagnostic_context &&
+                diagnostic_context->text().contains(QStringLiteral("CH")) &&
+                diagnostic_addressing && diagnostic_addressing->count() == 2 &&
+                diagnostic_payload && diagnostic_timeout &&
+                diagnostic_timeout->value() == 2000 && diagnostic_send &&
+                diagnostic_send->text() == QStringLiteral("发送并等待响应") &&
+                diagnostic_stop && !diagnostic_stop->isEnabled() &&
+                diagnostic_raw && diagnostic_raw->isReadOnly() &&
                 bus_monitor_page && bus_monitor_table &&
                 bus_monitor_table->columnCount() == 7 &&
                 bus_monitor_table->horizontalHeaderItem(6)->text() ==
@@ -508,7 +532,8 @@ int main(int argc, char* argv[]) {
             "Workspace tabs are missing or flash is not the default page");
       check(workspace_tabs->tabText(0) == QStringLiteral("刷写作业") &&
                 workspace_tabs->tabText(1) == QStringLiteral("版本读取") &&
-                workspace_tabs->tabText(2) == QStringLiteral("总线监听"),
+                workspace_tabs->tabText(2) == QStringLiteral("诊断报文") &&
+                workspace_tabs->tabText(3) == QStringLiteral("总线监听"),
             "Workspace tab labels or ordering changed");
       check(projects && project_label && devices && device_label && entries &&
                 bus_monitor_tx_filter && bus_monitor_tx_filter->isChecked() &&

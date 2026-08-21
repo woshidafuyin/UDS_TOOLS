@@ -5,6 +5,7 @@
 #include "app/probe_service.hpp"
 #include "app/version_check_service.hpp"
 #include "app/version_value_decoder.hpp"
+#include "app/diagnostic_request_service.hpp"
 #include "core/profile.hpp"
 #include "flash/chuneng_331_flow.hpp"
 #include "flash/geely_p416_flow.hpp"
@@ -799,6 +800,29 @@ void test_version_check_service_success() {
              result.message == "读取完成：全部必读版本信息读取成功",
         "version-check service did not complete a read-only ASCII item");
   std::filesystem::remove_all(directory);
+}
+
+void test_diagnostic_request_service_success() {
+  uds::app::DiagnosticRequest request;
+  request.profile.can_fd = false;
+  request.profile.padding = 0;
+  request.profile.isotp_st_min = 0;
+  request.profile.nominal_bitrate = 500000;
+  request.channel = 1;
+  request.tx_id = 0x700;
+  request.rx_id = 0x708;
+  request.payload = {0x22, 0xF1, 0x89};
+  request.timeout_ms = 500;
+  uds::app::DiagnosticRequestService service(
+      [](const uds::app::DiagnosticRequest&) {
+        return std::make_unique<FakeVersionBus>();
+      });
+  const auto result = service.run(request, {});
+  check(result.success && !result.cancelled && result.nrc == 0 &&
+            result.request_hex == "22 F1 89" &&
+            result.response_hex == "62 F1 89 4F 4B" &&
+            result.elapsed_ms <= 500,
+        "manual diagnostic request did not preserve UDS request/response");
 }
 
 void test_version_check_service_lsmr_nm_wakeup() {
@@ -1630,6 +1654,7 @@ int main() {
     test_probe_controller_success();
     test_probe_controller_stop();
     test_version_check_service_success();
+    test_diagnostic_request_service_success();
     test_version_check_service_lsmr_nm_wakeup();
     test_version_check_service_chuneng_periodic_wakeup();
     test_version_value_decoders();

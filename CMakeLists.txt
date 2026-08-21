@@ -141,6 +141,8 @@ add_library(uds_app STATIC
   src/app/version_check_controller.cpp
   src/app/version_check_service.cpp
   src/app/version_value_decoder.cpp
+  src/app/diagnostic_request_controller.cpp
+  src/app/diagnostic_request_service.cpp
 )
 target_include_directories(uds_app PUBLIC src)
 target_link_libraries(uds_app PUBLIC uds_flash uds_core)
@@ -262,6 +264,8 @@ if(UDS_BUILD_QT_UI AND CMAKE_SIZEOF_VOID_P EQUAL 8)
       src/app/version_check_controller.cpp
       src/app/version_check_service.cpp
       src/app/version_value_decoder.cpp
+      src/app/diagnostic_request_controller.cpp
+      src/app/diagnostic_request_service.cpp
     )
     target_include_directories(uds_app_qt PUBLIC src)
     target_link_libraries(uds_app_qt PUBLIC uds_flash_qt uds_core_qt)
@@ -280,6 +284,9 @@ if(UDS_BUILD_QT_UI AND CMAKE_SIZEOF_VOID_P EQUAL 8)
     )
     qt5_wrap_cpp(UDS_QT_BUS_MONITOR_PAGE_MOC_SOURCES
       src/ui/qt/bus_monitor_page.hpp
+    )
+    qt5_wrap_cpp(UDS_QT_DIAGNOSTIC_PAGE_MOC_SOURCES
+      src/ui/qt/diagnostic_request_page.hpp
     )
     qt5_wrap_ui(UDS_TOOL_QT_UI_SOURCES
       src/ui/qt/main_window.ui
@@ -303,12 +310,15 @@ if(UDS_BUILD_QT_UI AND CMAKE_SIZEOF_VOID_P EQUAL 8)
       src/ui/qt/version_confirmation_page.hpp
       src/ui/qt/bus_monitor_page.cpp
       src/ui/qt/bus_monitor_page.hpp
+      src/ui/qt/diagnostic_request_page.cpp
+      src/ui/qt/diagnostic_request_page.hpp
       src/ui/qt/controller_bridge.cpp
       src/ui/qt/controller_bridge.hpp
       ${UDS_QT_MAIN_WINDOW_MOC_SOURCES}
       ${UDS_QT_CONTROLLER_BRIDGE_MOC_SOURCES}
       ${UDS_QT_VERSION_PAGE_MOC_SOURCES}
       ${UDS_QT_BUS_MONITOR_PAGE_MOC_SOURCES}
+      ${UDS_QT_DIAGNOSTIC_PAGE_MOC_SOURCES}
       ${UDS_TOOL_QT_UI_SOURCES}
       ${UDS_TOOL_QT_RESOURCE_SOURCES}
     )
@@ -512,12 +522,15 @@ if(TARGET uds_tool_qt)
     src/ui/qt/version_confirmation_page.hpp
     src/ui/qt/bus_monitor_page.cpp
     src/ui/qt/bus_monitor_page.hpp
+    src/ui/qt/diagnostic_request_page.cpp
+    src/ui/qt/diagnostic_request_page.hpp
     src/ui/qt/controller_bridge.cpp
     src/ui/qt/controller_bridge.hpp
     ${UDS_QT_MAIN_WINDOW_MOC_SOURCES}
     ${UDS_QT_CONTROLLER_BRIDGE_MOC_SOURCES}
     ${UDS_QT_VERSION_PAGE_MOC_SOURCES}
     ${UDS_QT_BUS_MONITOR_PAGE_MOC_SOURCES}
+    ${UDS_QT_DIAGNOSTIC_PAGE_MOC_SOURCES}
     ${UDS_TOOL_QT_UI_SOURCES}
   )
   target_include_directories(qt_main_window_tests PRIVATE

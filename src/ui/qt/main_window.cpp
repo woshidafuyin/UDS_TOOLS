@@ -5,6 +5,7 @@
 #include "ui/qt/bus_monitor_page.hpp"
 #include "ui/qt/controller_bridge.hpp"
 #include "ui/qt/version_confirmation_page.hpp"
+#include "ui/qt/diagnostic_request_page.hpp"
 #include "ui_main_window.h"
 
 #include <QAction>
@@ -217,6 +218,10 @@ MainWindow::MainWindow(QWidget* parent)
   version_page_ = new VersionConfirmationPage(ui_->workspaceTabWidget);
   ui_->workspaceTabWidget->addTab(version_page_,
                                   QStringLiteral("版本读取"));
+  diagnostic_request_page_ =
+      new DiagnosticRequestPage(ui_->workspaceTabWidget);
+  ui_->workspaceTabWidget->addTab(diagnostic_request_page_,
+                                  QStringLiteral("诊断报文"));
   bus_monitor_page_ = new BusMonitorPage(ui_->workspaceTabWidget);
   ui_->workspaceTabWidget->addTab(bus_monitor_page_, QStringLiteral("总线监听"));
   ui_->workspaceTabWidget->setCurrentWidget(ui_->flashWorkspacePage);
@@ -312,6 +317,7 @@ MainWindow::MainWindow(QWidget* parent)
             // that caches CAN context before restarting a live monitor.
             syncVersionContext();
             syncBusMonitorContext();
+            syncDiagnosticRequestContext();
             if (restart_monitor) bus_monitor_page_->start();
             appendUiLog(QStringLiteral("CAN硬件后端已切换为：%1")
                             .arg(canVendorDisplayName(vendor)) +
@@ -326,6 +332,9 @@ MainWindow::MainWindow(QWidget* parent)
   auto* diagnostic_menu = menuBar()->addMenu(QStringLiteral("诊断"));
   diagnostic_menu->addAction(QStringLiteral("版本读取"), this, [this] {
     ui_->workspaceTabWidget->setCurrentWidget(version_page_);
+  });
+  diagnostic_menu->addAction(QStringLiteral("诊断报文"), this, [this] {
+    ui_->workspaceTabWidget->setCurrentWidget(diagnostic_request_page_);
   });
   diagnostic_menu->addAction(QStringLiteral("总线监听"), this, [this] {
     ui_->workspaceTabWidget->setCurrentWidget(bus_monitor_page_);
@@ -813,17 +822,20 @@ void MainWindow::connectActions() {
           [this] {
             saveComboSelections();
             syncVersionContext();
+            syncDiagnosticRequestContext();
             followSelectedBusMonitorContext();
           });
   connect(ui_->txIdLineEdit, &QLineEdit::editingFinished, this,
           [this] {
             syncVersionContext();
             syncBusMonitorContext();
+            syncDiagnosticRequestContext();
           });
   connect(ui_->rxIdLineEdit, &QLineEdit::editingFinished, this,
           [this] {
             syncVersionContext();
             syncBusMonitorContext();
+            syncDiagnosticRequestContext();
           });
   connect(ui_->entryModeComboBox,
           QOverload<int>::of(&QComboBox::currentIndexChanged), this,
@@ -865,6 +877,25 @@ void MainWindow::connectControllerActions() {
                   QUrl::fromLocalFile(latest_report_path_));
             }
           });
+  connect(diagnostic_request_page_, &DiagnosticRequestPage::sendRequested,
+          this,
+          [this](int profile_index, const QString& target_id, unsigned channel,
+                 quint32 tx_id, quint32 rx_id, const QString& payload,
+                 unsigned timeout_ms) {
+            followSelectedBusMonitorContext();
+            if (!monitorMatchesSelectedHardware(profile_index)) {
+              QMessageBox::warning(
+                  this, QStringLiteral("监听通道配置不一致"),
+                  QStringLiteral("自动监听未能切换到当前 CAN 后端、通道或速率配置，"
+                                 "本次诊断请求已阻止。"));
+              return;
+            }
+            controller_bridge_->startDiagnosticRequest(
+                profile_index, target_id, channel, tx_id, rx_id, payload,
+                timeout_ms);
+          });
+  connect(diagnostic_request_page_, &DiagnosticRequestPage::stopRequested,
+          controller_bridge_.get(), &ControllerBridge::requestDiagnosticStop);
   connect(bus_monitor_page_, &BusMonitorPage::runningChanged, this,
           [this](bool running) {
             bus_monitor_running_ = running;
@@ -931,6 +962,30 @@ void MainWindow::connectControllerActions() {
             version_check_running_ = false;
             version_page_->finish(success, cancelled, message);
             appendUiLog(message);
+            updateEnabledState();
+            updateStatusBar();
+          });
+  connect(controller_bridge_.get(),
+          &ControllerBridge::diagnosticRunningChanged, this,
+          [this](bool running) {
+            diagnostic_request_running_ = running;
+            diagnostic_request_page_->setRunning(running);
+            updateEnabledState();
+          });
+  connect(controller_bridge_.get(), &ControllerBridge::diagnosticFinished,
+          this,
+          [this](bool success, bool cancelled, const QString& request,
+                 const QString& response, const QString& detail,
+                 unsigned elapsed_ms, quint8 nrc) {
+            diagnostic_request_running_ = false;
+            diagnostic_request_page_->finish(success, cancelled, request,
+                                              response, detail, elapsed_ms, nrc);
+            appendUiLog(QStringLiteral("诊断报文：TX %1；RX %2；%3")
+                            .arg(request,
+                                 response.isEmpty() ? QStringLiteral("<无响应>")
+                                                    : response,
+                                 detail),
+                        success ? UiLogTone::Success : UiLogTone::Failure);
             updateEnabledState();
             updateStatusBar();
           });
@@ -1305,6 +1360,7 @@ void MainWindow::applySelectedRadar(bool log_change) {
   }
   syncVersionContext();
   syncBusMonitorContext();
+  syncDiagnosticRequestContext();
 }
 
 void MainWindow::syncVersionContext(bool recent_flash) {
@@ -1389,6 +1445,30 @@ void MainWindow::syncBusMonitorContext() {
       default_can_vendor(),
       ui_->vectorChannelComboBox->currentData().toUInt(),
       profile.nominal_bitrate, profile.data_bitrate, profile.can_fd);
+}
+
+void MainWindow::syncDiagnosticRequestContext() {
+  if (!diagnostic_request_page_ || !controller_bridge_) return;
+  bool valid{};
+  const auto profile_index = selectedProfileIndex(&valid);
+  const auto& profiles = controller_bridge_->profileOptions();
+  if (!valid || profile_index < 0 ||
+      static_cast<std::size_t>(profile_index) >= profiles.size()) return;
+  const auto& profile = profiles[static_cast<std::size_t>(profile_index)];
+  QString target_name = ui_->radarComboBox->currentText();
+  if (target_name.isEmpty()) target_name = profile.device_name;
+  bool tx_ok{};
+  bool rx_ok{};
+  const auto tx_id = ui_->txIdLineEdit->text().toUInt(&tx_ok, 0);
+  const auto rx_id = ui_->rxIdLineEdit->text().toUInt(&rx_ok, 0);
+  diagnostic_request_page_->setContext(
+      profile_index, selectedTargetId(),
+      canVendorDisplayName(default_can_vendor()), profile.vendor_name,
+      profile.project_name, target_name,
+      ui_->vectorChannelComboBox->currentData().toUInt(),
+      profile.nominal_bitrate, profile.data_bitrate, profile.can_fd,
+      tx_ok ? tx_id : profile.tx_id, rx_ok ? rx_id : profile.rx_id,
+      profile.functional_id);
 }
 
 void MainWindow::followSelectedBusMonitorContext() {
@@ -1698,7 +1778,7 @@ void MainWindow::requestPowerFromUi(bool enabled) {
 
 void MainWindow::updateEnabledState() {
   const auto busy = probe_running_ || flash_running_ || power_running_ ||
-                    version_check_running_;
+                    version_check_running_ || diagnostic_request_running_;
   const auto& profiles = controller_bridge_->profileOptions();
   bool profile_valid{};
   const auto profile_index = selectedProfileIndex(&profile_valid);
@@ -1755,6 +1835,10 @@ void MainWindow::updateEnabledState() {
   }
   if (bus_monitor_page_) {
     bus_monitor_page_->setOperationBusy(busy);
+  }
+  if (diagnostic_request_page_) {
+    diagnostic_request_page_->setOperationBusy(
+        busy && !diagnostic_request_running_);
   }
   updateStatusBar();
 }

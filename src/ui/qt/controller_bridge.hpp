@@ -4,6 +4,7 @@
 #include "app/operation_state.hpp"
 #include "app/probe_controller.hpp"
 #include "app/version_check_controller.hpp"
+#include "app/diagnostic_request_controller.hpp"
 #include "core/profile.hpp"
 #include "ui/qt/version_read_view_model.hpp"
 
@@ -114,6 +115,10 @@ public slots:
   void startVersionCheck(int profile_index, const QString& target_id,
                          unsigned channel, quint32 tx_id, quint32 rx_id);
   void requestVersionCheckStop();
+  void startDiagnosticRequest(int profile_index, const QString& target_id,
+                              unsigned channel, quint32 tx_id, quint32 rx_id,
+                              const QString& payload, unsigned timeout_ms);
+  void requestDiagnosticStop();
   void setPower(int profile_index, bool enabled);
 
 signals:
@@ -130,6 +135,11 @@ signals:
                        const QString& raw_response);
   void versionCheckFinished(bool success, bool cancelled,
                             const QString& message);
+  void diagnosticRunningChanged(bool running);
+  void diagnosticFinished(bool success, bool cancelled,
+                          const QString& request, const QString& response,
+                          const QString& detail, unsigned elapsed_ms,
+                          quint8 nrc);
   void powerRunningChanged(bool running);
   void powerFinished(bool success, const QString& message);
 
@@ -162,6 +172,7 @@ private:
   app::ProbeController probe_controller_;
   app::FlashController flash_controller_;
   app::VersionCheckController version_check_controller_;
+  app::DiagnosticRequestController diagnostic_request_controller_;
   std::mutex power_mutex_;
   std::jthread power_worker_;
   std::atomic_bool power_running_{};

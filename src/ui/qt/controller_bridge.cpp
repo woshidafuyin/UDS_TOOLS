@@ -3,6 +3,7 @@
 #include "core/canoe_power.hpp"
 #include "core/asc_trace.hpp"
 #include "core/version_check_plan.hpp"
+#include "core/hex.hpp"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -130,7 +131,8 @@ QString versionStatus(app::VersionCheckStatus status) {
 ControllerBridge::ControllerBridge(QObject* parent)
     : QObject(parent), probe_controller_(operation_state_),
       flash_controller_(operation_state_),
-      version_check_controller_(operation_state_) {
+      version_check_controller_(operation_state_),
+      diagnostic_request_controller_(operation_state_) {
   loadProfiles();
 }
 
@@ -140,7 +142,8 @@ ControllerBridge::ControllerBridge(
     : QObject(parent), profiles_(std::move(profiles)),
       probe_controller_(operation_state_, std::move(service)),
       flash_controller_(operation_state_, std::move(workflow_factory)),
-      version_check_controller_(operation_state_) {
+      version_check_controller_(operation_state_),
+      diagnostic_request_controller_(operation_state_) {
   buildProfileOptions();
 }
 
@@ -149,9 +152,11 @@ ControllerBridge::~ControllerBridge() {
   flash_controller_.request_stop();
   probe_controller_.request_stop();
   version_check_controller_.request_stop();
+  diagnostic_request_controller_.request_stop();
   flash_controller_.wait();
   probe_controller_.wait();
   version_check_controller_.wait();
+  diagnostic_request_controller_.wait();
   std::scoped_lock lock(power_mutex_);
   if (power_worker_.joinable()) {
     power_worker_.request_stop();
@@ -566,6 +571,60 @@ void ControllerBridge::startVersionCheck(int profile_index,
 
 void ControllerBridge::requestVersionCheckStop() {
   version_check_controller_.request_stop();
+}
+
+void ControllerBridge::startDiagnosticRequest(
+    int profile_index, const QString& target_id, unsigned channel,
+    quint32 tx_id, quint32 rx_id, const QString& payload,
+    unsigned timeout_ms) {
+  if (shutting_down_.load()) return;
+  if (profile_index < 0 ||
+      static_cast<std::size_t>(profile_index) >= profiles_.size()) {
+    emit diagnosticFinished(false, false, payload, {},
+                            QStringLiteral("诊断配置无效：未选择设备。"), 0, 0);
+    return;
+  }
+  try {
+    const auto request_bytes = from_hex(payload.toStdString());
+    if (request_bytes.empty()) throw std::runtime_error("UDS request is empty");
+    app::DiagnosticRequest request;
+    request.profile = profiles_[static_cast<std::size_t>(profile_index)].profile;
+    request.channel = channel;
+    request.tx_id = tx_id;
+    request.rx_id = rx_id;
+    request.payload = request_bytes;
+    request.timeout_ms = timeout_ms;
+    request.trace_file = make_asc_trace_path(
+        QCoreApplication::applicationDirPath().toStdWString(),
+        request.profile.id, target_id.toStdWString(), L"diagnostic");
+    if (!diagnostic_request_controller_.start(
+            std::move(request), [this](app::DiagnosticRequestResult result) {
+              if (shutting_down_.load()) return;
+              QMetaObject::invokeMethod(
+                  this,
+                  [this, result = std::move(result)] {
+                    if (shutting_down_.load()) return;
+                    emit diagnosticRunningChanged(false);
+                    emit diagnosticFinished(
+                        result.success, result.cancelled,
+                        fromUtf8(result.request_hex), fromUtf8(result.response_hex),
+                        fromUtf8(result.message), result.elapsed_ms, result.nrc);
+                  },
+                  Qt::QueuedConnection);
+            })) {
+      emit diagnosticFinished(false, false, payload, {},
+                              QStringLiteral("已有操作正在运行，不能发送诊断请求。"), 0, 0);
+      return;
+    }
+    emit diagnosticRunningChanged(true);
+  } catch (const std::exception& error) {
+    emit diagnosticFinished(false, false, payload, {}, fromUtf8(error.what()),
+                            0, 0);
+  }
+}
+
+void ControllerBridge::requestDiagnosticStop() {
+  diagnostic_request_controller_.request_stop();
 }
 
 void ControllerBridge::setPower(int profile_index, bool enabled) {
