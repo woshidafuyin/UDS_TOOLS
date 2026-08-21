@@ -26,6 +26,7 @@ struct FlashRequest {
   // exactly which hardware backend and pre-flash qualification evidence were
   // associated with this immutable request.
   std::string hardware_backend{"unspecified"};
+  std::string target_description{"unspecified"};
   std::string qualification_status{"NOT_RUN"};
   std::string qualification_detail{"No matching pre-flash probe was recorded"};
   std::string qualification_completed_at;

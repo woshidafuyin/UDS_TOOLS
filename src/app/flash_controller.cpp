@@ -279,6 +279,7 @@ void FlashController::execute(FlashRequest request,
       if (callbacks.onLog) callbacks.onLog(step + ": " + detail);
       add_report(0, std::move(step), "INFO", std::move(detail));
     };
+    record_snapshot("Flash target", request.target_description);
     record_snapshot("Pre-flash qualification", qualification_detail(request));
     record_snapshot("CAN configuration", can_configuration_detail(request));
     record_snapshot("Flash file", file_configuration_detail(

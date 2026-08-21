@@ -212,6 +212,9 @@ uds::app::FlashRequest make_flash_request(
   request.entry_mode = L"ft";
   request.executable_directory = directory;
   request.hardware_backend = "ZLG / ZCANPRO (ZCAN)";
+  request.target_description =
+      "Chuneng / ARC331 / Left rear; Profile=chuneng_arc331; Target=left_rear; "
+      "Flow=chuneng_arc331; Entry=APP; Repetitions=1";
   request.qualification_status = "PASS";
   request.qualification_detail = "设备在线：响应 50 03";
   request.qualification_completed_at = "2026-08-21T10:05:55.489+08:00";
@@ -251,7 +254,8 @@ void test_flash_controller_success() {
   uds::app::OperationCallbacks callbacks;
   callbacks.onLog = [&](const std::string& line) {
     if (line == "fake log") ++log_count;
-    if (line.find("Pre-flash qualification:") == 0 ||
+    if (line.find("Flash target:") == 0 ||
+        line.find("Pre-flash qualification:") == 0 ||
         line.find("CAN configuration:") == 0 ||
         line.find("Flash file:") == 0) {
       audit_logs.push_back(line);
@@ -282,7 +286,7 @@ void test_flash_controller_success() {
                 std::filesystem::path(L"security.dll") &&
             std::filesystem::exists(trace_path),
         "flash controller did not assemble FlashJob correctly");
-  check(log_count == 1 && progress == 25 && audit_logs.size() == 9,
+  check(log_count == 1 && progress == 25 && audit_logs.size() == 10,
         "flash controller did not adapt workflow callbacks");
   check(!result.report_path.empty() &&
              std::filesystem::is_regular_file(result.report_path),
@@ -300,6 +304,7 @@ void test_flash_controller_success() {
                 std::string::npos,
         "flash report did not label diagnostic ID directions");
   check(report_text.find("Pre-flash qualification") != std::string::npos &&
+            report_text.find("Profile=chuneng_arc331") != std::string::npos &&
             report_text.find("Status=PASS") != std::string::npos &&
             report_text.find("Hardware backend=ZLG / ZCANPRO (ZCAN)") !=
                 std::string::npos &&
