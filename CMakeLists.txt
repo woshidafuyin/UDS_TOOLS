@@ -545,26 +545,18 @@ if(TARGET uds_tool_qt)
   if(CMAKE_SIZEOF_VOID_P EQUAL 8)
     install(FILES "${UDS_X86_KEYGEN_BROKER}" DESTINATION .)
   endif()
-  if(TARGET can_hardware_probe)
-    install(TARGETS can_hardware_probe RUNTIME DESTINATION tools)
-    install(FILES
-      scripts/kvaser_preflight.ps1
-      DESTINATION tools)
-    install(FILES
-      docs/KVASER_BENCH_CHECKLIST.md
-      DESTINATION docs)
-    install(FILES
-      validation/kvaser_bench/README.md
-      DESTINATION validation/kvaser_bench)
-  endif()
   if(ENABLE_ZLG)
-    install(DIRECTORY "${UDS_ZLG_SDK_DIR}/" DESTINATION drivers/zlg)
+    install(DIRECTORY "${UDS_ZLG_SDK_DIR}/" DESTINATION drivers/zlg
+      PATTERN "*.h" EXCLUDE
+      PATTERN "*.lib" EXCLUDE)
     install(FILES
       "${CMAKE_CURRENT_SOURCE_DIR}/third_party/zlg/sdk/zlgcan License.txt"
       DESTINATION drivers/zlg)
   endif()
   if(ENABLE_TOSUN)
-    install(DIRECTORY "${UDS_TOSUN_RUNTIME_DIR}/" DESTINATION drivers/tosun)
+    install(DIRECTORY "${UDS_TOSUN_RUNTIME_DIR}/" DESTINATION drivers/tosun
+      PATTERN "*.h" EXCLUDE
+      PATTERN "*.lib" EXCLUDE)
   endif()
 endif()
 # The ARC331 profile and its CANoe-derived resource set are one unit. Remove
@@ -588,23 +580,39 @@ install(CODE [[
   file(REMOVE_RECURSE "${CMAKE_INSTALL_PREFIX}/resources/lp_arf_231_b01")
   file(REMOVE_RECURSE "${CMAKE_INSTALL_PREFIX}/resources/lp_a12ev")
 ]])
+function(install_runtime_resource resource_name)
+  install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/resources/${resource_name}"
+    DESTINATION resources
+    PATTERN "Reference" EXCLUDE
+    PATTERN "README.md" EXCLUDE
+    PATTERN "*MANIFEST*" EXCLUDE
+    PATTERN "PROVENANCE.md" EXCLUDE
+    PATTERN "BASELINE.md" EXCLUDE
+    PATTERN "manifest.json" EXCLUDE
+    PATTERN "*_reconstructed.vbf" EXCLUDE)
+endfunction()
+
 install(DIRECTORY profiles DESTINATION .)
-install(DIRECTORY resources/chery_ars1_33 DESTINATION resources)
-install(DIRECTORY resources/chery_kp31 DESTINATION resources)
-install(DIRECTORY resources/changan_c857 DESTINATION resources)
-install(DIRECTORY resources/lingyao_b216 DESTINATION resources)
-install(DIRECTORY resources/longma_ars1_31 DESTINATION resources)
-install(DIRECTORY resources/xizhong_rsmr DESTINATION resources)
-install(DIRECTORY resources/xizhong_lsmr DESTINATION resources)
-install(DIRECTORY resources/shidaixinan_hjzj_fmr DESTINATION resources)
-install(DIRECTORY resources/shidaixinan_arf232_common DESTINATION resources)
-install(DIRECTORY resources/shidaixinan_tianwangxing_fmr DESTINATION resources)
-install(DIRECTORY resources/shidaixinan_muxing2_fmr DESTINATION resources)
-install(DIRECTORY resources/shidaixinan_qingling_fmr DESTINATION resources)
-install(DIRECTORY resources/lp_arc DESTINATION resources)
-install(DIRECTORY resources/lp_arf DESTINATION resources)
-install(DIRECTORY resources/geely_p416 DESTINATION resources)
+install_runtime_resource(chery_ars1_33)
+install_runtime_resource(chery_kp31)
+install_runtime_resource(changan_c857)
+install_runtime_resource(lingyao_b216)
+install_runtime_resource(longma_ars1_31)
+install_runtime_resource(xizhong_rsmr)
+install_runtime_resource(xizhong_lsmr)
+install_runtime_resource(shidaixinan_hjzj_fmr)
+install_runtime_resource(shidaixinan_arf232_common)
+install_runtime_resource(shidaixinan_tianwangxing_fmr)
+install_runtime_resource(shidaixinan_muxing2_fmr)
+install_runtime_resource(shidaixinan_qingling_fmr)
+install_runtime_resource(lp_arc)
+install_runtime_resource(lp_arf)
+install_runtime_resource(geely_p416)
 if(EXISTS "${CHUNENG_331_RESOURCES}")
-  install(DIRECTORY "${CHUNENG_331_RESOURCES}" DESTINATION resources)
+  get_filename_component(CHUNENG_331_RESOURCE_NAME
+    "${CHUNENG_331_RESOURCES}" NAME)
+  install_runtime_resource("${CHUNENG_331_RESOURCE_NAME}")
 endif()
 install(FILES README.md DESTINATION .)
+install(FILES docs/CHANGE_LIST_20260821_VS_20260819_ARC.txt
+  DESTINATION . RENAME CHANGE_LIST.txt)

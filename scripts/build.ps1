@@ -80,6 +80,24 @@ if($LASTEXITCODE -ne 0){ throw 'Failed to synchronize build-output profiles' }
 
 $testCommand='"{0}" --test-dir "{1}" --output-on-failure' -f $ctest,$x64Build
 Invoke-VsCommand x64 $testCommand 'C++ tests'
+
+$resolvedRoot=[IO.Path]::GetFullPath($root).TrimEnd('\')
+$resolvedDist=[IO.Path]::GetFullPath($dist).TrimEnd('\')
+if($resolvedDist -eq $resolvedRoot -or
+   -not $resolvedDist.StartsWith($resolvedRoot + '\',
+                                [StringComparison]::OrdinalIgnoreCase)){
+  throw "Refusing to recreate dist outside the project: $resolvedDist"
+}
+if(Test-Path -LiteralPath $resolvedDist){
+  & $cmake -E remove_directory $resolvedDist
+  if($LASTEXITCODE -ne 0 -and
+     (Get-ChildItem -LiteralPath $resolvedDist -Force | Select-Object -First 1)){
+    throw "Failed to clear dist: $resolvedDist"
+  }
+}
+& $cmake -E make_directory $resolvedDist
+if($LASTEXITCODE -ne 0){ throw "Failed to create dist: $resolvedDist" }
+
 $installCommand='"{0}" --install "{1}" --prefix "{2}"' -f $cmake,$x64Build,$dist
 Invoke-VsCommand x64 $installCommand 'CMake install'
 Copy-Item -LiteralPath $broker -Destination (Join-Path $dist 'keygen_broker.exe') -Force

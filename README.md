@@ -16,7 +16,7 @@
 - 4 类 CAN 硬件后端：Vector XL、ZLG/ZCAN、TOSUN/TSMaster、Kvaser；
 - 3 个用户功能页：刷写作业、版本读取、总线监听；
 - 统一主程序 `UDS_Tool.exe`；
-- Profile、项目资源、硬件驱动、辅助探针、说明文档和离线验证资料；
+- Profile、项目运行资源、硬件运行驱动和用户说明文档；
 - 当前交付目录为 `dist`，运行产生的 `logs` 和 `Configuration` 不预置在干净发布包中。
 
 ## 3. 软件分层
@@ -142,7 +142,6 @@
 - ZLG/ZCAN：使用 ZCAN API，支持 CAN/CAN FD 和零发送恢复分类；
 - TOSUN/TSMaster：使用 TSCAN 后端；
 - Kvaser：使用 CANlib 后端；
-- 辅助程序 `tools/can_hardware_probe.exe` 用于硬件枚举和底层收发诊断；
 - 四类后端共享统一 `ICanBus`/Provider 边界，项目 Workflow 不直接依赖厂商 API。
 
 ## 9. 当前项目与模式
@@ -174,14 +173,12 @@
 - Boot 恢复引擎属于内部受控能力。正式发布构建默认关闭 `UDS_EXPOSE_ARC331_BOOT_RECOVERY`，普通 dist 下拉框不显示 Boot 恢复入口；
 - 恢复态处理必须使用单独显式启用的受控构建和台架操作，不应把普通 APP 重试当作恢复方案。
 
-详细流程见 `docs/CHUNENG_331_FLOW_PARITY.md`。
-
 ## 11. 配置、日志和生成目录
 
-- `profiles`、`resources`、`drivers` 和随包 `docs` 是发布内容；
+- `profiles`、经过运行时筛选的 `resources` 和 `drivers` 是发布内容；
 - `Configuration` 保存当前用户的界面和硬件选择，由程序运行时创建；
 - `logs` 保存运行日志、HTML 报告、版本读取记录和总线 Trace，由程序运行时创建；
-- 干净发布包不携带开发机历史 `Configuration`、`logs`、`.partial`、构建目录或 Python 缓存；
+- 干净发布包不携带开发机历史 `Configuration`、`logs`、`.partial`、`validation`、台架探针、内部流程文档、厂商头文件/导入库、未使用的参考工程、构建目录或 Python 缓存；
 - 清理发布包不会清理源码目录或公共盘资料。
 
 ## 12. 构建、验证与证据边界
@@ -197,9 +194,4 @@
 
 - `README.md`：当前版本完整功能说明；
 - `CHANGE_LIST.txt`：仅记录相对公共盘 8.19 正式包的变化；
-- `docs/README.md`：项目文档索引；
-- `docs/ARCHITECTURE.md`：模块边界；
-- `docs/VERSION_READ_CONFIGURATION.md`：版本读取配置和解码器；
-- `docs/*_FLOW_PARITY.md`：项目流程、证据和验收边界；
-- `docs/KVASER_BENCH_CHECKLIST.md`：Kvaser 台架检查；
-- `SOURCE_PACKAGE_README.md`：源码包范围与排除项。
+- 源码仓库中的 `docs`、`validation`、测试工具和资源来源记录只用于研发、审核与台架验收，不进入正式用户包。
