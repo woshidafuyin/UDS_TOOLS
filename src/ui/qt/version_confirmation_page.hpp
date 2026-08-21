@@ -18,6 +18,7 @@ public:
   explicit VersionConfirmationPage(QWidget* parent = nullptr);
 
   void setContext(int profile_index, const QString& source,
+                  const QString& hardware_backend,
                   const QString& vendor, const QString& project,
                   const QString& target_id, const QString& target_name,
                   unsigned channel, quint32 tx_id, quint32 rx_id,
@@ -52,6 +53,7 @@ private:
   QString project_;
   QString target_name_;
   QString source_;
+  QString hardware_backend_;
   VersionReadItems planned_items_;
   QString rendered_context_key_;
   bool configured_{};

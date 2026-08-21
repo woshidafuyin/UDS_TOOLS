@@ -3,6 +3,7 @@
 #include "core/bus_monitor_trace.hpp"
 #include "core/can_id_filter.hpp"
 #include "core/can_bus.hpp"
+#include "drivers/can/can_hardware_adapter.hpp"
 
 #include <QWidget>
 
@@ -46,7 +47,7 @@ public:
   explicit BusMonitorPage(QWidget* parent = nullptr);
   ~BusMonitorPage() override;
 
-  void setContext(unsigned channel, unsigned nominal_bitrate,
+  void setContext(CanVendor vendor, unsigned channel, unsigned nominal_bitrate,
                   unsigned data_bitrate, bool can_fd);
   void setDiagnosticIds(std::vector<std::uint32_t> diagnostic_ids);
   void setDiagnosticAddressing(std::vector<std::uint32_t> physical_ids,
@@ -57,9 +58,9 @@ public:
   // adapters, keeping NRC presentation independent of hardware access.
   void appendObservedFrame(const CanFrame& frame);
   void start();
-  void restartForBackendChange();
   void stop();
-  [[nodiscard]] bool matchesContext(unsigned channel, unsigned nominal_bitrate,
+  [[nodiscard]] bool matchesContext(CanVendor vendor, unsigned channel,
+                                    unsigned nominal_bitrate,
                                     unsigned data_bitrate, bool can_fd) const noexcept;
   [[nodiscard]] bool isRunning() const noexcept { return running_; }
 
@@ -86,6 +87,7 @@ private:
   void updateFilterShortcuts();
   [[nodiscard]] bool matchesFilter(const Row& row) const;
 
+  CanVendor vendor_{CanVendor::Vector};
   unsigned channel_{1};
   unsigned nominal_bitrate_{500000};
   unsigned data_bitrate_{2000000};

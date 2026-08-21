@@ -464,6 +464,8 @@ int main(int argc, char* argv[]) {
           QStringLiteral("busMonitorClearButton"));
       auto* bus_monitor_export = window.findChild<QPushButton*>(
           QStringLiteral("busMonitorExportButton"));
+      auto* bus_monitor_context = window.findChild<QLabel*>(
+          QStringLiteral("busMonitorContextLabel"));
       auto* bus_monitor_trace_status = window.findChild<QLabel*>(
           QStringLiteral("busMonitorTraceStatusLabel"));
       auto* bus_monitor_total = window.findChild<QLabel*>(
@@ -509,10 +511,15 @@ int main(int argc, char* argv[]) {
                 bus_monitor_rx_filter && bus_monitor_rx_filter->isChecked() &&
                 bus_monitor_diagnostic_filter &&
                 bus_monitor_diagnostic_filter->isChecked() &&
-                bus_monitor_clear &&
-                bus_monitor_clear->text() == QStringLiteral("清空列表") &&
-                bus_monitor_export &&
-                bus_monitor_export->text() == QStringLiteral("导出 ASC") &&
+                 bus_monitor_clear &&
+                 bus_monitor_clear->text() == QStringLiteral("清空列表") &&
+                 !window.findChild<QPushButton*>(
+                     QStringLiteral("busMonitorStartStopButton")) &&
+                 bus_monitor_export &&
+                 bus_monitor_export->text() == QStringLiteral("导出 ASC") &&
+                 bus_monitor_context &&
+                 !bus_monitor_context->text().isEmpty() &&
+                 bus_monitor_context->text().contains(QStringLiteral("CH")) &&
                 bus_monitor_trace_status &&
                 bus_monitor_trace_status->text().contains(
                     QStringLiteral("完整 Trace")) &&
@@ -540,10 +547,14 @@ int main(int argc, char* argv[]) {
             "Failed to simulate automatic bus-monitor startup");
       check(channels->isEnabled(),
             "Automatic passive monitoring must not lock the CAN channel selector");
+      check(backend_group && backend_group->isEnabled(),
+            "Passive monitoring must allow safe CAN backend switching");
       check(QMetaObject::invokeMethod(
                 bus_monitor_page, "runningChanged", Qt::DirectConnection,
                 Q_ARG(bool, false)),
             "Failed to restore simulated bus-monitor state");
+      check(backend_group && backend_group->isEnabled(),
+            "Stopping bus monitor must unlock CAN backend switching");
       bus_monitor_page->setDiagnosticAddressing({0x72E, 0x72F}, {0x7DF});
       bus_monitor_page->appendObservedFrame(
           uds::CanFrame{0x123,
@@ -644,17 +655,6 @@ int main(int argc, char* argv[]) {
                 bus_monitor_displayed->text() ==
                     QStringLiteral("当前显示：0"),
             "Clearing the bus monitor view also cleared evidence counters");
-      const auto monitor_buttons =
-          window.findChildren<QPushButton*>(QString{},
-                                            Qt::FindChildrenRecursively);
-      check(std::none_of(monitor_buttons.cbegin(), monitor_buttons.cend(),
-                         [](const QPushButton* button) {
-                           return button->text() ==
-                                      QStringLiteral("开始监听") ||
-                                  button->text() ==
-                                      QStringLiteral("停止监听");
-                         }),
-            "Manual bus-monitor start/stop controls must not be present");
       check(project_label->text() == QStringLiteral("厂商") &&
                 device_label->text() == QStringLiteral("项目选择") &&
                 radar_label->text() == QStringLiteral("设备选择"),
@@ -1435,6 +1435,15 @@ int main(int argc, char* argv[]) {
       application.processEvents();
       check(channels->currentData().toUInt() == 1U,
             "TOSUN did not start from its independent CH1 default");
+      check(version_address->text().contains(QStringLiteral("TOSUN")) &&
+                version_address->text().contains(QStringLiteral("CH1")),
+            "Version page did not follow the restored TOSUN backend/channel");
+      check(bus_monitor_page->matchesContext(
+                uds::CanVendor::Tosun, 1U, 500000U, 2000000U, true),
+            "Bus monitor did not follow the restored TOSUN backend/channel");
+      check(bus_monitor_context->text().contains(QStringLiteral("TOSUN")) &&
+                bus_monitor_context->text().contains(QStringLiteral("CH1")),
+            "Bus monitor did not display the restored TOSUN backend/channel");
       channels->setCurrentIndex(channels->findData(3U));
       vector_backend->trigger();
       application.processEvents();
@@ -1443,6 +1452,15 @@ int main(int argc, char* argv[]) {
       application.processEvents();
       check(channels->currentData().toUInt() == 4U,
             "Switching CAN drivers did not restore the ZLG channel");
+      check(version_address->text().contains(QStringLiteral("ZLG")) &&
+                version_address->text().contains(QStringLiteral("CH4")),
+            "Version page retained a stale backend/channel after switching to ZLG");
+      check(bus_monitor_page->matchesContext(
+                uds::CanVendor::Zlg, 4U, 500000U, 2000000U, true),
+            "Bus monitor retained the previous backend/channel after switching to ZLG");
+      check(bus_monitor_context->text().contains(QStringLiteral("ZLG")) &&
+                bus_monitor_context->text().contains(QStringLiteral("CH4")),
+            "Bus monitor did not display the restored ZLG backend/channel");
       clear_log->trigger();
       check(log_view->toPlainText().isEmpty(),
             "Clear-log action did not clear the current display");

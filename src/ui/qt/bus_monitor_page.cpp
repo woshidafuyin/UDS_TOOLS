@@ -123,8 +123,9 @@ BusMonitorPage::BusMonitorPage(QWidget* parent) : QWidget(parent) {
   layout->setContentsMargins(10, 10, 10, 10);
   auto* configuration = new QGroupBox(QStringLiteral("总线监听配置（被动模式）"), this);
   auto* config_layout = new QGridLayout(configuration);
-  config_layout->addWidget(new QLabel(QStringLiteral("当前通道："), configuration), 0, 0);
+  config_layout->addWidget(new QLabel(QStringLiteral("当前硬件："), configuration), 0, 0);
   context_label_ = new QLabel(configuration);
+  context_label_->setObjectName(QStringLiteral("busMonitorContextLabel"));
   config_layout->addWidget(context_label_, 0, 1, 1, 5);
   config_layout->addWidget(new QLabel(QStringLiteral("状态："), configuration), 1, 0);
   status_label_ = new QLabel(
@@ -261,7 +262,7 @@ BusMonitorPage::BusMonitorPage(QWidget* parent) : QWidget(parent) {
           [this] { setShortcutFilter(diagnostic_ids_, true); });
   applyIdFilterText(QString{});
   updateFilterShortcuts();
-  setContext(channel_, nominal_bitrate_, data_bitrate_, can_fd_);
+  setContext(vendor_, channel_, nominal_bitrate_, data_bitrate_, can_fd_);
   clearFrames();
   updateTraceStatus();
   updateControls();
@@ -273,26 +274,26 @@ void BusMonitorPage::stop() { stopMonitoring(); }
 
 void BusMonitorPage::start() { startMonitoring(); }
 
-void BusMonitorPage::restartForBackendChange() {
-  if (!running_) return;
-  stopMonitoring();
-  startMonitoring();
-}
-
-void BusMonitorPage::setContext(unsigned channel, unsigned nominal_bitrate, unsigned data_bitrate, bool can_fd) {
+void BusMonitorPage::setContext(CanVendor vendor, unsigned channel,
+                                unsigned nominal_bitrate,
+                                unsigned data_bitrate, bool can_fd) {
   channel = std::max(1U, channel);
   const auto unchanged =
-      channel_ == channel && nominal_bitrate_ == nominal_bitrate &&
+      vendor_ == vendor && channel_ == channel &&
+      nominal_bitrate_ == nominal_bitrate &&
       data_bitrate_ == data_bitrate && can_fd_ == can_fd;
-  context_label_->setText(QStringLiteral("CH%1；%2 kbit/s；%3")
-                              .arg(channel)
-                              .arg(nominal_bitrate / 1000)
-                              .arg(can_fd ? QStringLiteral("CAN FD %1 Mbit/s")
-                                                .arg(data_bitrate / 1000000)
-                                          : QStringLiteral("经典 CAN")));
+  context_label_->setText(
+      QStringLiteral("%1 · CH%2 · %3 kbit/s · %4")
+          .arg(QString::fromUtf8(can_vendor_name(vendor).data()))
+          .arg(channel)
+          .arg(nominal_bitrate / 1000)
+          .arg(can_fd ? QStringLiteral("CAN FD %1 Mbit/s")
+                            .arg(data_bitrate / 1000000)
+                      : QStringLiteral("经典 CAN")));
   if (unchanged) return;
   const auto restart = running_;
   if (restart) stopMonitoring();
+  vendor_ = vendor;
   channel_ = channel;
   nominal_bitrate_ = nominal_bitrate;
   data_bitrate_ = data_bitrate;
@@ -347,9 +348,11 @@ void BusMonitorPage::setDiagnosticAddressing(
   rebuildTable();
 }
 
-bool BusMonitorPage::matchesContext(unsigned channel, unsigned nominal_bitrate,
+bool BusMonitorPage::matchesContext(CanVendor vendor, unsigned channel,
+                                    unsigned nominal_bitrate,
                                     unsigned data_bitrate, bool can_fd) const noexcept {
-  return channel_ == channel && nominal_bitrate_ == nominal_bitrate &&
+  return vendor_ == vendor && channel_ == channel &&
+         nominal_bitrate_ == nominal_bitrate &&
          data_bitrate_ == data_bitrate && can_fd_ == can_fd;
 }
 

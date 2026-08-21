@@ -116,7 +116,6 @@ private:
   bool power_running_{};
   bool version_check_running_{};
   bool bus_monitor_running_{};
-  bool bus_monitor_autostart_enabled_{};
   bool restoring_combo_selections_{};
   int flash_progress_{};
   QString latest_report_path_;

@@ -128,7 +128,8 @@ VersionConfirmationPage::VersionConfirmationPage(QWidget* parent)
 }
 
 void VersionConfirmationPage::setContext(
-    int profile_index, const QString& source, const QString& vendor,
+    int profile_index, const QString& source,
+    const QString& hardware_backend, const QString& vendor,
     const QString& project,
     const QString& target_id,
     const QString& target_name, unsigned channel, quint32 tx_id, quint32 rx_id,
@@ -144,12 +145,14 @@ void VersionConfirmationPage::setContext(
   target_name_ = target_name.isEmpty() ? QStringLiteral("默认设备")
                                         : target_name;
   source_ = source;
+  hardware_backend_ = hardware_backend;
   configured_ = !items.empty();
   planned_items_ = items;
   selection_value_->setText(
       QStringLiteral("%1  /  %2  /  %3").arg(vendor_, project_, target_name_));
   address_value_->setText(
-      QStringLiteral("CH%1    TX 0x%2  →  RX 0x%3    ·    %4")
+      QStringLiteral("%1    ·    CH%2    TX 0x%3  →  RX 0x%4    ·    %5")
+          .arg(hardware_backend_)
           .arg(channel_)
           .arg(tx_id_, 0, 16)
           .arg(rx_id_, 0, 16)
@@ -250,9 +253,10 @@ void VersionConfirmationPage::showPlannedItems() {
 }
 
 QString VersionConfirmationPage::contextKey() const {
-  return QStringLiteral("%1|%2|%3|%4|%5")
+  return QStringLiteral("%1|%2|%3|%4|%5|%6")
       .arg(profile_index_)
       .arg(target_id_)
+      .arg(hardware_backend_)
       .arg(channel_)
       .arg(tx_id_)
       .arg(rx_id_);

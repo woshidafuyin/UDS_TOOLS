@@ -291,6 +291,13 @@ MainWindow::MainWindow(QWidget* parent)
   connect(can_backend_group_, &QActionGroup::triggered, this,
           [this](QAction* action) {
             saveCurrentBackendChannel();
+            // Passive monitoring owns a live adapter/channel and a trace
+            // session even though it never transmits. Close that old backend
+            // first, then change vendor/channel and start a fresh trace on the
+            // new backend. This makes an in-monitor UI switch deterministic.
+            const auto restart_monitor =
+                bus_monitor_page_ && bus_monitor_page_->isRunning();
+            if (restart_monitor) bus_monitor_page_->stop();
             const auto vendor =
                 static_cast<CanVendor>(action->data().toInt());
             set_default_can_vendor(vendor);
@@ -299,9 +306,12 @@ MainWindow::MainWindow(QWidget* parent)
                               canVendorKey(vendor));
             restoreCurrentBackendChannel(currentProfileDefaultChannel());
             saveComboSelections();
-            if (bus_monitor_page_) {
-              bus_monitor_page_->restartForBackendChange();
-            }
+            // restoreCurrentBackendChannel() deliberately blocks the combo-box
+            // signal while changing its index. Explicitly refresh every page
+            // that caches CAN context before restarting a live monitor.
+            syncVersionContext();
+            syncBusMonitorContext();
+            if (restart_monitor) bus_monitor_page_->start();
             appendUiLog(QStringLiteral("CAN硬件后端已切换为：%1")
                             .arg(canVendorDisplayName(vendor)) +
                         QStringLiteral("；使用该后端保存的CH%1")
@@ -323,7 +333,11 @@ MainWindow::MainWindow(QWidget* parent)
   help_menu->addAction(QStringLiteral("关于"), this, [this] {
     QMessageBox::about(
         this, QStringLiteral("关于"),
-        QStringLiteral("UDS 通用刷写工具\nQt 5 Widgets"));
+        QStringLiteral("楚航科技\n"
+                       "UDS 通用刷写工具\n\n"
+                       "版本：V2026.08.20\n"
+                       "仅供内部诊断与刷写使用\n\n"
+                       "© 2026 楚航科技"));
   });
   // Use a normal resizable main window with the native minimize, maximize and
   // close controls.
@@ -376,7 +390,6 @@ MainWindow::MainWindow(QWidget* parent)
 MainWindow::~MainWindow() = default;
 
 void MainWindow::startDefaultBusMonitoring() {
-  bus_monitor_autostart_enabled_ = true;
   followSelectedBusMonitorContext();
 }
 
@@ -820,11 +833,12 @@ void MainWindow::connectControllerActions() {
   connect(version_page_, &VersionConfirmationPage::checkRequested, this,
           [this](int profile_index, const QString& target_id, unsigned channel,
                  quint32 tx_id, quint32 rx_id) {
+            followSelectedBusMonitorContext();
             if (!monitorMatchesSelectedHardware(profile_index)) {
               QMessageBox::warning(
                   this, QStringLiteral("监听通道配置不一致"),
-                  QStringLiteral("当前监听使用的是另一套通道或速率配置。请先停止监听，"
-                                 "按当前项目重新开始监听后再执行版本读取。"));
+                  QStringLiteral("自动监听未能切换到当前 CAN 后端、通道或速率配置，"
+                                 "本次版本读取已阻止。"));
               return;
             }
             controller_bridge_->startVersionCheck(profile_index, target_id,
@@ -1242,6 +1256,7 @@ void MainWindow::applySelectedRadar(bool log_change) {
   if (!hasRadarSelector()) {
     activateSelectedLogTarget();
     syncVersionContext();
+    syncBusMonitorContext();
     return;
   }
   const auto target_id = selectedTargetId();
@@ -1277,6 +1292,7 @@ void MainWindow::applySelectedRadar(bool log_change) {
                      : QString{}));
   }
   syncVersionContext();
+  syncBusMonitorContext();
 }
 
 void MainWindow::syncVersionContext(bool recent_flash) {
@@ -1311,6 +1327,7 @@ void MainWindow::syncVersionContext(bool recent_flash) {
       profile_index,
       recent_flash ? QStringLiteral("最近一次成功刷写")
                    : QStringLiteral("当前刷写页选择"),
+      canVendorDisplayName(default_can_vendor()),
       profile.vendor_name, profile.project_name, selectedTargetId(), target_name,
       ui_->vectorChannelComboBox->currentData().toUInt(),
       tx_ok ? tx_id : profile.tx_id, rx_ok ? rx_id : profile.rx_id,
@@ -1357,14 +1374,14 @@ void MainWindow::syncBusMonitorContext() {
   bus_monitor_page_->setDiagnosticAddressing(std::move(physical_ids),
                                              std::move(functional_ids));
   bus_monitor_page_->setContext(
+      default_can_vendor(),
       ui_->vectorChannelComboBox->currentData().toUInt(),
       profile.nominal_bitrate, profile.data_bitrate, profile.can_fd);
 }
 
 void MainWindow::followSelectedBusMonitorContext() {
   syncBusMonitorContext();
-  if (bus_monitor_autostart_enabled_ && bus_monitor_page_ &&
-      !bus_monitor_page_->isRunning()) {
+  if (bus_monitor_page_ && !bus_monitor_page_->isRunning()) {
     bus_monitor_page_->start();
   }
 }
@@ -1377,6 +1394,7 @@ bool MainWindow::monitorMatchesSelectedHardware(int profile_index) const {
   }
   const auto& profile = profiles[static_cast<std::size_t>(profile_index)];
   return bus_monitor_page_->matchesContext(
+      default_can_vendor(),
       ui_->vectorChannelComboBox->currentData().toUInt(),
       profile.nominal_bitrate, profile.data_bitrate, profile.can_fd);
 }
@@ -1507,10 +1525,11 @@ void MainWindow::startProbeFromUi() {
     appendUiLog(message);
     return;
   }
+  followSelectedBusMonitorContext();
   if (!monitorMatchesSelectedHardware(profile_index)) {
     QMessageBox::warning(this, QStringLiteral("监听通道配置不一致"),
-                         QStringLiteral("当前监听使用的是另一套通道或速率配置。请先停止监听，"
-                                        "按当前项目重新开始监听后再执行在线探测。"));
+                         QStringLiteral("自动监听未能切换到当前 CAN 后端、通道或速率配置，"
+                                        "本次在线探测已阻止。"));
     return;
   }
 
@@ -1554,10 +1573,11 @@ void MainWindow::startFlashFromUi() {
     return;
   }
   const auto& profile = options[static_cast<std::size_t>(profile_index)];
+  followSelectedBusMonitorContext();
   if (!monitorMatchesSelectedHardware(profile_index)) {
     QMessageBox::warning(this, QStringLiteral("监听通道配置不一致"),
-                         QStringLiteral("当前监听使用的是另一套通道或速率配置。请先停止监听，"
-                                        "按当前项目重新开始监听后再执行刷写。"));
+                         QStringLiteral("自动监听未能切换到当前 CAN 后端、通道或速率配置，"
+                                        "本次刷写已阻止。"));
     return;
   }
   const auto entry_mode = ui_->entryModeComboBox->currentData().toString();
@@ -1682,7 +1702,10 @@ void MainWindow::updateEnabledState() {
       usable && profiles[profile_index].lock_diagnostic_ids;
   const auto has_profiles = !profiles.empty();
 
-  if (can_backend_group_) can_backend_group_->setEnabled(!busy && !bus_monitor_running_);
+  // A passive monitor may switch backends safely: the backend action stops the
+  // old receive thread/trace and restarts on the new vendor. Keep switching
+  // locked only while probe/flash/power/version operations are active.
+  if (can_backend_group_) can_backend_group_->setEnabled(!busy);
   ui_->projectComboBox->setEnabled(!busy && has_profiles);
   ui_->deviceComboBox->setEnabled(!busy && has_profiles);
   ui_->radarComboBox->setEnabled(
