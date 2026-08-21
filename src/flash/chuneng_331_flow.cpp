@@ -163,7 +163,8 @@ void Chuneng331Flow::enter_programming_session(
           throw std::runtime_error(
               "31 01 02 03 ProgrammingPrecondition: NRC 0x31；ECU很可能"
               "在擦除中断后处于Boot/SBL恢复态。不要重复使用APP入口，"
-              "请切换“BOOT→APP（仅Boot）”完成恢复。");
+              "普通发布版不提供Boot恢复入口；请改用受控恢复版本并由"
+              "具备授权的人员执行恢复。");
         }
         throw std::runtime_error(
             "31 01 02 03 ProgrammingPrecondition: NRC/timeout " +

@@ -1162,10 +1162,12 @@ void MainWindow::applySelectedProfile(int device_index) {
           ? QStringLiteral("APP")
           : profile.app_entry_label,
       QStringLiteral("app"));
+#if defined(UDS_EXPOSE_ARC331_BOOT_RECOVERY)
   if (profile.flow_id == QStringLiteral("chuneng_arc331")) {
     ui_->entryModeComboBox->addItem(
         QStringLiteral("BOOT→APP（仅Boot）"), QStringLiteral("boot"));
   }
+#endif
   if (profile.supports_ft_entry) {
     ui_->entryModeComboBox->addItem(
         profile.ft_entry_label.isEmpty()

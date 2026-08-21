@@ -1369,8 +1369,8 @@ void test_probe_service_chuneng_arc331_nrc31_guides_boot_recovery() {
 
   const auto result = service.run(request, {}, {});
   check(!result.success &&
-            result.message.find("BOOT") != std::string::npos &&
-            result.message.find("恢复") != std::string::npos,
+            result.message.find("Boot") != std::string::npos &&
+            result.message.find("受控恢复版本") != std::string::npos,
         "ARC331 NRC 0x31 did not produce actionable Boot recovery guidance");
 }
 

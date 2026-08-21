@@ -985,6 +985,10 @@ int main(int argc, char* argv[]) {
       check_project_devices(application, projects, devices,
                             QStringLiteral("楚能"),
                             {QStringLiteral("ARC331")});
+      check(entries->findData(QStringLiteral("boot")) < 0 &&
+                entries->findData(QStringLiteral("app")) >= 0 &&
+                entries->findData(QStringLiteral("ft")) >= 0,
+            "Professional dist exposed the bench-only ARC331 Boot recovery entry");
       check(radar->count() == 2 &&
                 radar->currentText() == QStringLiteral("右后雷达") &&
                 target_id(radar, radar->currentIndex()) ==

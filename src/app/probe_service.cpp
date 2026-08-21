@@ -54,7 +54,8 @@ void check_stop(std::stop_token stop) {
 std::string concise_probe_failure(std::string_view detail) {
   if (detail.find("ARC331_BOOT_RECOVERY") != std::string_view::npos) {
     return "APP入口不可用：ECU很可能处于Boot/SBL恢复态（常见于擦除中断）；"
-           "请切换“BOOT→APP（仅Boot）”完成恢复，不要重复使用APP入口。";
+           "普通发布版不提供Boot恢复入口。请停止重复使用APP入口，改用"
+           "受控恢复版本并由具备授权的人员执行恢复。";
   }
   if (detail.find("timeout") != std::string_view::npos ||
       detail.find("response wait failed") != std::string_view::npos ||
