@@ -3,6 +3,11 @@ UDS 通用刷写工具 Change List
 
 比较日期：2026-08-21
 
+文档职责：
+- 本文件只记录当前发布包相对公共盘 8.19 正式包的变化，不重复编写当前产品的完整使用说明。
+- 当前版本已经实现的全部功能、项目、模式和使用边界见包内 README.md。
+- “变化”表示版本差异；是否完成真实硬件/ECU 验收，以本文件第六节的证据边界为准。
+
 一、比较基线
 ----------------------------------------
 公盘目录：
@@ -168,8 +173,9 @@ D:\project\UDS_tools\UDS_tools\UDS_Tool_Release_20260821_22DFCF6.zip
 
 README.md：
 - 旧版 SHA-256：F8D1903E24C37AC7ECE20637ED101BF6624BDA71A5C73A2FFA6858F736E51226
-- 新版 SHA-256：D45190E33772D557ABF041A0070BF1167BF00EB6B33E6746A320AD3D6BD601CE
-- 更新为统一 UDS_Tool.exe、18 个 Profile、15 个 Workflow、四类 CAN 后端及当前功能边界说明。
+- 新版 SHA-256：6109259F2D44CFDD84DE2EEE3FCFBBE6EBAC0DF42E9C9A797EBD3C4AB32B3387
+- README 已改为当前产品完整功能说明；历史版本差异只保留在本 Change List。
+- 修正诊断 ID 锁定、ARC331 Boot 恢复入口、自动监听、停止风险、审计日志和当前发布信息的描述，使文档与正式 dist 行为一致。
 
 tools\can_hardware_probe.exe：
 - 旧版 SHA-256：5364F96E5C68481ED7B13DE75C898F981C6E1850ABC493148A632143AD18A59E

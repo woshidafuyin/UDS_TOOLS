@@ -1,212 +1,205 @@
-# UDS Tool C++ 通用刷写工具
+# UDS 通用刷写工具
 
-更新日期：2026-08-19
+更新日期：2026-08-21
+当前正式程序：`UDS_Tool.exe`
 
-本工程是独立的 C++/Qt UDS 通用刷写工具。本文只记录当前源码、Profile、Workflow、资源、界面和候选发布包的实现情况。
+## 1. 文档定位
 
-## 当前组成
+本文是当前交付版本的完整功能说明，描述程序、Profile、Workflow、资源、界面、日志和报告已经实现的能力。相对公共盘上一正式版本的变化单独记录在压缩包内 `CHANGE_LIST.txt`，README 不再混入历史版本对比。
+
+本工具是 Profile 驱动的 C++/Qt UDS 通用刷写工具。项目差异集中在 Profile、项目 Workflow 和资源中；CAN、ISO-TP、UDS、操作互斥、监听、日志和报告由通用模块复用。
+
+## 2. 当前交付组成
 
 - 18 个项目 Profile；
 - 15 个已注册 Workflow ID；
-- Vector XL、Kvaser、TOSUN、ZLG CAN 后端；
-- 在线探测、版本读取、刷写、报告、日志和被动总线监听；
-- 当前综合候选发布目录：`dist`。
+- 4 类 CAN 硬件后端：Vector XL、ZLG/ZCAN、TOSUN/TSMaster、Kvaser；
+- 3 个用户功能页：刷写作业、版本读取、总线监听；
+- 统一主程序 `UDS_Tool.exe`；
+- Profile、项目资源、硬件驱动、辅助探针、说明文档和离线验证资料；
+- 当前交付目录为 `dist`，运行产生的 `logs` 和 `Configuration` 不预置在干净发布包中。
 
-## 当前发布
+## 3. 软件分层
 
-工程统一构建并发布通用版 `UDS_Tool.exe`。CMake 内部目标仍命名为 `uds_tool_qt`，用户可见产物名由目标的 `OUTPUT_NAME` 集中定义。`scripts\build.ps1` 加载全部项目 Profile，不再提供客户独立版本构建入口。通用界面的 Tx/Rx ID 当前允许手工修改；切换项目或设备时会恢复所选 Profile/目标的默认端点。Profile 中的 `lock_diagnostic_ids` 当前作为配置元数据加载，通用界面尚未用它锁定输入框。
-
-Profile 保存项目、设备、入口、诊断 ID、CAN 参数、默认文件和能力开关。Workflow 保存对应项目的刷写服务序列、文件解析、地址窗口、完整性校验、周期报文和恢复步骤。多个项目可以复用同一状态机，但仍使用各自的 Profile 和资源。
-
-## 主要模块
-
-| 模块 | 当前职责 |
+| 模块 | 职责 |
 | --- | --- |
-| `src/ui/qt` | 主窗口、刷写作业、版本读取、总线监听和文件选择 |
-| `src/app` | 在线探测、刷写调度、版本读取、状态管理和报告生成 |
-| `src/core` | Profile、S-record/VBF/ASC/CBF 数据解析、UDS 公共数据结构 |
-| `src/transport` | ISO-TP、UDS 会话、请求响应和超时处理 |
-| `src/drivers/can` | Vector XL、Kvaser、TOSUN、ZLG 适配及共享 CAN 通道 |
-| `src/flash` | 各项目 Workflow、刷写状态机和项目协议契约 |
-| `profiles` | 18 个项目配置入口 |
-| `resources` | 项目 Driver、CDD、DLL、参考文件、校验文件和来源清单 |
-| `tests` | 核心、CAN 适配、应用状态、探测桥接和 Qt 主窗口离线测试 |
+| `src/ui/qt` | 主窗口、刷写作业、版本读取、总线监听和交互状态 |
+| `src/app` | 在线探测、刷写调度、版本读取、操作互斥、审计和报告 |
+| `src/core` | Profile、S-record、VBF、ASC/HEX、CBF、Trace 和公共数据结构 |
+| `src/transport` | ISO-TP、UDS 请求响应、超时和 NRC 处理 |
+| `src/drivers/can` | 四类 CAN 后端、设备枚举、通道配置和共享通道 |
+| `src/flash` | 项目 Workflow、刷写状态机、文件约束和项目协议契约 |
+| `profiles` | 项目、目标、诊断端点、通信参数、文件和能力配置 |
+| `resources` | Driver、APP、CAL、CDD、SeedKey DLL、签名及参考资源 |
+| `tests` | 核心、适配器、应用状态、探测、Fake ECU 和 Qt UI 离线测试 |
 
-## 当前通用能力
+## 4. 刷写作业
 
-### 刷写作业
+### 4.1 项目和目标配置
 
-- 读取当前 Profile 的 CAN 通道、波特率、CAN/CAN FD、Tx ID、Rx ID、功能 ID和扩展寻址参数；
-- 支持 APP、FT、CAL、APP+CAL 等由具体 Profile 声明的模式；
-- 支持刷写次数、停止请求、进度、步骤日志和 HTML 报告；
-- 每次完整执行均重新创建 Workflow，首次失败后停止后续重复次数；
-- 刷写前先完成文件类型、长度、地址窗口和项目约束检查，再访问 CAN；
-- 项目恢复步骤由对应 Workflow 执行，失败报告不代替 ECU 状态确认。
+- 按厂商、项目和设备选择 Profile 与 Target；
+- 从 Profile 加载 CAN 后端、通道、仲裁波特率、数据波特率、CAN/CAN FD、Tx ID、Rx ID、功能 ID、扩展寻址、Padding、默认文件和能力开关；
+- 项目可声明 APP、FT、CAL、APP+CAL、自动检测等入口，界面只显示该 Profile 支持的模式；
+- `lock_diagnostic_ids=true` 的项目锁定 Tx/Rx ID，避免误改固定端点；未锁定的项目允许按台架需要修改，切换项目或目标时恢复其默认端点；
+- 各 CAN 后端分别保存和恢复自己的通道选择；切换后端时，刷写页、版本读取页和监听页同步更新。
 
-### 在线探测
+### 4.2 文件输入和预检
 
-- 使用当前 Profile 和界面端点探测 ECU；
-- 支持 `app`、`boot`、`ft` 和项目定义的探测入口；
-- 项目所需的 NM、功能寻址、物理寻址和周期唤醒由探测服务按 Profile/Workflow 执行；
-- 在线探测只确认当前定义的诊断条件，不进入下载传输。
+- 支持浏览和选择 Driver、Driver 校验、APP、APP 校验、CAL、SeedKey 等项目声明的输入；
+- 支持 S19/SREC、ASC/HEX 文本、VBF 和 CBF 1.0；
+- 在访问 CAN 前检查必需文件、格式、大小、地址窗口、数据段、Hash、签名、CRC 和项目专用约束；
+- 预检失败时不开始 UDS 下载；
+- 文件解析成功只表示能够提取数据，仍必须通过对应 Workflow 的完整项目约束。
 
-### 一键版本读取
+### 4.3 能否刷写与正式刷写
 
-- 版本读取页自动跟随刷写作业页的厂商、项目、设备、CAN 后端、通道及当前 Tx/Rx ID；手工修改 Tx/Rx ID 后，读取使用界面当前值；
-- 当前 18 个 Profile 均配置了 `[version_check]`，合计 123 个读取项；零跑 ARC 为统一的四设备项目入口；
-- 页面在读取前集中显示请求、DID、含义和必读属性，读取后显示状态、完整解码值及原始 UDS 响应；
-- 每个读取项由 Profile 配置请求、正响应前缀、解码器、期望值及是否必读，不在界面代码中按项目复制读取列表；
-- 当前支持 ASCII、十六进制、犀重 F180/F189 结构、计数 ASCII、BCD+ASCII 零件号及计数零件号列表解码；
-- 必读项全部成功才报告“全部必读版本信息读取成功”；选读项失败单独显示，不替代必读项判定；
-- 支持停止读取、ASC 原始总线记录和打开最新 HTML 报告；在线探测、刷写和版本读取通过共享操作状态互斥，避免并发访问硬件；
-- 项目读取前置条件由 Profile 选择：楚能维持 `0x520` 周期唤醒，犀重维持项目 NM，相关 ARS1.31 项目维持 `0x400` 周期报文；
-- Profile 中存在 DID 和含义只证明软件已配置；诊断调查表确认、真实 ECU 返回和台架验收仍需分别留证。
+- “能否刷写”使用当前 Profile、Target、入口、CAN 后端、通道和诊断端点执行项目定义的在线条件检查；
+- 在线探测只执行该项目规定的会话、唤醒或条件例程，不进入擦除和数据下载；
+- 正式刷写按项目 Workflow 执行会话切换、安全访问、擦除、RequestDownload、TransferData、TransferExit、完整性检查、复位和恢复；
+- 支持设置刷写次数；每次执行创建新的 Workflow，某次失败后停止余下重复次数；
+- 在线探测、版本读取和刷写互斥，不允许并发占用同一硬件；
+- 执行期间锁定可能改变目标和通信上下文的控件。
 
-当前项目版本读取配置数量：
+### 4.4 停止与风险边界
 
-| 项目 | 读取项 | 当前状态 |
-| --- | ---: | --- |
-| 楚能 ARC331 | 5 | 右后/左后设备联动，维持 `0x520` |
-| 奇瑞 ARS1.33 / KP31 / E0Y / T22 / T1EJ | 各 7 | 已配置 |
-| 长安 C857 / B216 | 各 3 | 主/从目标联动，维持 `0x400` |
-| 长马 J90K / ARS1.31 | 7 | 维持 `0x400` |
-| 犀重 RSMR / LSMR | 各 3 | 维持项目 NM，使用项目结构解码器 |
-| 时代新安 HJZJ FMR | 6 | 已配置 |
-| 时代新安 天王星 / 木星2代 / 庆铃 FMR | 各 9 | 独立 Profile 配置 |
-| 零跑 ARC | 10 | 四设备共用读取计划；新增的 `F191`、`FF00` 为选读项 |
-| 零跑 ARF631 | 8 | 已配置 |
-| 吉利 P416 | 13 | 已配置 |
+- 刷写和版本读取支持停止请求；按钮会锁定并提示等待当前 UDS 请求结束及报告生成；
+- 停止是协作式取消，不等于 ECU 已恢复到应用态，也不是紧急断电；
+- 在擦除或编程阶段停止可能使 ECU 留在 Boot/SBL 或不完整状态。停止后应保持供电，查看最终报告并按项目恢复流程处理；
+- 工具不会仅因界面显示“已中止”就宣称 ECU 状态安全。
 
-### CAN 通道与总线监听
+## 5. 执行日志、审计和报告
 
-- 相同设备、物理 Channel、波特率和 CAN/CAN FD 参数通过共享 CAN Provider 复用一个底层通道；
-- 在线探测、刷写和总线监听使用独立逻辑客户端；
-- 总线监听页面只被动接收，不发送报文；
-- 工具启动后自动监听刷写页当前通道；切换项目、设备、CAN 通道或手工修改 Tx/Rx ID 后，监听上下文和诊断 ID 集合随当前刷写选择同步；
-- “仅显示诊断 ID”默认开启：表格只显示当前物理 Tx/Rx、功能 ID，以及项目声明的 FT Tx/Rx；没有配置诊断 ID 时不限制显示；
-- “仅显示诊断 ID”和其他过滤只影响表格显示；内存表格最多保留最近 10,000 帧，完整原始帧从监听开始流式写入 `logs/bus_monitor/*.asc.partial`，正常停止后封口为 `.asc`，异常退出遗留文件在下次启动时自动恢复；清空列表不清空完整 Trace，导出 ASC 使用磁盘证据源而非当前表格；
-- 手工 ID 过滤支持逗号、中文逗号、顿号或空格分隔，支持精确 ID（`772,7DF`）、范围（`700-7FF`）、半字节掩码（`18DAxxxx`）和排除项（`!520`）；非法条件标红并给出具体项和原因，修正前继续使用上一个有效条件；
-- 提供“当前项目诊断 ID”“功能寻址”“物理寻址”“周期帧”快捷过滤；其中周期帧通过排除当前项目全部诊断 ID 显示其余背景/周期报文；仍可叠加数据、TX/RX、标准/扩展、CAN/CAN FD 和 BRS 过滤；
-- 页面分别显示总接收帧数、当前显示帧数和内存已淘汰帧数，并明确显示完整 Trace 正在写入或已经保存的路径；
-- 最终 NRC 和 `0202=05` 等最终 RoutineControl 失败在表格中红色强调并解释含义；`7F xx 78` 保留原始帧但不作为失败报警，ARC331 的 `0203=05` 按当前项目参考流程显示为 WARN；
-- 监听结果可导出为 ASC 文件。
+- 运行日志显示时间、TX/RX 方向、UDS 数据、步骤、进度、警告、错误和最终结果；
+- 按 `End` 跳到日志末尾并进入持续尾随，新日志到达后继续自动下拉；
+- 按 `Home` 或向上滚动阅读历史时暂停尾随；再次按 `End` 或滚到底部后恢复；
+- 每次探测和刷写记录厂商、项目、设备显示名、Profile ID、Target ID、Flow ID、入口模式和重复次数；
+- 记录 CAN 硬件后端、通道、Tx/Rx ID、仲裁/数据波特率、CAN FD、Padding 等通信配置；
+- 记录 Driver、校验、APP、CAL、SeedKey 等文件路径、存在性和大小；
+- 记录最近一次“能否刷写”的结果、完成时间及配置指纹；探测后改变配置会标记 `STALE_CONFIG`，不会把旧结果当成当前配置证明；
+- 每次执行生成 HTML 报告，并提供“打开最新报告”；
+- 报告和日志用于追溯，但不替代 ECU 状态确认和台架验收。
 
-### 文件格式
+## 6. 一键版本读取
 
-| 格式 | 当前用途 |
-| --- | --- |
-| S19/SREC | Driver、APP、CAL 等 Motorola S-record 数据 |
-| ASC/HEX 文本 | Hash、签名、证书和项目校验数据 |
-| VBF | 吉利 P416 等 VBF 项目的 SBL/APP/ESS 数据 |
-| CBF 1.0 | 楚能 ARC331 成对 Driver/APP 容器 |
+- 版本读取页自动跟随刷写页的厂商、项目、设备、后端、通道和当前 Tx/Rx ID；
+- 18 个 Profile 均配置 `[version_check]`，当前合计 123 个读取项；
+- 每项由 Profile 配置请求、正响应前缀、解码器、期望值和必读属性，不在界面中按项目复制 DID 逻辑；
+- 读取前显示 DID、请求、含义和必读属性，读取后显示成功/错误、ASCII 或解析值及原始 UDS 通信；
+- 支持 ASCII、十六进制、犀重结构化版本、计数 ASCII、BCD+ASCII 零件号和计数零件号列表解码；
+- 必读项全部成功才判定整体成功；选读项失败单独显示；
+- 支持停止、ASC 通信记录和 HTML 报告；
+- 项目前置条件由 Profile 指定：例如楚能维持 `0x520`，犀重维持项目 NM，相关 ARS1.31 项目维持 `0x400`；
+- Profile 中存在 DID 仅证明工具已配置，不等于所有 ECU 均已实车返回并通过验收。
 
-文件解析成功只代表数据可提取；必须继续满足对应 Workflow 的类型、地址、长度、Hash、签名和刷写窗口约束。
+当前版本读取数量：
 
-## 当前项目实现
+| 项目 | 读取项 |
+| --- | ---: |
+| 楚能 ARC331 | 5 |
+| 奇瑞 ARS1.33、KP31、E0Y、T22、T1EJ | 各 7 |
+| 长安 C857、B216 | 各 3 |
+| 长马 J90K / ARS1.31 | 7 |
+| 犀重 RSMR、LSMR | 各 3 |
+| 时代新安 HJZJ FMR | 6 |
+| 时代新安 天王星、木星2代、庆铃 FMR | 各 9 |
+| 零跑 ARC | 10 |
+| 零跑 ARF631 | 8 |
+| 吉利 P416 | 13 |
 
-| 项目 | Profile / Workflow | 当前模式与状态 |
+## 7. 被动总线监听
+
+### 7.1 自动跟随和共享通道
+
+- 工具启动后自动监听刷写页当前 CAN 后端和通道，不需要手工点击开始；
+- 监听上下文完整跟随后端、物理通道、仲裁/数据波特率和 CAN/CAN FD；
+- 切换项目、目标、后端或通道时释放旧监听并在新上下文自动恢复；
+- 监听页明确显示当前后端、通道和速率；探测、读取或刷写前检查监听上下文与当前配置一致；
+- 总线监听只被动接收，不主动发送 CAN/UDS 报文；
+- 相同硬件、物理通道和速率由共享 CAN Provider 复用，监听、探测、读取和刷写是相互隔离的逻辑客户端；
+- ZLG 明确报告单帧发送 0 帧时，底层共享通道会关闭重建并安全重试一次；不确定的多帧/部分发送不会整批自动重放，以避免重复 UDS 操作。
+
+### 7.2 实时显示和过滤
+
+- 表格按批次实时刷新并显示时间、方向、ID、帧类型、长度、数据和诊断提示；
+- 默认“仅显示诊断 ID”，覆盖当前物理 Tx/Rx、功能 ID 和项目声明的 FT 端点；
+- 手工 ID 过滤支持精确值、范围、半字节掩码和排除项，例如 `772,7DF`、`700-7FF`、`18DAxxxx`、`!520`；
+- 支持中文/英文分隔符，并对非法条件标红；修正前继续使用上一有效条件；
+- 提供当前项目诊断 ID、功能寻址、物理寻址和周期帧快捷过滤；
+- 可叠加数据、TX/RX、标准/扩展帧、CAN/CAN FD 和 BRS 过滤；
+- 显示总接收、当前显示和内存淘汰帧数；UI 仅保留最近 10,000 帧，避免长期监听无限占用内存；
+- 最终 NRC 和项目已知 RoutineControl 结果会按规则提示；`7F xx 78` 作为 ResponsePending 保留但不误判为最终失败。
+
+### 7.3 完整 Trace
+
+- 所有原始帧从监听开始持续写入 `logs/bus_monitor/*.asc.partial`，不受 UI 过滤和 10,000 帧上限影响；
+- 正常停止后封口为完整 `.asc`；异常退出遗留的 `.partial` 会在下次启动时恢复；
+- “清空列表”只清空当前表格，不删除完整 Trace；
+- “导出 ASC”读取磁盘完整证据源，而不是只导出表格中的可见帧。
+
+## 8. CAN 硬件后端
+
+- Vector XL：加载随包 Vector XL 运行库并按选定通道工作；
+- ZLG/ZCAN：使用 ZCAN API，支持 CAN/CAN FD 和零发送恢复分类；
+- TOSUN/TSMaster：使用 TSCAN 后端；
+- Kvaser：使用 CANlib 后端；
+- 辅助程序 `tools/can_hardware_probe.exe` 用于硬件枚举和底层收发诊断；
+- 四类后端共享统一 `ICanBus`/Provider 边界，项目 Workflow 不直接依赖厂商 API。
+
+## 9. 当前项目与模式
+
+| 项目 | Profile / Workflow | 当前公开模式或特性 |
 | --- | --- | --- |
-| 楚能 ARC331 | `chuneng_331_left_rear.ini` / `chuneng_arc331` | 右后 `0x72C/0x72D`、左后 `0x72E/0x72F` 共用同一雷达刷写流程；无 `0x771` 私有过渡帧 |
-| 奇瑞 ARS1.33 | `chery_ars1_33.ini` / `chery_ars1_33` | APP、CAL、APP+CAL；设备和入口由 Profile 选择 |
+| 楚能 ARC331 | `chuneng_331_left_rear.ini` / `chuneng_arc331` | 左/右后雷达；APP、FT；CBF 或成对 S19/ASC |
+| 奇瑞 ARS1.33 | `chery_ars1_33.ini` / `chery_ars1_33` | APP、CAL、APP+CAL |
 | 奇瑞 KP31 | `chery_kp31.ini` / `chery_kp31` | APP、CAL、APP+CAL |
-| 奇瑞 E0Y | `chery_e0y.ini` / `chery_e0y` | 复用 KP31 内核；正常 APP 流程；固定项目诊断端点 |
-| 奇瑞 T22 | `chery_t22.ini` / `chery_t22` | 复用 KP31 内核；正常 APP 流程；固定项目诊断端点 |
-| 奇瑞 T1EJ | `chery_t1ej.ini` / `chery_t1ej` | 复用 KP31 内核；`D003/D004/D002/D005` 正常 APP 链路 |
-| 长安 C857 | `changan_c857.ini` / `changan_c857` | 主/从设备；APP、FT、CAL、APP+CAL |
-| 长安 B216 | `lingyao_b216.ini` / `lingyao_b216` | 主/从设备；Profile 定义可用模式 |
+| 奇瑞 E0Y、T22、T1EJ | 各自 Profile / Workflow | 复用项目内核并保留独立端点和资源 |
+| 长安 C857 | `changan_c857.ini` / `changan_c857` | 主/从目标；APP、FT、CAL、APP+CAL |
+| 长安 B216 | `lingyao_b216.ini` / `lingyao_b216` | 主/从目标；Profile 声明模式 |
 | 长马 J90K / ARS1.31 | `longma_ars1_31.ini` / `longma_ars1_31` | APP、FT |
-| 犀重 RSMR | `xizhong_rsmr.ini` / `xizhong_rsmr` | APP、FT；包含项目 NM 和 ISO-TP 规则 |
-| 犀重 LSMR | `xizhong_lsmr.ini` / `xizhong_lsmr` | 复用 RSMR 状态机；独立扩展诊断 ID、NM 和 SeedKey 资源；当前为 APP 路径 |
-| 时代新安 HJZJ FMR | `shidaixinan_hjzj_fmr.ini` / `shidaixinan_hjzj_fmr` | APP、FT；使用项目周期报文和校验资源 |
-| 时代新安 天王星 FMR | `shidaixinan_tianwangxing_fmr.ini` / `shidaixinan_hjzj_fmr` | 复用 HJZJ 状态机；独立 Profile/资源；默认 APP 为空 |
-| 时代新安 木星2代 FMR | `shidaixinan_muxing2_fmr.ini` / `shidaixinan_hjzj_fmr` | 复用 HJZJ 状态机；独立 Profile/资源；默认 APP 为空 |
-| 时代新安 庆铃 FMR | `shidaixinan_qingling_fmr.ini` / `shidaixinan_hjzj_fmr` | 复用 HJZJ 状态机；独立 Profile/资源；默认 APP 为空 |
-| 零跑 ARC | `lp_arc.ini` / `lp_arc` | 四设备；APP、FT；预置 Driver、APP、校验文件和安全 DLL |
+| 犀重 RSMR | `xizhong_rsmr.ini` / `xizhong_rsmr` | APP、FT；项目 NM 和 ISO-TP 规则 |
+| 犀重 LSMR | `xizhong_lsmr.ini` / `xizhong_lsmr` | APP；独立扩展 ID、NM 和 SeedKey |
+| 时代新安 HJZJ FMR | `shidaixinan_hjzj_fmr.ini` / `shidaixinan_hjzj_fmr` | APP、FT |
+| 时代新安 天王星、木星2代、庆铃 FMR | 独立 Profile / 复用 HJZJ Workflow | 独立端点和资源 |
+| 零跑 ARC | `lp_arc.ini` / `lp_arc` | 四设备；APP、FT |
 | 零跑 ARF631 | `lp_arf.ini` / `lp_arf` | APP、FT |
-| 吉利 P416 | `geely_p416.ini` / `geely_p416` | SBL、APP、ESS VBF 流程；支持项目 NM 唤醒和专用传输规则 |
+| 吉利 P416 | `geely_p416.ini` / `geely_p416` | SBL、APP、ESS VBF；项目 NM 和专用传输 |
 
-## 楚能 ARC331 当前实现
+## 10. 楚能 ARC331 专项说明
 
-当前 Profile 提供“右后雷达”和“左后雷达”两个设备。刷写作业选择变化后，版本读取页跟随同一 Profile、设备、通道和 Tx/Rx ID；版本读取项由 Profile 的 `[version_check]` 集中配置，当前为 `F187` ECU 零件号、`F180` BootLoader 版本号、`F195` 供应商软件版本号、`F189` 整车厂软件版本号和 `F193` 供应商 ECU 硬件版本号。
-
-### 输入模式
-
-S-record 模式：
-
-```text
-Driver S19/SREC + Driver Verification ASC
-APP S19 + APP Verification ASC
-```
-
-CBF 模式（Driver、APP 必须成对选择）：
-
-```text
-Driver CBF
-APP CBF
-```
-
-当前只接受两套完整输入：`Driver CBF + APP CBF`，或者 `Driver S19/SREC + Driver ASC + APP S19/SREC + APP ASC`。不允许一侧为 CBF、另一侧为 S19，以免混用不同来源的主数据与签名。CBF 模式分别解析两份容器的主数据、ABT 和 256 字节 `dev_signature`；S19 模式使用界面选择的两份 256 字节校验 ASC。当前 Profile 默认指向资源目录中的 Driver/APP 双 CBF。两种输入最终进入同一个楚能 `0202 + 256 字节签名` 状态机，不生成中间 S19，也不进入零跑 `6000/6001 + 1322 字节证书` 流程。
-
-CBF 预检包含：版本、必需 Header 字段、类型、数据格式、两段地址和长度、段 CRC16、整体 CRC32、ABT Header、ABT Hash、主数据 SHA-256、256 字节 `dev_signature` 及固定刷写窗口。`FAKE_CN2944_FLASH_DRIVER_RAW_0x4000` 是本项目已确认允许刷写的 Driver 标识，因此不会仅按文件名或主数据前缀拒绝；容器完整性与项目窗口检查仍然执行。任一预检失败时不访问 CAN。
-
-### 在线探测
-
-- 探测期间持续发送标准 CAN `0x520 00 00 00 00 00 00 00 00`，周期 10 ms；
-- APP 入口：物理 `10 03` 收到 `50 03` 后，继续执行 `31 01 02 03` 刷新条件检查；
-- BOOT 入口：物理 `10 03` 收到 `50 03` 即确认诊断在线，不发送仅 APP 入口适用的 `31 01 02 03`；
-- 探测使用当前 Profile/界面配置的物理 Tx/Rx ID，不从 CBF 的 ECU 地址字段推导诊断 ID。
-
-### 正式刷写
-
-- APP 入口按楚能正式规范 Q/CN A201-2025 执行前置条件（物理 `10 03`、物理 `31 01 02 03`、功能 `10 83`/`85 82`/`28 83 03`）、会话切换、安全访问（16 字节种子/密钥）、Driver 下载、Driver 校验、`31 01 03 01` 激活 SBL、激活后写 `2E F1 84` 指纹、APP 擦除/下载/验签和复位恢复；
-- BOOT-only 入口使用 Boot 可满足的会话序列进入编程，不执行仅 APP 入口适用的前置步骤；
-- 正式刷写期间同样以高精度计时维持 10 ms 的 `0x520` 周期唤醒；
-- Driver/APP 主数据仍使用 Workflow 固定并经过预检的传输窗口，CBF 只改变输入解析，不改变既定 UDS 下载服务序列。
+- 当前目标为右后 `0x72C/0x72D` 和左后 `0x72E/0x72F`，目标切换同步影响探测、版本读取、刷写、监听过滤、日志和报告；
+- CBF 输入必须为 Driver CBF + APP CBF；S-record 输入必须为 Driver S19/SREC + Driver ASC + APP S19/SREC + APP ASC；禁止两种来源混搭；
+- CBF 预检覆盖版本、Header、类型、数据格式、地址、长度、段 CRC16、整体 CRC32、ABT Hash、主数据 SHA-256、256 字节签名和固定刷写窗口；
+- APP“能否刷写”在 `10 03` 后继续执行 `31 01 02 03`；NRC `0x31` 会提示可能处于擦除中断后的 Boot/SBL 恢复态，并阻止把它误判为普通 APP 可刷写；
+- 正式刷写维持 10 ms 周期 `0x520`，执行项目规定的前置条件、安全访问、Driver/APP 下载、签名校验、SBL 激活、指纹、复位和恢复；
+- Boot 恢复引擎属于内部受控能力。正式发布构建默认关闭 `UDS_EXPOSE_ARC331_BOOT_RECOVERY`，普通 dist 下拉框不显示 Boot 恢复入口；
+- 恢复态处理必须使用单独显式启用的受控构建和台架操作，不应把普通 APP 重试当作恢复方案。
 
 详细流程见 `docs/CHUNENG_331_FLOW_PARITY.md`。
 
+## 11. 配置、日志和生成目录
 
-## 与公共盘 `8.12` 版本的对比
+- `profiles`、`resources`、`drivers` 和随包 `docs` 是发布内容；
+- `Configuration` 保存当前用户的界面和硬件选择，由程序运行时创建；
+- `logs` 保存运行日志、HTML 报告、版本读取记录和总线 Trace，由程序运行时创建；
+- 干净发布包不携带开发机历史 `Configuration`、`logs`、`.partial`、构建目录或 Python 缓存；
+- 清理发布包不会清理源码目录或公共盘资料。
 
-对比来源为：
+## 12. 构建、验证与证据边界
 
-```text
-\\njdatasrv\测试部公共盘\01_软件测试组\02_项目管理\通用测试工程\2026年_通用刷写工具\8.12
-UDS_tool_yuanma2.7z
-UDS_tools.7z
-```
+- 构建命令：`scripts\build.ps1 -Config Release -DistPath dist`；
+- 当前离线 CTest 共 8 项：核心、P416、CAN 适配、厂商 API 边界、厂商清单、应用状态、Qt 探测桥接和 Qt 主窗口；
+- 离线测试覆盖 Profile/Workflow、文件预检、ISO-TP/UDS、Fake ECU、共享通道、监听、日志尾随、审计和 UI 状态等回归；
+- 构建成功、CTest PASS、历史报告、硬件探针、真实 CAN 通信和真实 ECU 完整刷写是不同证据层级；
+- 某一项目、某一设备或某一模式的 PASS 不自动证明另一设备、FT/CAL、其他后端或相似项目通过；
+- 正式交付主程序和压缩包应以 SHA-256 绑定，校验值记录在压缩包旁的 `.sha256.txt` 文件中。
 
-本次直接读取两个 7z 内的 README 和 Profile，没有修改公共盘文件。公共盘 `8.12` 发布包包含 14 个 Profile、11 个 Workflow；当前工程包含 18 个 Profile、15 个 Workflow，公共盘当时列为待复刻的 E0Y、T22、T1EJ、LSMR 已形成当前独立 Profile。主要当前差异如下：
+## 13. 文档入口
 
-- 零跑 `ARC` 从公共盘版本的单设备 `0x772/0x77A` 扩展为四设备，并吸收原 `A12EV-ARC` 的设备数量和补充版本 DID；运行时只保留一个 `ARC / lp_arc` 入口，仍使用公共盘 ARC 已预置的 Driver、APP、ASC 和 SeedKey DLL；
-- 楚能 Profile 已从公共盘的 `chuneng_331 + resources\chuneng_2944` 切换为 `chuneng_arc331 + resources\chuneng_d7_arc331_zip`，左右后端点仍为 `0x72C/0x72D`、`0x72E/0x72F`，但文件输入、唤醒、安全访问和校验契约按当前 ARC331 实现管理；
-- 当前 18 个 Profile 均配置版本读取，共 123 项；公共盘版本只覆盖当时已配置项目，不能作为当前 DID 总表；
-- 当前界面增加共享操作状态、被动总线监听、诊断 ID 过滤、CBF 输入和更新后的报告/日志能力；
-- 公共盘 README 中的历史实刷记录继续作为对应旧 EXE/Profile/资源组合的证据，不能自动转移为当前 EXE、四设备 ARC 或新 ARC331 输入集的台架 PASS。
-
-因此当前根 README 在项目清单、Profile/Workflow 数、ARC 合并、版本读取、总线监听、CBF 和发布验证信息上均晚于公共盘 `8.12`；详细项目流程继续由 `docs/*_FLOW_PARITY.md` 和对应 `validation` 记录承载，不把公共盘 41 KB 发布说明整段复制回当前入口文档。
-
-## 当前发布与验证
-
-- 综合候选目录：`dist`；
-- 主程序：`dist/UDS_Tool.exe`；
-- 最新交付包：`UDS_Tool_Release_20260820_LATEST.zip`；
-- `dist` 包含运行库、CAN 驱动适配、Profile、项目资源、工具和文档；
-- 当前构建命令：`scripts\build.ps1 -Config Release -DistPath dist`；
-- 2026-08-19 本轮 ARC 合并后完成 Release 构建和 CTest 8/8 回归；Qt 主窗口测试包含四设备 ARC 切换、预置文件和 10,000 次随机操作检查；
-- 最新 Release `UDS_Tool.exe` 的 SHA-256 以最新发布包校验结果为准；
-- 楚能 ARC331 默认使用独立 Driver/APP CBF 对；`resources\chuneng_d7_arc331_zip\S19` 同时提供从该 CBF 对提取的同源 S19、`*_Ver.asc` 和 `*_ABT.asc`，S19 模式在接入 CAN 前校验 ABT 地址、长度和 SHA-256；
-- 当前 Release 对应的楚能 ARC331 CBF 与 S19/ASC 两种模式均已在左后雷达 `0x72E/0x72F` 实板完成 Driver、Driver ABT、APP、APP ABT、`0202=04`、`FF01=04` 和 `51 01` 完整闭环；右后雷达仍需独立台架确认；
-- 该快照包含楚能 ARC331 专用流程的两处规范对齐修正（`chuneng_331_flow.cpp`）：预编程顺序改为物理 `10 03` → 物理 `31 01 02 03` → 功能 `10 83/85 82/28 83 03` → 物理 `10 02`；`2E F1 84` 指纹移到 `31 01 03 01` 激活 SBL 之后、`31 01 FF 00` 擦除之前（Q/CN A201-2025 5.4.5/附录 C）；修改前源码备份于 `validation\2026-08-19_flow_fix_backup`；
-- 构建、离线测试、Fake ECU、Golden Trace、历史报告和真实 ECU 台架是不同证据层级；
-- 某个项目或设备的 APP PASS 不自动证明其 FT、CAL、另一设备或相似项目通过。
-
-## 文档入口
-
-- `docs/README.md`：当前文档索引；
-- `docs/ARCHITECTURE.md`：当前模块边界；
-- `docs/VERSION_READ_CONFIGURATION.md`：版本读取 Profile 格式、解码器、项目统计和验证边界；
-- `docs/*_FLOW_PARITY.md`：各项目当前服务流程和验收边界；
-- `docs/SHIDAIXINAN_ARF232_PROJECT_INTEGRATION.md`：时代新安 Profile、资源和复用关系；
+- `README.md`：当前版本完整功能说明；
+- `CHANGE_LIST.txt`：仅记录相对公共盘 8.19 正式包的变化；
+- `docs/README.md`：项目文档索引；
+- `docs/ARCHITECTURE.md`：模块边界；
+- `docs/VERSION_READ_CONFIGURATION.md`：版本读取配置和解码器；
+- `docs/*_FLOW_PARITY.md`：项目流程、证据和验收边界；
 - `docs/KVASER_BENCH_CHECKLIST.md`：Kvaser 台架检查；
-- `SOURCE_PACKAGE_README.md`：当前源码包组成和排除项。
+- `SOURCE_PACKAGE_README.md`：源码包范围与排除项。
