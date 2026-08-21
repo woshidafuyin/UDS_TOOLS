@@ -67,8 +67,33 @@ $archive=[IO.Compression.ZipFile]::OpenRead($zip)
 try {
   $zipFiles=@($archive.Entries | Where-Object { $_.Name -ne '' })
   $distFiles=@(Get-ChildItem -LiteralPath $dist -Recurse -File -Force)
-  if($zipFiles.Count -ne $distFiles.Count){
-    throw "Package count mismatch: dist=$($distFiles.Count), zip=$($zipFiles.Count)"
+  $distHashes=@{}
+  foreach($file in $distFiles){
+    $relative=[IO.Path]::GetRelativePath($dist,$file.FullName).Replace('\','/')
+    $distHashes[$relative]=(Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
+  }
+  $zipHashes=@{}
+  foreach($entry in $zipFiles){
+    $stream=$entry.Open()
+    try {
+      $sha=[Security.Cryptography.SHA256]::Create()
+      try {
+        $zipHashes[$entry.FullName.Replace('\','/')]=
+          [Convert]::ToHexString($sha.ComputeHash($stream))
+      } finally {
+        $sha.Dispose()
+      }
+    } finally {
+      $stream.Dispose()
+    }
+  }
+  $missing=@($distHashes.Keys | Where-Object { -not $zipHashes.ContainsKey($_) })
+  $extra=@($zipHashes.Keys | Where-Object { -not $distHashes.ContainsKey($_) })
+  $changed=@($distHashes.Keys | Where-Object {
+    $zipHashes.ContainsKey($_) -and $distHashes[$_] -ne $zipHashes[$_]
+  })
+  if($missing -or $extra -or $changed){
+    throw "Package differs from dist: missing=$($missing.Count), extra=$($extra.Count), hash mismatch=$($changed.Count)"
   }
 } finally {
   $archive.Dispose()
