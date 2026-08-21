@@ -98,6 +98,7 @@ private:
   void appendUiLog(const QString& message,
                    UiLogTone tone = UiLogTone::Normal);
   void appendUiLogEntryToView(const UiLogEntry& entry);
+  void scheduleExecutionLogTailFollow();
   void renderActiveUiLog();
   Q_INVOKABLE void handleFlashFinished(bool success, bool cancelled,
                                        const QString& message,
@@ -123,6 +124,7 @@ private:
   QActionGroup* can_backend_group_{};
   QHash<QString, QList<UiLogEntry>> target_log_entries_;
   QString active_log_target_key_;
+  bool execution_log_follow_tail_{true};
   VersionConfirmationPage* version_page_{};
   BusMonitorPage* bus_monitor_page_{};
 };

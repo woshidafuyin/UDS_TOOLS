@@ -41,6 +41,7 @@
 #include <QStatusBar>
 #include <QTextCursor>
 #include <QTextCharFormat>
+#include <QTimer>
 #include <QUrl>
 #include <QVariant>
 #include <QVBoxLayout>
@@ -767,6 +768,15 @@ void MainWindow::connectActions() {
           &MainWindow::clearActiveUiLog);
   ui_->logPlainTextEdit->setContextMenuPolicy(Qt::CustomContextMenu);
   ui_->logPlainTextEdit->installEventFilter(this);
+  auto* log_scrollbar = ui_->logPlainTextEdit->verticalScrollBar();
+  connect(log_scrollbar, &QScrollBar::actionTriggered, this,
+          [this, log_scrollbar](int) {
+            // Only user navigation emits actionTriggered; setValue() used by
+            // tail following does not. Dragging or scrolling to the bottom
+            // therefore resumes following, while moving upward pauses it.
+            execution_log_follow_tail_ =
+                log_scrollbar->sliderPosition() >= log_scrollbar->maximum();
+          });
   ui_->logPlainTextEdit->setToolTip(QStringLiteral(
       "Home：日志开头；End：日志末尾；PageUp/PageDown及方向键保持系统默认行为"));
   connect(ui_->logPlainTextEdit, &QPlainTextEdit::customContextMenuRequested,
@@ -1830,11 +1840,10 @@ void MainWindow::appendUiLog(const QString& message, UiLogTone tone) {
   }
   auto* scrollbar = ui_->logPlainTextEdit->verticalScrollBar();
   const auto old_scroll_value = scrollbar->value();
-  const auto follow_tail = old_scroll_value >= scrollbar->maximum();
   const auto old_cursor = ui_->logPlainTextEdit->textCursor();
   appendUiLogEntryToView(target_entries.back());
-  if (follow_tail) {
-    scrollbar->setValue(scrollbar->maximum());
+  if (execution_log_follow_tail_) {
+    scheduleExecutionLogTailFollow();
   } else {
     ui_->logPlainTextEdit->setTextCursor(old_cursor);
     scrollbar->setValue(old_scroll_value);
@@ -1848,6 +1857,20 @@ void MainWindow::appendUiLog(const QString& message, UiLogTone tone) {
     execution_log_file_->write(persisted_line);
     execution_log_file_->flush();
   }
+}
+
+void MainWindow::scheduleExecutionLogTailFollow() {
+  // QTextDocument layout and the scrollbar range can update after text
+  // insertion returns. Queue the scroll so End means a persistent tail-follow
+  // mode instead of only jumping to the document end that existed at keypress.
+  QTimer::singleShot(0, this, [this] {
+    if (!execution_log_follow_tail_ || !ui_) return;
+    auto cursor = ui_->logPlainTextEdit->textCursor();
+    cursor.movePosition(QTextCursor::End);
+    ui_->logPlainTextEdit->setTextCursor(cursor);
+    auto* scrollbar = ui_->logPlainTextEdit->verticalScrollBar();
+    scrollbar->setValue(scrollbar->maximum());
+  });
 }
 
 void MainWindow::appendUiLogEntryToView(const UiLogEntry& entry) {
@@ -1960,10 +1983,8 @@ void MainWindow::activateSelectedLogTarget() {
   if (target_key.isEmpty() || target_key == active_log_target_key_) return;
   active_log_target_key_ = target_key;
   renderActiveUiLog();
-  auto cursor = ui_->logPlainTextEdit->textCursor();
-  cursor.movePosition(QTextCursor::End);
-  ui_->logPlainTextEdit->setTextCursor(cursor);
-  ui_->logPlainTextEdit->ensureCursorVisible();
+  execution_log_follow_tail_ = true;
+  scheduleExecutionLogTailFollow();
 }
 
 void MainWindow::clearActiveUiLog() {
@@ -1971,6 +1992,7 @@ void MainWindow::clearActiveUiLog() {
     target_log_entries_.remove(active_log_target_key_);
   }
   ui_->logPlainTextEdit->clear();
+  execution_log_follow_tail_ = true;
 }
 
 bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
@@ -2004,15 +2026,18 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
     if (modifiers == Qt::NoModifier || modifiers == Qt::ControlModifier) {
       auto cursor = ui_->logPlainTextEdit->textCursor();
       if (key_event->key() == Qt::Key_Home) {
+        execution_log_follow_tail_ = false;
         cursor.movePosition(QTextCursor::Start);
         ui_->logPlainTextEdit->setTextCursor(cursor);
         ui_->logPlainTextEdit->ensureCursorVisible();
         return true;
       }
       if (key_event->key() == Qt::Key_End) {
+        execution_log_follow_tail_ = true;
         cursor.movePosition(QTextCursor::End);
         ui_->logPlainTextEdit->setTextCursor(cursor);
         ui_->logPlainTextEdit->ensureCursorVisible();
+        scheduleExecutionLogTailFollow();
         return true;
       }
     }

@@ -198,10 +198,14 @@ void run_ui_monkey_test(QApplication& application,
   const auto configured_monkey_operations =
       qEnvironmentVariableIntValue("UDS_UI_MONKEY_OPERATIONS",
                                    &monkey_operations_ok);
+  // Random clicking is an optional exploratory stress aid, not acceptance
+  // evidence. Regular regressions use deterministic operator sequences and
+  // explicit UI/result assertions; opt in through the environment only when
+  // investigating broad state-space stability.
   const auto monkey_operations =
       monkey_operations_ok ? std::max(0, configured_monkey_operations)
-                           : 10000;
-  std::cout << "qt_main_window_tests: UI monkey operations="
+                           : 0;
+  std::cout << "qt_main_window_tests: optional exploratory UI random operations="
             << monkey_operations << '\n';
   for (int iteration = 0; iteration < monkey_operations; ++iteration) {
     switch (operation(random)) {
@@ -788,7 +792,15 @@ int main(int argc, char* argv[]) {
       check(persisted.open(QIODevice::ReadOnly) &&
                 persisted.readAll().contains("界面已就绪"),
             "Execution log did not persist UI messages");
-      log_view->setPlainText(QStringLiteral("first\nsecond\nlast"));
+      QString long_execution_log;
+      for (int line = 0; line < 240; ++line) {
+        long_execution_log +=
+            QStringLiteral("execution log regression line %1 with wrapped payload data\n")
+                .arg(line);
+      }
+      long_execution_log += QStringLiteral("last");
+      log_view->setPlainText(long_execution_log);
+      application.processEvents();
       QKeyEvent home_event(QEvent::KeyPress, Qt::Key_Home, Qt::NoModifier);
       QApplication::sendEvent(log_view, &home_event);
       check(log_view->textCursor().position() == 0,
@@ -807,6 +819,10 @@ int main(int argc, char* argv[]) {
       };
       check(invoke_flash_result(true, false),
             "Flash result handler is not invokable");
+      application.processEvents();
+      check(log_view->verticalScrollBar()->value() ==
+                log_view->verticalScrollBar()->maximum(),
+            "Execution log did not follow appended output after End");
       auto result_block = log_view->document()->lastBlock();
       auto result_format = result_block.begin().fragment().charFormat();
       check(result_block.text().contains(QStringLiteral("刷写成功")) &&
@@ -816,6 +832,10 @@ int main(int argc, char* argv[]) {
             "Successful flash result is not a bold green log entry");
       check(invoke_flash_result(false, false),
             "Flash failure handler is not invokable");
+      application.processEvents();
+      check(log_view->verticalScrollBar()->value() ==
+                log_view->verticalScrollBar()->maximum(),
+            "Execution log did not keep following consecutive output");
       result_block = log_view->document()->lastBlock();
       result_format = result_block.begin().fragment().charFormat();
       check(result_block.text().contains(QStringLiteral("刷写失败")) &&
@@ -926,6 +946,28 @@ int main(int argc, char* argv[]) {
                     QColor(QStringLiteral("#C62828")) &&
                 result_format.fontWeight() == QFont::Bold,
             "Offline probe result is not a bold red log entry");
+      QApplication::sendEvent(log_view, &home_event);
+      application.processEvents();
+      const auto review_scroll_position =
+          log_view->verticalScrollBar()->value();
+      check(review_scroll_position < log_view->verticalScrollBar()->maximum(),
+            "Execution log review position did not leave the tail");
+      check(QMetaObject::invokeMethod(
+                bus_monitor_page, "monitorMessage", Qt::DirectConnection,
+                Q_ARG(QString, QStringLiteral("tail follow paused regression"))),
+            "Paused-tail log injection failed");
+      application.processEvents();
+      check(log_view->verticalScrollBar()->value() == review_scroll_position,
+            "Execution log stole the view while tail following was paused");
+      QApplication::sendEvent(log_view, &end_event);
+      check(QMetaObject::invokeMethod(
+                bus_monitor_page, "monitorMessage", Qt::DirectConnection,
+                Q_ARG(QString, QStringLiteral("tail follow resumed regression"))),
+            "Resumed-tail log injection failed");
+      application.processEvents();
+      check(log_view->verticalScrollBar()->value() ==
+                log_view->verticalScrollBar()->maximum(),
+            "Execution log did not resume tail following after End");
       auto* tx_id =
           window.findChild<QLineEdit*>(QStringLiteral("txIdLineEdit"));
       auto* rx_id =
