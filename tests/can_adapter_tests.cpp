@@ -316,6 +316,8 @@ struct SharedBusTrace {
   std::deque<uds::CanFrame> incoming;
   std::vector<uds::CanFrame> sent;
   unsigned created{};
+  unsigned closed{};
+  bool fail_first_send_without_frames{};
 };
 
 class SharedTestBus final : public uds::ICanBus {
@@ -323,10 +325,20 @@ public:
   explicit SharedTestBus(std::shared_ptr<SharedBusTrace> trace)
       : trace_(std::move(trace)) {}
   void open() override { open_ = true; }
-  void close() noexcept override { open_ = false; }
+  void close() noexcept override {
+    open_ = false;
+    std::scoped_lock lock(trace_->mutex);
+    ++trace_->closed;
+  }
   bool is_open() const noexcept override { return open_; }
   void send(const uds::CanFrame& frame) override {
     std::scoped_lock lock(trace_->mutex);
+    if (trace_->fail_first_send_without_frames) {
+      trace_->fail_first_send_without_frames = false;
+      throw uds::CanAdapterException(
+          {uds::CanAdapterErrorCode::TransmitFailedNoFrames,
+           "fake adapter transmitted zero CAN frames"});
+    }
     trace_->sent.push_back(frame);
   }
   std::optional<uds::CanFrame> receive(std::chrono::milliseconds timeout) override {
@@ -386,6 +398,31 @@ void test_shared_provider_fans_out_without_consuming_diagnostic_frames() {
         "shared provider did not serialize and publish diagnostic transmit");
 }
 
+void test_shared_provider_recovers_zero_frame_transmit_with_listener_alive() {
+  const auto trace = std::make_shared<SharedBusTrace>();
+  trace->fail_first_send_without_frames = true;
+  auto provider = std::make_shared<uds::SharedCanBusProvider>(
+      std::make_shared<SharedTestProvider>(trace));
+  const uds::CanChannelConfig config{"", 2, 500000, 2000000, true,
+                                     L"RecoveryTest"};
+  auto passive_listener = provider->create(config);
+  auto diagnostic_session = provider->create(config);
+  passive_listener->open();
+  diagnostic_session->open();
+
+  diagnostic_session->send(
+      {0x72E, {0x02, 0x10, 0x03}, false, false, false});
+  const auto observed =
+      passive_listener->receive(std::chrono::milliseconds(300));
+
+  std::scoped_lock lock(trace->mutex);
+  check(trace->created == 2 && trace->closed >= 1,
+        "shared provider did not recreate a zero-frame faulted channel");
+  check(trace->sent.size() == 1 && trace->sent.front().id == 0x72E &&
+            observed && observed->transmitted && observed->id == 0x72E,
+        "shared provider recovery duplicated or lost the retried frame");
+}
+
 } // namespace
 
 int main() {
@@ -404,6 +441,8 @@ int main() {
         test_kvaser_physical_channels_precede_virtual_channels);
     run("shared_provider_fans_out_without_consuming_diagnostic_frames",
         test_shared_provider_fans_out_without_consuming_diagnostic_frames);
+    run("shared_provider_recovers_zero_frame_transmit_with_listener_alive",
+        test_shared_provider_recovers_zero_frame_transmit_with_listener_alive);
     std::cout << "can_adapter_tests: PASS\n";
     return 0;
   } catch (const std::exception& error) {

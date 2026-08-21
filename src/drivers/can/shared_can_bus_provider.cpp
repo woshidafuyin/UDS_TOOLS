@@ -70,17 +70,43 @@ public:
 
   void send(const CanFrame& frame) {
     std::scoped_lock tx_lock(transmit_mutex_);
-    ensureStarted();
-    bus_->send(frame);
+    try {
+      ensureStarted();
+      bus_->send(frame);
+    } catch (const CanAdapterException& error) {
+      if (error.error().code !=
+          CanAdapterErrorCode::TransmitFailedNoFrames) {
+        throw;
+      }
+      // A passive subscriber deliberately keeps this SharedChannel alive.
+      // Recreate the underlying vendor channel here so an error-passive ZLG
+      // controller is not reused forever.  The adapter confirmed zero frames,
+      // therefore retrying this one frame once cannot duplicate a successful
+      // transmission.  Never repeat an uncertain or partially sent batch.
+      stop();
+      ensureStarted();
+      bus_->send(frame);
+    }
     publishTransmitted(frame);
   }
 
   void sendBatch(std::span<const CanFrame> frames) {
     if (frames.empty()) return;
     std::scoped_lock tx_lock(transmit_mutex_);
-    ensureStarted();
-    if (bus_->supports_batch_transmit()) bus_->send_batch(frames);
-    else for (const auto& frame : frames) bus_->send(frame);
+    try {
+      ensureStarted();
+      if (bus_->supports_batch_transmit()) bus_->send_batch(frames);
+      else for (const auto& frame : frames) bus_->send(frame);
+    } catch (const CanAdapterException& error) {
+      if (error.error().code ==
+          CanAdapterErrorCode::TransmitFailedNoFrames) {
+        // The failing position of a multi-frame transfer is not a safe retry
+        // boundary.  Reset for the next explicit operation, then preserve the
+        // failure for the workflow/report instead of replaying the batch.
+        stop();
+      }
+      throw;
+    }
     for (const auto& frame : frames) publishTransmitted(frame);
   }
 

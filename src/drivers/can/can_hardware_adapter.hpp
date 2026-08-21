@@ -33,6 +33,10 @@ enum class CanAdapterErrorCode {
   DriverMissing,
   DeviceNotFound,
   InvalidConfiguration,
+  // The vendor API confirmed that none of the requested CAN frames reached
+  // the controller.  A shared channel may safely recreate the adapter and
+  // retry a single frame once without duplicating a successful transmission.
+  TransmitFailedNoFrames,
   VendorError,
 };
 

@@ -537,8 +537,10 @@ void ZlgCanAdapter::send(const CanFrame& frame) {
              << "; rx_error_counter="
              << static_cast<unsigned>(channel_status.regRECounter);
     }
-    fail(CanAdapterErrorCode::VendorError,
-         detail.str());
+    const auto message = detail.str();
+    remember_error(CanAdapterErrorCode::TransmitFailedNoFrames, message);
+    throw CanAdapterException(
+        {CanAdapterErrorCode::TransmitFailedNoFrames, message});
   }
 }
 
