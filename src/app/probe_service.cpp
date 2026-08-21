@@ -52,6 +52,10 @@ void check_stop(std::stop_token stop) {
 }
 
 std::string concise_probe_failure(std::string_view detail) {
+  if (detail.find("ARC331_BOOT_RECOVERY") != std::string_view::npos) {
+    return "APP入口不可用：ECU很可能处于Boot/SBL恢复态（常见于擦除中断）；"
+           "请切换“BOOT→APP（仅Boot）”完成恢复，不要重复使用APP入口。";
+  }
   if (detail.find("timeout") != std::string_view::npos ||
       detail.find("response wait failed") != std::string_view::npos ||
       detail.find("no valid UDS response") != std::string_view::npos) {
@@ -552,7 +556,7 @@ ProbeResult ProbeService::run(const ProbeRequest& requested,
       probe_description =
           boot_probe
               ? "在线探测：楚能ARC331 BOOT→APP入口持续发送0x520唤醒，向所选雷达物理端点发送10 03；收到50 03即确认诊断在线，不发送仅APP入口适用的31 01 02 03，也不进入编程会话或刷写。"
-              : "在线探测：楚能ARC331持续发送0x520唤醒，向所选雷达物理端点发送10 03；收到对应响应ID的50 03即判定在线，不进入编程会话或刷写。";
+              : "在线探测：楚能ARC331 APP入口持续发送0x520唤醒，向所选雷达物理端点发送10 03；收到50 03后检查31 01 02 03。该检查不发送10 02或刷写数据。";
     } else if (chuneng_331 && !ft_probe) {
       probe_description =
           boot_probe
@@ -685,8 +689,41 @@ ProbeResult ProbeService::run(const ProbeRequest& requested,
           "本按钮不发送31 01 02 03、10 02或任何刷写数据。");
     } else if (chuneng_arc331 && !ft_probe) {
       log(callbacks,
-          "PASS：楚能ARC331所选物理诊断响应ID已返回50 03；目标在线。"
-          "本按钮不发送31 01 02 03、10 02或任何刷写数据。");
+          "楚能ARC331 APP入口：物理10 03已响应；发送31 01 02 03检查"
+          "APP刷新入口，不发送10 02或任何刷写数据。");
+      const auto precondition = client.request(
+          kChuneng331ProgrammingPrecondition, 1000ms);
+      check_stop(stop);
+      if (!precondition.success) {
+        if (precondition.nrc == 0x31) {
+          throw std::runtime_error(
+              "ARC331_BOOT_RECOVERY: 31 01 02 03 returned NRC 0x31");
+        }
+        throw std::runtime_error(
+            "ARC331 ProgrammingPrecondition NRC/timeout: " +
+            precondition.detail);
+      }
+      const std::array<std::uint8_t, 5> passed{0x71, 0x01, 0x02, 0x03,
+                                               0x04};
+      const std::array<std::uint8_t, 5> not_met{0x71, 0x01, 0x02, 0x03,
+                                                0x05};
+      const auto has_prefix = [&](const auto& expected) {
+        return precondition.response.size() >= expected.size() &&
+               std::equal(expected.begin(), expected.end(),
+                          precondition.response.begin());
+      };
+      if (!has_prefix(passed) && !has_prefix(not_met)) {
+        throw std::runtime_error(
+            "ARC331 ProgrammingPrecondition response mismatch: " +
+            to_hex(precondition.response));
+      }
+      log(callbacks,
+          has_prefix(passed)
+              ? "PASS：楚能ARC331 APP刷新入口可用（31 01 02 03状态0x04）。"
+              : "WARN：楚能ARC331 APP刷新入口可用，但刷新条件状态为0x05；"
+                "正式流程将按项目参考策略继续并保留原始响应。");
+      response_summary +=
+          "；ProgrammingPrecondition=" + to_hex(precondition.response);
     } else if (chuneng_331 && !ft_probe && !boot_probe) {
       log(callbacks,
           "楚能331 APP入口：物理10 03已响应；发送31 01 02 03检查刷新条件。"

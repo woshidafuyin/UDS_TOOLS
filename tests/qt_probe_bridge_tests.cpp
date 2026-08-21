@@ -131,6 +131,9 @@ uds::FlashProfileRecord makeLongmaProfile() {
   record.profile.id = L"longma_ars1_31";
   record.profile.flow = L"longma_ars1_31";
   record.profile.name = L"长马 1.31";
+  record.profile.vendor_name = L"长马";
+  record.profile.project_name = L"ARS1.31";
+  record.profile.device_name = L"主雷达";
   record.profile.supports_ft_entry = true;
   record.profile.lock_diagnostic_ids = true;
   record.profile.ft_tx_id = 0x714;
@@ -266,13 +269,15 @@ int main(int argc, char* argv[]) {
     bool flash_cancelled{};
     QString flash_report;
     QString probe_message;
+    QStringList emitted_logs;
 
     QObject::connect(
         &bridge, &uds::ui::qt::ControllerBridge::logMessage, &application,
-        [&](const QString&) {
+        [&](const QString& message) {
           callbacks_on_ui_thread &=
               QThread::currentThread() == application.thread();
           received_log = true;
+          emitted_logs.push_back(message);
         });
     QObject::connect(
         &bridge, &uds::ui::qt::ControllerBridge::progressChanged,
@@ -450,6 +455,13 @@ int main(int argc, char* argv[]) {
                flash_capture->job.profile.tx_id == 0x760 &&
                flash_capture->job.profile.rx_id == 0x768,
            "Longma secondary flash did not use the resolved 0x760/0x768 endpoint");
+    check(std::any_of(
+              emitted_logs.cbegin(), emitted_logs.cend(),
+              [](const QString& line) {
+                return line.contains(QStringLiteral("Flash target:")) &&
+                       line.contains(QStringLiteral("从雷达（待验证）"));
+              }),
+          "Qt flash audit log did not use the selected target display name");
 
     flash_capture->ran = false;
     flash_finished = false;

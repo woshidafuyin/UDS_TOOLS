@@ -341,11 +341,23 @@ void ControllerBridge::startFlash(
       QCoreApplication::applicationDirPath().toStdWString();
   const auto backend = fromUtf8(can_vendor_name(default_can_vendor()));
   request.hardware_backend = toUtf8(backend);
+  auto target_display_name = fromWide(profile.device_name);
+  if (!target_id.isEmpty()) {
+    const auto selected_target = std::find_if(
+        profile.targets.cbegin(), profile.targets.cend(),
+        [&](const FlashTargetProfile& target) {
+          return target.id == target_id.toStdWString();
+        });
+    if (selected_target != profile.targets.cend() &&
+        !selected_target->display_name.empty()) {
+      target_display_name = fromWide(selected_target->display_name);
+    }
+  }
   request.target_description = toUtf8(
       QStringLiteral("%1 / %2 / %3; Profile=%4; Target=%5; Flow=%6; Entry=%7; "
                      "Repetitions=%8")
           .arg(fromWide(profile.vendor_name), fromWide(profile.project_name),
-               fromWide(profile.device_name), fromWide(profile.id), target_id,
+               target_display_name, fromWide(profile.id), target_id,
                fromWide(profile.flow), entry_mode.toUpper())
           .arg(repeat_count));
   request.channel = channel;

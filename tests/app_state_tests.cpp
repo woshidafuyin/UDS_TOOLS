@@ -957,9 +957,9 @@ class FakeChunengProbeBus final : public uds::ICanBus {
 public:
   explicit FakeChunengProbeBus(std::shared_ptr<ProbeBusCapture> capture,
                                std::uint32_t response_id,
-                               bool precondition_passed = true)
+                               std::uint8_t precondition_status = 0x04)
       : capture_(std::move(capture)), response_id_(response_id),
-        precondition_passed_(precondition_passed) {}
+        precondition_status_(precondition_status) {}
 
   void open() override {
     opened_ = true;
@@ -993,10 +993,16 @@ public:
       }
       if (pending_precondition_) {
         pending_precondition_ = false;
+        if (precondition_status_ == 0x31) {
+          return uds::CanFrame{
+              response_id_,
+              {0x03, 0x7F, 0x31, 0x31, 0x00, 0x00, 0x00, 0x00},
+              false, false, false};
+        }
         return uds::CanFrame{
             response_id_,
             {0x05, 0x71, 0x01, 0x02, 0x03,
-             static_cast<std::uint8_t>(precondition_passed_ ? 0x04 : 0x05),
+             precondition_status_,
              0x00, 0x00},
             false, false, false};
       }
@@ -1011,7 +1017,7 @@ private:
   std::uint32_t response_id_{};
   std::optional<std::uint8_t> pending_session_;
   bool pending_precondition_{};
-  bool precondition_passed_{true};
+  std::uint8_t precondition_status_{0x04};
   bool opened_{};
   std::mutex mutex_;
 };
@@ -1298,19 +1304,74 @@ void test_probe_service_chuneng_arc331_selected_endpoint_online() {
                  frame.data[0] == 0x02 && frame.data[1] == 0x10 &&
                  frame.data[2] == 0x03;
         });
-    const auto unsafe_request = std::find_if(
+    const auto precondition_request = std::find_if(
         capture->sent.cbegin(), capture->sent.cend(),
         [](const uds::CanFrame& frame) {
-          return frame.data.size() >= 3 &&
-                 ((frame.data[1] == 0x31) ||
-                  (frame.data[1] == 0x10 && frame.data[2] == 0x02));
+          return frame.data.size() >= 5 && frame.data[1] == 0x31 &&
+                 frame.data[2] == 0x01 && frame.data[3] == 0x02 &&
+                 frame.data[4] == 0x03;
+        });
+    const auto programming_session_request = std::find_if(
+        capture->sent.cbegin(), capture->sent.cend(),
+        [](const uds::CanFrame& frame) {
+          return frame.data.size() >= 3 && frame.data[1] == 0x10 &&
+                 frame.data[2] == 0x02;
         });
     check(result.success && wakeup_count >= 1 &&
-              session_request != capture->sent.cend() &&
-              unsafe_request == capture->sent.cend(),
-          "ARC331 online probe did not use identical safe 0x520 plus "
-          "physical 10 03 logic for both selected radar endpoints");
+               session_request != capture->sent.cend() &&
+               precondition_request != capture->sent.cend() &&
+               programming_session_request == capture->sent.cend(),
+          "ARC331 APP probe did not check 31 01 02 03 safely for both "
+          "selected radar endpoints");
   }
+}
+
+void test_probe_service_chuneng_arc331_boot_probe_is_non_intrusive() {
+  auto capture = std::make_shared<ProbeBusCapture>();
+  uds::app::ProbeService service(
+      [capture](const uds::app::ProbeRequest& request) {
+        return std::make_unique<FakeChunengProbeBus>(capture, request.rx_id);
+      });
+  auto request = make_probe_request();
+  request.profile.flow = L"chuneng_arc331";
+  request.profile.tx_id = request.tx_id = 0x72E;
+  request.profile.rx_id = request.rx_id = 0x72F;
+  request.profile.functional_id = 0x7DF;
+  request.entry_mode = L"boot";
+  request.padding = 0x55;
+
+  const auto result = service.run(request, {}, {});
+  const auto unsafe_request = std::find_if(
+      capture->sent.cbegin(), capture->sent.cend(),
+      [](const uds::CanFrame& frame) {
+        return frame.data.size() >= 3 &&
+               (frame.data[1] == 0x31 ||
+                (frame.data[1] == 0x10 && frame.data[2] == 0x02));
+      });
+  check(result.success && unsafe_request == capture->sent.cend(),
+        "ARC331 Boot probe sent a precondition or programming-session request");
+}
+
+void test_probe_service_chuneng_arc331_nrc31_guides_boot_recovery() {
+  auto capture = std::make_shared<ProbeBusCapture>();
+  uds::app::ProbeService service(
+      [capture](const uds::app::ProbeRequest& request) {
+        return std::make_unique<FakeChunengProbeBus>(capture, request.rx_id,
+                                                     std::uint8_t{0x31});
+      });
+  auto request = make_probe_request();
+  request.profile.flow = L"chuneng_arc331";
+  request.profile.tx_id = request.tx_id = 0x72E;
+  request.profile.rx_id = request.rx_id = 0x72F;
+  request.profile.functional_id = 0x7DF;
+  request.entry_mode = L"app";
+  request.padding = 0x55;
+
+  const auto result = service.run(request, {}, {});
+  check(!result.success &&
+            result.message.find("BOOT") != std::string::npos &&
+            result.message.find("恢复") != std::string::npos,
+        "ARC331 NRC 0x31 did not produce actionable Boot recovery guidance");
 }
 
 void test_probe_service_chuneng_rejects_failed_precondition() {
@@ -1318,7 +1379,7 @@ void test_probe_service_chuneng_rejects_failed_precondition() {
   uds::app::ProbeService service(
       [capture](const uds::app::ProbeRequest& request) {
         return std::make_unique<FakeChunengProbeBus>(capture, request.rx_id,
-                                                     false);
+                                                     std::uint8_t{0x05});
       });
   auto request = make_probe_request();
   request.profile.flow = L"chuneng_331";
@@ -1559,6 +1620,8 @@ int main() {
     test_probe_service_chery_preconditions();
     test_probe_service_chuneng_standard_precondition_sequence();
     test_probe_service_chuneng_arc331_selected_endpoint_online();
+    test_probe_service_chuneng_arc331_boot_probe_is_non_intrusive();
+    test_probe_service_chuneng_arc331_nrc31_guides_boot_recovery();
     test_probe_service_chuneng_rejects_failed_precondition();
     test_probe_service_chuneng_custom_app_endpoint();
     test_probe_service_lingpao_radar_entry_sequences();
