@@ -5,6 +5,7 @@
 #include "core/version_check_plan.hpp"
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QMetaObject>
 #include <QStringList>
 
@@ -24,6 +25,15 @@ QString fromWide(std::wstring_view text) {
 
 QString fromUtf8(std::string_view text) {
   return QString::fromUtf8(text.data(), static_cast<int>(text.size()));
+}
+
+std::string toUtf8(const QString& text) {
+  const auto encoded = text.toUtf8();
+  return {encoded.constData(), static_cast<std::size_t>(encoded.size())};
+}
+
+QString probeAuditKey(int profile_index, const QString& target_id) {
+  return QStringLiteral("%1|%2").arg(profile_index).arg(target_id);
 }
 
 QString requestText(const std::vector<std::uint8_t>& request) {
@@ -236,14 +246,30 @@ void ControllerBridge::startProbe(int profile_index, const QString& target_id,
         },
         Qt::QueuedConnection);
   };
-  callbacks.onFinished = [this](app::ProbeResult result) {
+  const auto audit_key = probeAuditKey(profile_index, target_id);
+  const auto audit_backend =
+      fromUtf8(can_vendor_name(default_can_vendor()));
+  const auto audit_entry_mode = fromWide(request.entry_mode);
+  const auto audit_can_fd = profile.can_fd;
+  callbacks.onFinished =
+      [this, audit_key, audit_backend, audit_entry_mode, channel, tx_id, rx_id,
+       nominal_bitrate = request.nominal_bitrate,
+       data_bitrate = request.data_bitrate,
+       audit_can_fd](app::ProbeResult result) {
     if (shutting_down_.load()) return;
     const auto message = fromUtf8(result.message);
     QMetaObject::invokeMethod(
         this,
         [this, success = result.success, cancelled = result.cancelled,
-         message] {
+         message, audit_key, audit_backend, audit_entry_mode, channel, tx_id,
+         rx_id, nominal_bitrate, data_bitrate, audit_can_fd] {
           if (shutting_down_.load()) return;
+          probe_audit_records_.insert(
+              audit_key,
+              {audit_backend, audit_entry_mode,
+               QDateTime::currentDateTime().toString(Qt::ISODateWithMs),
+               message, channel, tx_id, rx_id, nominal_bitrate, data_bitrate,
+               audit_can_fd, success, cancelled});
           emit probeRunningChanged(false);
           emit probeFinished(success, cancelled, message);
         },
@@ -313,6 +339,8 @@ void ControllerBridge::startFlash(
   request.repeat_count = repeat_count;
   request.executable_directory =
       QCoreApplication::applicationDirPath().toStdWString();
+  const auto backend = fromUtf8(can_vendor_name(default_can_vendor()));
+  request.hardware_backend = toUtf8(backend);
   request.channel = channel;
   request.tx_id = tx_id;
   request.rx_id = rx_id;
@@ -320,6 +348,35 @@ void ControllerBridge::startFlash(
   request.nominal_bitrate = profile.nominal_bitrate;
   request.data_bitrate = profile.data_bitrate;
   request.padding = profile.padding;
+  const auto audit = probe_audit_records_.constFind(
+      probeAuditKey(profile_index, target_id));
+  if (audit != probe_audit_records_.cend()) {
+    const auto normalized_entry =
+        entry_mode == QStringLiteral("ft")
+            ? QStringLiteral("ft")
+            : (entry_mode == QStringLiteral("boot") ? QStringLiteral("boot")
+                                                      : QStringLiteral("app"));
+    const auto matches =
+        audit->backend == backend && audit->entry_mode == normalized_entry &&
+        audit->channel == channel && audit->tx_id == tx_id &&
+        audit->rx_id == rx_id &&
+        audit->nominal_bitrate == profile.nominal_bitrate &&
+        audit->data_bitrate == profile.data_bitrate &&
+        audit->can_fd == profile.can_fd;
+    if (matches) {
+      request.qualification_status =
+          audit->cancelled ? "CANCELLED" : (audit->success ? "PASS" : "FAIL");
+      request.qualification_detail = toUtf8(audit->message);
+    } else {
+      request.qualification_status = "STALE_CONFIG";
+      request.qualification_detail =
+          "The latest pre-flash probe used a different backend, channel, "
+          "diagnostic endpoint, bitrate, frame format, or entry mode; last "
+          "result: " +
+          toUtf8(audit->message);
+    }
+    request.qualification_completed_at = toUtf8(audit->completed_at);
+  }
   request.driver_file = toPath(driver_path);
   request.app_file = toPath(app_path);
   request.cal_file = toPath(cal_path);

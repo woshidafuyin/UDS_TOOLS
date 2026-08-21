@@ -57,6 +57,55 @@ std::string diagnostic_endpoint_detail(const FlashRequest& request) {
   return detail.str();
 }
 
+std::string can_configuration_detail(const FlashRequest& request) {
+  std::ostringstream detail;
+  detail << "Hardware backend=" << request.hardware_backend
+         << "; Channel=" << request.channel
+         << "; Nominal bitrate=" << request.nominal_bitrate << " bit/s";
+  if (request.profile.can_fd) {
+    detail << "; Data bitrate=" << request.data_bitrate << " bit/s; CAN FD=yes";
+  } else {
+    detail << "; CAN FD=no (Classic CAN)";
+  }
+  detail << "; Padding=0x" << std::uppercase << std::hex
+         << std::setfill('0') << std::setw(2)
+         << static_cast<unsigned>(request.padding) << std::dec;
+  return detail.str();
+}
+
+std::string qualification_detail(const FlashRequest& request) {
+  std::string detail = "Status=" + request.qualification_status;
+  if (!request.qualification_completed_at.empty()) {
+    detail += "; Completed at=" + request.qualification_completed_at;
+  }
+  detail += "; Detail=" + request.qualification_detail;
+  detail += "; This record is audit evidence and does not bypass workflow preflight";
+  return detail;
+}
+
+std::string file_configuration_detail(std::string_view role,
+                                      const std::filesystem::path& path) {
+  std::ostringstream detail;
+  detail << role << '=';
+  if (path.empty()) {
+    detail << "<not configured>";
+    return detail.str();
+  }
+  std::error_code error;
+  auto resolved = path;
+  if (!resolved.is_absolute()) resolved = std::filesystem::absolute(path, error);
+  if (error) resolved = path;
+  detail << utf8_path(resolved.lexically_normal());
+  error.clear();
+  const auto exists = std::filesystem::is_regular_file(resolved, error);
+  detail << "; exists=" << (exists && !error ? "yes" : "no");
+  if (exists && !error) {
+    const auto size = std::filesystem::file_size(resolved, error);
+    if (!error) detail << "; size=" << size << " bytes";
+  }
+  return detail.str();
+}
+
 std::wstring widen_utf8(std::string_view text) {
   std::wstring result;
   result.reserve(text.size());
@@ -226,6 +275,26 @@ void FlashController::execute(FlashRequest request,
 
     add_report(0, "Diagnostic IDs", "INFO",
                diagnostic_endpoint_detail(request));
+    const auto record_snapshot = [&](std::string step, std::string detail) {
+      if (callbacks.onLog) callbacks.onLog(step + ": " + detail);
+      add_report(0, std::move(step), "INFO", std::move(detail));
+    };
+    record_snapshot("Pre-flash qualification", qualification_detail(request));
+    record_snapshot("CAN configuration", can_configuration_detail(request));
+    record_snapshot("Flash file", file_configuration_detail(
+                                      "Boot Driver", request.driver_file));
+    record_snapshot("Flash file", file_configuration_detail(
+                                      "Driver Data", request.driver_verify_file));
+    record_snapshot("Flash file",
+                    file_configuration_detail("APP", request.app_file));
+    record_snapshot("Flash file", file_configuration_detail(
+                                      "APP Data", request.app_verify_file));
+    record_snapshot("Flash file",
+                    file_configuration_detail("CAL", request.cal_file));
+    record_snapshot("Flash file", file_configuration_detail(
+                                      "CAL Data", request.cal_verify_file));
+    record_snapshot("Flash file", file_configuration_detail(
+                                      "SeedKey", request.security_dll));
     add_report(0, "Flash count", "INFO",
                "Configured repetitions=" + std::to_string(repeat_count) +
                    "; each repetition runs the complete workflow; stop on first failure");

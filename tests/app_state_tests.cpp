@@ -211,6 +211,10 @@ uds::app::FlashRequest make_flash_request(
   request.profile.name = L"Fake ECU";
   request.entry_mode = L"ft";
   request.executable_directory = directory;
+  request.hardware_backend = "ZLG / ZCANPRO (ZCAN)";
+  request.qualification_status = "PASS";
+  request.qualification_detail = "设备在线：响应 50 03";
+  request.qualification_completed_at = "2026-08-21T10:05:55.489+08:00";
   request.channel = 3;
   request.tx_id = 0x701;
   request.rx_id = 0x761;
@@ -242,10 +246,16 @@ void test_flash_controller_success() {
   std::promise<uds::app::OperationResult> completion;
   auto completed = completion.get_future();
   int log_count = 0;
+  std::vector<std::string> audit_logs;
   int progress = -1;
   uds::app::OperationCallbacks callbacks;
   callbacks.onLog = [&](const std::string& line) {
     if (line == "fake log") ++log_count;
+    if (line.find("Pre-flash qualification:") == 0 ||
+        line.find("CAN configuration:") == 0 ||
+        line.find("Flash file:") == 0) {
+      audit_logs.push_back(line);
+    }
   };
   callbacks.onProgress = [&](int value, const std::string&) {
     progress = value;
@@ -272,7 +282,7 @@ void test_flash_controller_success() {
                 std::filesystem::path(L"security.dll") &&
             std::filesystem::exists(trace_path),
         "flash controller did not assemble FlashJob correctly");
-  check(log_count == 1 && progress == 25,
+  check(log_count == 1 && progress == 25 && audit_logs.size() == 9,
         "flash controller did not adapt workflow callbacks");
   check(!result.report_path.empty() &&
              std::filesystem::is_regular_file(result.report_path),
@@ -289,6 +299,17 @@ void test_flash_controller_success() {
             report_text.find("Functional request TX (Tester -&gt; ECUs)=0x7DF") !=
                 std::string::npos,
         "flash report did not label diagnostic ID directions");
+  check(report_text.find("Pre-flash qualification") != std::string::npos &&
+            report_text.find("Status=PASS") != std::string::npos &&
+            report_text.find("Hardware backend=ZLG / ZCANPRO (ZCAN)") !=
+                std::string::npos &&
+            report_text.find("Nominal bitrate=500000 bit/s") !=
+                std::string::npos &&
+            report_text.find("Data bitrate=2000000 bit/s") !=
+                std::string::npos &&
+            report_text.find("driver.s19; exists=no") != std::string::npos &&
+            report_text.find("security.dll; exists=no") != std::string::npos,
+        "flash report is missing qualification, CAN, or file configuration");
   check(report_text.find("本次流程结果：成功（PASS）") != std::string::npos &&
             report_text.find("完成时间：") != std::string::npos &&
             report_text.find("C++") == std::string::npos &&

@@ -8,6 +8,7 @@
 #include "ui/qt/version_read_view_model.hpp"
 
 #include <QObject>
+#include <QHash>
 #include <QString>
 #include <QStringList>
 
@@ -133,6 +134,21 @@ signals:
   void powerFinished(bool success, const QString& message);
 
 private:
+  struct ProbeAuditRecord {
+    QString backend;
+    QString entry_mode;
+    QString completed_at;
+    QString message;
+    unsigned channel{};
+    quint32 tx_id{};
+    quint32 rx_id{};
+    unsigned nominal_bitrate{};
+    unsigned data_bitrate{};
+    bool can_fd{};
+    bool success{};
+    bool cancelled{};
+  };
+
   [[nodiscard]] std::pair<quint32, quint32> resolveDiagnosticEndpoint(
       int profile_index, const QString& target_id, quint32 displayed_tx_id,
       quint32 displayed_rx_id) const;
@@ -150,6 +166,7 @@ private:
   std::jthread power_worker_;
   std::atomic_bool power_running_{};
   std::atomic_bool shutting_down_{};
+  QHash<QString, ProbeAuditRecord> probe_audit_records_;
 };
 
 } // namespace uds::ui::qt

@@ -21,6 +21,15 @@ struct FlashRequest {
   unsigned repeat_count{kMinFlashRepeatCount};
   std::filesystem::path executable_directory;
 
+  // Audit metadata captured at the operation boundary.  These fields do not
+  // control a workflow; they make the execution log and HTML report explain
+  // exactly which hardware backend and pre-flash qualification evidence were
+  // associated with this immutable request.
+  std::string hardware_backend{"unspecified"};
+  std::string qualification_status{"NOT_RUN"};
+  std::string qualification_detail{"No matching pre-flash probe was recorded"};
+  std::string qualification_completed_at;
+
   unsigned channel{};
   std::uint32_t tx_id{};
   std::uint32_t rx_id{};
