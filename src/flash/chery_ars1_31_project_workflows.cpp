@@ -45,13 +45,13 @@ void run_project(CheryArs131Project project, std::wstring_view workflow_id,
   if (job.profile.flow != workflow_id) {
     throw std::runtime_error(spec.name + " workflow/profile mismatch");
   }
-  if (job.entry_mode != L"app" && !job.entry_mode.empty()) {
-    throw std::runtime_error(spec.name + " requirement supports normal APP mode only");
-  }
+  const auto plan = resolve_chery_ars1_31_download_plan(project,
+                                                        job.entry_mode);
+  constexpr auto supports_cal = true;
   if (job.profile.placeholder || job.profile.can_fd ||
       job.profile.extended_id || job.profile.uds_fd || job.profile.uds_brs ||
       job.profile.power_control || job.profile.supports_ft_entry ||
-      job.profile.supports_cal_download ||
+      job.profile.supports_cal_download != supports_cal ||
       job.profile.nominal_bitrate != 500000 || job.profile.padding != 0x55 ||
       job.profile.functional_id != 0x7DF ||
       job.profile.security_level != spec.seed_subfunction ||
@@ -63,31 +63,57 @@ void run_project(CheryArs131Project project, std::wstring_view workflow_id,
   CheryArs131AppLayout layout{job.profile.driver_start,
                               job.profile.driver_length,
                               job.profile.app_start,
-                              job.profile.app_length};
+                              job.profile.app_length,
+                              job.profile.cal_start,
+                              job.profile.cal_length};
   if (layout.driver_start != 0x08000000 || layout.driver_length != 0x400 ||
-      layout.app_start != 0xC0080000 || layout.app_length != 0xF5000) {
-    throw std::runtime_error(spec.name + " Driver/APP layout mismatch");
+      layout.app_start != 0xC0080000 || layout.app_length != 0xF5000 ||
+      (supports_cal &&
+       (layout.cal_start != 0xC0180000 || layout.cal_length != 0xC8))) {
+    throw std::runtime_error(spec.name + " Driver/APP/CAL layout mismatch");
   }
 
   const auto driver = resolve(job, job.driver_file);
   const auto app = resolve(job, job.app_file);
+  const auto cal = resolve(job, job.cal_file);
   const auto driver_signature = resolve(job, job.driver_verify_file);
   const auto app_signature = resolve(job, job.app_verify_file);
+  const auto cal_signature = resolve(job, job.cal_verify_file);
+  const auto cal_needs_app_signature =
+      project == CheryArs131Project::t22 &&
+      plan.mode == CheryArs131FlashMode::cal_only;
   const auto dll = resolve(job, job.security_dll);
   required(driver, "Driver S19");
-  required(app, "APP S19");
   required(driver_signature, "Driver 512-byte RSA");
-  required(app_signature, "APP 512-byte RSA");
+  if (plan.download_app || cal_needs_app_signature) {
+    required(app_signature, "APP 512-byte RSA");
+  }
+  if (plan.download_app) {
+    required(app, "APP S19");
+  }
+  if (plan.download_cal) {
+    required(cal, "CAL S19");
+    required(cal_signature, "CAL 512-byte RSA");
+  }
   required(dll, "SeedKey DLL");
 
   CheryArs131AppImages images;
   try {
     images.driver = load_srecord_window(driver, layout.driver_start,
                                         layout.driver_length);
-    images.app = load_srecord_window(app, layout.app_start,
-                                     layout.app_length);
     images.driver_signature = load_hex_bytes(driver_signature, 512, 512);
-    images.app_signature = load_hex_bytes(app_signature, 512, 512);
+    if (plan.download_app || cal_needs_app_signature) {
+      images.app_signature = load_hex_bytes(app_signature, 512, 512);
+    }
+    if (plan.download_app) {
+      images.app = load_srecord_window(app, layout.app_start,
+                                       layout.app_length);
+    }
+    if (plan.download_cal) {
+      images.cal = load_srecord_window(cal, layout.cal_start,
+                                       layout.cal_length);
+      images.cal_signature = load_hex_bytes(cal_signature, 512, 512);
+    }
   } catch (const std::exception& error) {
     throw std::runtime_error(spec.name +
                              " file preflight failed before CAN access: " +
@@ -170,8 +196,12 @@ void run_project(CheryArs131Project project, std::wstring_view workflow_id,
                line);
       },
       keygen);
-  flow.run(images, stop);
-  report(callbacks, "Download", "PASS", spec.name + " normal APP flow completed");
+  flow.run(images, plan.mode, stop);
+  const auto mode = plan.download_app
+                        ? (plan.download_cal ? "APP+CAL/TC_2" : "APP")
+                        : "CAL/TC_7";
+  report(callbacks, "Download", "PASS",
+         spec.name + " normal " + mode + " flow completed");
 }
 } // namespace
 

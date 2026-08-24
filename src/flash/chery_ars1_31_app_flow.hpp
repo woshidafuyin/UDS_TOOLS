@@ -15,6 +15,13 @@ namespace uds {
 
 enum class CheryArs131Project { t1ej, t22, e0y };
 enum class CheryArs131D004Mode { none, routine_only, app_signature };
+enum class CheryArs131FlashMode { app_only, cal_only, app_cal };
+
+struct CheryArs131DownloadPlan {
+  CheryArs131FlashMode mode;
+  bool download_app;
+  bool download_cal;
+};
 
 struct CheryArs131AppSpec {
   CheryArs131Project project;
@@ -29,6 +36,7 @@ struct CheryArs131AppSpec {
   std::uint16_t fingerprint_did;
   std::size_t fingerprint_length;
   CheryArs131D004Mode d004_mode;
+  std::chrono::milliseconds post_d004_delay;
   bool initial_physical_extended_session;
   bool precondition_before_network_disable;
   bool install_d005;
@@ -40,17 +48,23 @@ struct CheryArs131AppLayout {
   std::uint32_t driver_length{0x400};
   std::uint32_t app_start{0xC0080000};
   std::uint32_t app_length{0xF5000};
+  std::uint32_t cal_start{};
+  std::uint32_t cal_length{};
 };
 
 struct CheryArs131AppImages {
   std::vector<std::uint8_t> driver;
   std::vector<std::uint8_t> app;
+  std::vector<std::uint8_t> cal;
   std::vector<std::uint8_t> driver_signature;
   std::vector<std::uint8_t> app_signature;
+  std::vector<std::uint8_t> cal_signature;
 };
 
 const CheryArs131AppSpec& chery_ars1_31_app_spec(
     CheryArs131Project project);
+CheryArs131DownloadPlan resolve_chery_ars1_31_download_plan(
+    CheryArs131Project project, std::wstring_view entry_mode);
 std::vector<std::uint8_t> chery_ars1_31_request_download(
     std::uint32_t address, std::uint32_t length);
 std::vector<std::uint8_t> chery_ars1_31_erase_memory(
@@ -68,6 +82,7 @@ public:
                      KeyGenerator key_generator);
 
   void run(const CheryArs131AppImages& images,
+           CheryArs131FlashMode mode = CheryArs131FlashMode::app_only,
            std::stop_token stop = {});
 
 private:
@@ -81,7 +96,8 @@ private:
   void functional_send(std::span<const std::uint8_t> request, int percent,
                        const std::string& name);
   void unlock(int percent);
-  void write_fingerprint(int percent);
+  void write_fingerprint(int percent, std::uint16_t did,
+                         std::size_t length);
   void verify(std::uint16_t routine_id,
               std::span<const std::uint8_t> signature, int percent,
               const std::string& label);
@@ -89,6 +105,10 @@ private:
                 std::span<const std::uint8_t> image, int begin_percent,
                 int end_percent, const std::string& label);
   void precondition(int percent);
+  void run_app_only(const CheryArs131AppImages& images);
+  void run_cal_only(const CheryArs131AppImages& images);
+  void run_t22_cal_only(const CheryArs131AppImages& images);
+  void run_app_cal(const CheryArs131AppImages& images);
   void wait(std::chrono::milliseconds duration) const;
   void cancelled() const;
 

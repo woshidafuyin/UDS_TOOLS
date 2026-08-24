@@ -1262,7 +1262,10 @@ void MainWindow::applySelectedProfile(int device_index) {
   if (profile.supports_cal_download) {
     const auto concise_chery_labels =
         profile.profile_id == QStringLiteral("chery_ars1_33") ||
-        profile.profile_id == QStringLiteral("chery_kp31");
+        profile.profile_id == QStringLiteral("chery_kp31") ||
+        profile.profile_id == QStringLiteral("chery_t1ej") ||
+        profile.profile_id == QStringLiteral("chery_e0y") ||
+        profile.profile_id == QStringLiteral("chery_t22");
     ui_->entryModeComboBox->addItem(concise_chery_labels
                                         ? QStringLiteral("CAL")
                                         : QStringLiteral("CAL标定刷写"),
@@ -1704,6 +1707,10 @@ void MainWindow::startFlashFromUi() {
   const auto entry_mode = ui_->entryModeComboBox->currentData().toString();
   const auto needs_app =
       entry_mode != QStringLiteral("cal");
+  const auto needs_app_verification =
+      needs_app ||
+      (profile.profile_id == QStringLiteral("chery_t22") &&
+       entry_mode == QStringLiteral("cal"));
   const auto needs_cal =
       entry_mode == QStringLiteral("cal") ||
       entry_mode == QStringLiteral("app_cal") ||
@@ -1720,7 +1727,7 @@ void MainWindow::startFlashFromUi() {
       std::tuple{profile.app_verify_label.isEmpty()
                      ? QStringLiteral("APP Data")
                      : profile.app_verify_label,
-                 needs_app,
+                  needs_app_verification,
                  profile.app_verify_path,
                  fullPath(ui_->appVerifyPathLineEdit)},
       std::tuple{QStringLiteral("CAL"), needs_cal, profile.cal_path,

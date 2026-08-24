@@ -1202,14 +1202,26 @@ int main(int argc, char* argv[]) {
           std::pair{QStringLiteral("E0Y"),
                     std::pair{QStringLiteral("0x70D"),
                               QStringLiteral("0x78D")}}};
-      for (const auto& [project, endpoint] : chery_editable_endpoints) {
+       for (const auto& [project, endpoint] : chery_editable_endpoints) {
         devices->setCurrentIndex(find_text(devices, project));
         application.processEvents();
-        check(!tx_id->isReadOnly() && !rx_id->isReadOnly() &&
+         check(!tx_id->isReadOnly() && !rx_id->isReadOnly() &&
                   tx_id->text() == endpoint.first &&
                   rx_id->text() == endpoint.second,
-              "Chery CANoe default endpoint was not applied as an editable UI value");
-      }
+               "Chery CANoe default endpoint was not applied as an editable UI value");
+         {
+           const auto t1ej_app = entries->findData(QStringLiteral("app"));
+           const auto t1ej_cal = entries->findData(QStringLiteral("cal"));
+           const auto t1ej_app_cal =
+               entries->findData(QStringLiteral("app_cal"));
+           check(entries->count() == 3 && t1ej_app >= 0 && t1ej_cal >= 0 &&
+                     t1ej_app_cal >= 0 &&
+                     entries->itemText(t1ej_cal) == QStringLiteral("CAL") &&
+                     entries->itemText(t1ej_app_cal) ==
+                         QStringLiteral("APP+CAL"),
+                 "T1EJ/T22/E0Y TC_7/TC_2 flashing modes are not exposed");
+         }
+       }
       check_file_panel_is_stable();
       check_project_devices(application, projects, devices,
                              QStringLiteral("长马"),

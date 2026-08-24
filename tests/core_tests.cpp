@@ -1610,6 +1610,7 @@ void test_chery_ars131_project_contracts() {
             t22.seed_subfunction == 0x07 && t22.seed_length == 4 &&
             t22.fingerprint_did == 0xF15A &&
             t22.d004_mode == uds::CheryArs131D004Mode::app_signature &&
+            t22.post_d004_delay == std::chrono::milliseconds(2000) &&
             t22.initial_physical_extended_session && t22.install_d005 &&
             !t22.restore_default_session,
         "T22 frozen normal-flow contract mismatch");
@@ -1629,6 +1630,36 @@ void test_chery_ars131_project_contracts() {
                                       0xC0, 0x08, 0x00, 0x00, 0x00,
                                       0x0F, 0x50, 0x00}),
         "Chery ARS1.31 common address encoding mismatch");
+  const auto t1ej_app = uds::resolve_chery_ars1_31_download_plan(
+      uds::CheryArs131Project::t1ej, L"app");
+  const auto t1ej_cal = uds::resolve_chery_ars1_31_download_plan(
+      uds::CheryArs131Project::t1ej, L"cal");
+  const auto t1ej_app_cal = uds::resolve_chery_ars1_31_download_plan(
+      uds::CheryArs131Project::t1ej, L"app_cal");
+  const auto e0y_cal = uds::resolve_chery_ars1_31_download_plan(
+      uds::CheryArs131Project::e0y, L"cal");
+  const auto e0y_app_cal = uds::resolve_chery_ars1_31_download_plan(
+      uds::CheryArs131Project::e0y, L"app_cal");
+  const auto t22_cal = uds::resolve_chery_ars1_31_download_plan(
+      uds::CheryArs131Project::t22, L"cal");
+  const auto t22_app_cal = uds::resolve_chery_ars1_31_download_plan(
+      uds::CheryArs131Project::t22, L"app_cal");
+  check(t1ej_app.download_app && !t1ej_app.download_cal &&
+            !t1ej_cal.download_app && t1ej_cal.download_cal &&
+            t1ej_app_cal.download_app && t1ej_app_cal.download_cal &&
+            !e0y_cal.download_app && e0y_cal.download_cal &&
+            e0y_app_cal.download_app && e0y_app_cal.download_cal &&
+            !t22_cal.download_app && t22_cal.download_cal &&
+            t22_app_cal.download_app && t22_app_cal.download_cal,
+        "T1EJ/T22/E0Y APP/TC_7/TC_2 mode resolution mismatch");
+  bool invalid_mode_rejected = false;
+  try {
+    static_cast<void>(uds::resolve_chery_ars1_31_download_plan(
+        uds::CheryArs131Project::t22, L"ft"));
+  } catch (const std::invalid_argument&) {
+    invalid_mode_rejected = true;
+  }
+  check(invalid_mode_rejected, "T22 unexpectedly accepted unsupported FT mode");
 
   const auto source = std::filesystem::path(UDS_SOURCE_DIR);
   for (const auto* profile_name : {"chery_t1ej.ini", "chery_t22.ini",
@@ -1657,6 +1688,34 @@ void test_chery_ars131_project_contracts() {
                                   512, 512).size() == 512 &&
               std::filesystem::is_regular_file(source / profile.security_dll),
           std::string("Chery packaged resources mismatch: ") + profile_name);
+    check(profile.supports_cal_download &&
+                profile.cal_start == 0xC0180000 &&
+                profile.cal_length == 0xC8 &&
+                !profile.cal_file.empty() &&
+                !profile.cal_verify_file.empty() &&
+                uds::load_srecord_window(source / profile.cal_file,
+                                         profile.cal_start,
+                                         profile.cal_length).size() ==
+                    profile.cal_length &&
+                uds::load_hex_bytes(source / profile.cal_verify_file,
+                                    512, 512).size() == 512,
+          "T1EJ/T22/E0Y CAL/TC_7 and APP+CAL/TC_2 resources mismatch");
+    if (profile.id == L"chery_t22") {
+      check(profile.cal_file.filename() ==
+                    L"T22_inter_ICE_S0000038443_20260316.s19" &&
+                profile.cal_verify_file.filename() ==
+                    L"CIR_S0000038443_000202_CAL1_MCU_UDS_20260317.rsa" &&
+                uds::load_srecord_window(
+                    source / "resources/chery_t22/CAL/"
+                             "T22_inter_PHEV_S0000016021_20260316.s19",
+                    profile.cal_start, profile.cal_length).size() ==
+                    profile.cal_length &&
+                uds::load_hex_bytes(
+                    source / "resources/chery_t22/Verification/"
+                             "CIR_S0000016021_000202_CAL1_MCU_UDS_20260317.rsa",
+                    512, 512).size() == 512,
+            "T22 Panel default ICE or alternate PHEV CAL/RSA pairing mismatch");
+    }
   }
 }
 
