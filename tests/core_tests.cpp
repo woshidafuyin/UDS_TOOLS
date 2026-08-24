@@ -2394,12 +2394,12 @@ void test_lp_arc_protocol_and_resources() {
       uds::lp_arc_radar_spec(configurable_profile);
   check(configurable_spec.app_tx_id == 0x72E &&
             configurable_spec.app_rx_id == 0x72F &&
-            configurable_spec.raw_boot_transition_tx_id == 0x771 &&
+            configurable_spec.raw_boot_transition_tx_id == 0 &&
             configurable_spec.security.seed_subfunction == 0x11 &&
             configurable_spec.security.seed_length == 4 &&
             configurable_spec.security.key_length == 4 &&
             configurable_spec.security.known_answers.size() == 2,
-        "LP-ARC configurable APP endpoint/fixed boot transition mismatch");
+        "LP-ARC configurable APP endpoint/target-aware boot transition mismatch");
 
   const auto chuneng_profile = uds::load_profile_ini(
       source / "profiles" / "chuneng_331_left_rear.ini");
@@ -2668,11 +2668,11 @@ void test_lp_arf_protocol_and_resources() {
             spec.pls_tx_id == 0x701 && spec.pls_rx_id == 0x761 &&
             spec.functional_id == 0x7DF && !spec.driver_address &&
             !spec.driver_length &&
-            !spec.pls_programming_final_on_app &&
+            spec.pls_programming_final_on_app &&
             !spec.send_raw_boot_transition &&
             spec.app_address == uds::kLpArfAppAddress &&
             spec.app_length == uds::kLpArfAppLength,
-        "LP-ARF flow spec imported an ARC-only phase or endpoint");
+        "LP-ARF flow spec lost its APP-final transition route or imported an ARC-only phase");
 
   const auto root = source / "resources" / "lp_arf";
   const auto app = uds::load_single_srecord_segment(

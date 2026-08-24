@@ -8,9 +8,16 @@ LingpaoRadarSpec lp_arf_radar_spec() {
   // The ARF6.31 CANoe Download() intentionally leaves the Driver 34/36/37
   // and 0202 verification block commented.  Keep the driver fields empty so
   // the shared core cannot accidentally import LP-ARC's Driver phase.
-  return {"LP-ARF", 0x751, 0x759, 0x701, 0x761, 0x7DF,
-          kLpArfAppAddress, kLpArfAppLength, std::nullopt, std::nullopt,
-          kLpArfBlockLength, kLpArfCertificateLength, false, false};
+  LingpaoRadarSpec spec{
+      "LP-ARF", 0x751, 0x759, 0x701, 0x761, 0x7DF,
+      kLpArfAppAddress, kLpArfAppLength, std::nullopt, std::nullopt,
+      kLpArfBlockLength, kLpArfCertificateLength};
+  // CANoe switches gResId to the APP response ID after transmitting 10 02.
+  // When 0x761 first returns 7F 10 78, the final 50 02 therefore arrives on
+  // 0x759 and must be received through the APP transport.
+  spec.pls_programming_final_on_app = true;
+  spec.send_raw_boot_transition = false;
+  return spec;
 }
 
 LpArfEntryMode resolve_lp_arf_entry_mode(std::wstring_view entry_mode) {

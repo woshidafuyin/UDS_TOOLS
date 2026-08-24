@@ -11,11 +11,11 @@ LingpaoRadarSpec lp_arc_radar_spec(const FlashProfile& profile) {
       kLpArcAppAddress, kLpArcAppLength,
       kLpArcDriverAddress, kLpArcDriverLength,
       kLpArcBlockLength, kLpArcCertificateLength};
-  // LP_ARC331.zip/ARC/CAPL/Flash20230727.can uses the fixed standard-CAN
-  // transition frame 0x771: 03 FB A5 00 before SecurityAccess.  The APP
-  // diagnostic endpoint may vary by radar target, but this transition ID does
-  // not follow the selected physical request ID.
-  spec.raw_boot_transition_tx_id = 0x771;
+  // Follow the selected APP request ID for the raw 03 FB A5 00 transition.
+  // The successful Device 0 FT trace sends it on 0x772 before 27 11; keeping
+  // this unset makes the shared core resolve it from spec.app_tx_id instead of
+  // forcing every LP-ARC target onto the older fixed 0x771 route.
+  spec.raw_boot_transition_tx_id = 0;
   spec.security.seed_subfunction =
       static_cast<std::uint8_t>(profile.security_level);
   spec.security.known_answers = {
