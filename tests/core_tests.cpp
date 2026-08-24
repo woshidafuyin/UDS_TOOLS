@@ -11,6 +11,8 @@
 #include "core/uds_client.hpp"
 #include "core/uds_nrc.hpp"
 #include "flash/chery_ars1_33_flow.hpp"
+#include "flash/chery_ars1_31_app_flow.hpp"
+#include "flash/chery_ars1_31_app_flow.hpp"
 #include "flash/chery_kp31_flow.hpp"
 #include "flash/chuneng_331_flow.hpp"
 #include "flash/chuneng_331_workflow.hpp"
@@ -940,12 +942,15 @@ void test_workflow_registry() {
         "ChuNeng ARC331 radar workflow is not registered");
   check(uds::is_flash_workflow_registered(L"lp_arf"),
         "LP-ARF workflow is not registered");
+  check(uds::is_flash_workflow_registered(L"lp_arf231_a12") &&
+            uds::is_flash_workflow_registered(L"lp_arf231_b11"),
+        "A12/B11 ARF2.31 workflows are not independently registered");
   check(uds::is_flash_workflow_registered(L"geely_p416"),
         "Geely P416 workflow is not registered");
   check(!uds::is_flash_workflow_registered(L"future_flow"),
         "unknown workflow was reported as registered");
   const auto registered = uds::registered_flash_workflows();
-  check(registered.size() == 15 &&
+  check(registered.size() == 17 &&
             std::find(registered.begin(), registered.end(), L"chuneng_331") == registered.end() &&
             std::find(registered.begin(), registered.end(), L"chuneng_arc331") != registered.end() &&
              std::find(registered.begin(), registered.end(), L"chery_ars1_33") != registered.end() &&
@@ -964,6 +969,10 @@ void test_workflow_registry() {
                       L"lp_arc") != registered.end() &&
             std::find(registered.begin(), registered.end(),
                       L"lp_arf") != registered.end() &&
+            std::find(registered.begin(), registered.end(),
+                      L"lp_arf231_a12") != registered.end() &&
+            std::find(registered.begin(), registered.end(),
+                      L"lp_arf231_b11") != registered.end() &&
             std::find(registered.begin(), registered.end(),
                       L"geely_p416") != registered.end(),
         "workflow registry enumeration mismatch");
@@ -1585,6 +1594,110 @@ void test_chery_kp31_protocol_and_resources() {
             std::filesystem::file_size(root / "Driver" / "FlashDrv.s19") ==
                 2616,
         "Chery KP31 packaged reference resources mismatch");
+}
+
+void test_chery_ars131_project_contracts() {
+  const auto& t1ej = uds::chery_ars1_31_app_spec(uds::CheryArs131Project::t1ej);
+  const auto& t22 = uds::chery_ars1_31_app_spec(uds::CheryArs131Project::t22);
+  const auto& e0y = uds::chery_ars1_31_app_spec(uds::CheryArs131Project::e0y);
+  check(t1ej.tx_id == 0x7AF && t1ej.rx_id == 0x7BF &&
+            t1ej.seed_subfunction == 0x07 && t1ej.seed_length == 4 &&
+            t1ej.fingerprint_did == 0xF15A &&
+            t1ej.d004_mode == uds::CheryArs131D004Mode::routine_only &&
+            t1ej.install_d005 && t1ej.restore_default_session,
+        "T1EJ frozen normal-flow contract mismatch");
+  check(t22.tx_id == 0x7AF && t22.rx_id == 0x7BF &&
+            t22.seed_subfunction == 0x07 && t22.seed_length == 4 &&
+            t22.fingerprint_did == 0xF15A &&
+            t22.d004_mode == uds::CheryArs131D004Mode::app_signature &&
+            t22.initial_physical_extended_session && t22.install_d005 &&
+            !t22.restore_default_session,
+        "T22 frozen normal-flow contract mismatch");
+  check(e0y.tx_id == 0x70D && e0y.rx_id == 0x78D &&
+            e0y.seed_subfunction == 0x11 && e0y.seed_length == 16 &&
+            e0y.fingerprint_did == 0xF184 &&
+            e0y.precondition_routine == 0x0203 &&
+            e0y.verification_routine == 0xDD02 &&
+            e0y.d004_mode == uds::CheryArs131D004Mode::none &&
+            !e0y.install_d005,
+        "E0Y frozen normal-flow contract mismatch");
+  check(uds::chery_ars1_31_request_download(0x08000000, 0x400) ==
+            std::vector<std::uint8_t>({0x34, 0x00, 0x44, 0x08, 0x00,
+                                      0x00, 0x00, 0x00, 0x00, 0x04, 0x00}) &&
+            uds::chery_ars1_31_erase_memory(0xC0080000, 0xF5000) ==
+            std::vector<std::uint8_t>({0x31, 0x01, 0xFF, 0x00, 0x44,
+                                      0xC0, 0x08, 0x00, 0x00, 0x00,
+                                      0x0F, 0x50, 0x00}),
+        "Chery ARS1.31 common address encoding mismatch");
+
+  const auto source = std::filesystem::path(UDS_SOURCE_DIR);
+  for (const auto* profile_name : {"chery_t1ej.ini", "chery_t22.ini",
+                                   "chery_e0y.ini"}) {
+    const auto profile = uds::load_profile_ini(source / "profiles" / profile_name);
+    const auto workflow = uds::create_flash_workflow(profile.flow);
+    check(workflow && workflow->id() == profile.flow &&
+              !workflow->report_title(profile).empty() &&
+              !profile.driver_file.empty() && !profile.app_file.empty() &&
+              !profile.driver_verify_file.empty() &&
+              !profile.app_verify_file.empty() && !profile.security_dll.empty(),
+          std::string("independent Chery workflow/profile mismatch: ") +
+              profile_name);
+    check(uds::load_srecord_window(source / profile.driver_file,
+                                   profile.driver_start,
+                                   profile.driver_length).size() ==
+                  profile.driver_length &&
+              uds::load_srecord_window(source / profile.app_file,
+                                       profile.app_start,
+                                       profile.app_length).size() ==
+                  profile.app_length &&
+              uds::load_hex_bytes(source / profile.driver_verify_file,
+                                  512, 512).size() == 512 &&
+              uds::load_hex_bytes(source / profile.app_verify_file,
+                                  512, 512).size() == 512 &&
+              std::filesystem::is_regular_file(source / profile.security_dll),
+          std::string("Chery packaged resources mismatch: ") + profile_name);
+  }
+}
+
+void test_lp_arf231_project_contracts() {
+  const auto source = std::filesystem::path(UDS_SOURCE_DIR);
+  for (const auto* profile_name : {"lp_arf231_a12.ini", "lp_arf231_b11.ini"}) {
+    const auto profile = uds::load_profile_ini(source / "profiles" / profile_name);
+    check(profile.tx_id == 0x751 && profile.rx_id == 0x759 &&
+              profile.ft_tx_id == 0x701 && profile.ft_rx_id == 0x761 &&
+              profile.functional_id == 0x7DF && profile.can_fd &&
+              !profile.uds_fd && profile.supports_ft_entry &&
+              profile.app_start == 0xC0000 && profile.app_length == 0x180000 &&
+              profile.driver_length == 0 && profile.targets.size() == 1 &&
+              profile.targets[0].pending_validation,
+          std::string("ARF2.31 Profile contract mismatch: ") + profile_name);
+    const auto workflow = uds::create_flash_workflow(profile.flow);
+    check(workflow && workflow->id() == profile.flow &&
+              workflow->report_title(profile).find("ARF2.31") != std::string::npos,
+          std::string("ARF2.31 independent workflow mismatch: ") + profile_name);
+    const auto app = uds::load_srecord_window(source / profile.app_file,
+                                               profile.app_start,
+                                               profile.app_length);
+    std::ifstream input(source / profile.app_verify_file, std::ios::binary);
+    const std::vector<std::uint8_t> package(
+        (std::istreambuf_iterator<char>(input)), {});
+    check(package.size() > uds::kLpArfCertificateLength &&
+              package[0] == 'L' && package[1] == 'E' &&
+              package[2] == 'A' && package[3] == 'P',
+          std::string("ARF2.31 TMP package invalid: ") + profile_name);
+    const auto hash = uds::sha256(app);
+    check(std::equal(hash.begin(), hash.end(),
+                     package.end() - static_cast<std::ptrdiff_t>(
+                                         uds::kLpArfCertificateLength)) &&
+              std::filesystem::file_size(source / profile.security_dll) == 777216,
+          std::string("ARF2.31 APP/TMP/DLL binding mismatch: ") + profile_name);
+  }
+  const auto blocked = uds::load_profile_ini(
+      source / "profiles" / "beiqi_requirement_blocked.ini");
+  check(blocked.placeholder && blocked.flow.empty() &&
+            blocked.description.find(L"BLOCKED_REQUIREMENT") != std::wstring::npos &&
+            !uds::is_flash_workflow_registered(blocked.id),
+        "empty Beiqi requirement must remain fail-closed");
 }
 
 void test_longma_ars131_protocol_and_resources() {
@@ -2325,7 +2438,7 @@ void test_shidaixinan_arf232_project_profiles_and_resources() {
   }
 
   const auto catalog = uds::discover_flash_profiles(source / "profiles");
-  check(catalog.errors.empty() && catalog.profiles.size() == 18,
+  check(catalog.errors.empty() && catalog.profiles.size() == 21,
         "Shidaixinan project profiles were not discovered cleanly");
   for (const auto& project : projects) {
     check(std::any_of(
@@ -2772,6 +2885,8 @@ int main() {
     run("xizhong_rsmr_protocol_baseline", test_xizhong_rsmr_protocol_baseline);
     run("chery_ars133_protocol_and_resources", test_chery_ars133_protocol_and_resources);
     run("chery_kp31_protocol_and_resources", test_chery_kp31_protocol_and_resources);
+    run("chery_ars131_project_contracts",
+        test_chery_ars131_project_contracts);
     run("longma_ars131_protocol_and_resources", test_longma_ars131_protocol_and_resources);
     run("c857_project_profiles_and_resources",
         test_c857_project_profiles_and_resources);
@@ -2785,6 +2900,8 @@ int main() {
         test_lp_arc_protocol_and_resources);
     run("lp_arf_protocol_and_resources",
         test_lp_arf_protocol_and_resources);
+    run("lp_arf231_project_contracts",
+        test_lp_arf231_project_contracts);
     std::cout << "core_tests PASS\n";
     return 0;
   } catch (const std::exception& error) {

@@ -1,6 +1,7 @@
 #include "flash/flash_workflow.hpp"
 
 #include "flash/chery_ars1_33_workflow.hpp"
+#include "flash/chery_ars1_31_project_workflows.hpp"
 #include "flash/chery_kp31_workflow.hpp"
 #include "flash/chuneng_331_workflow.hpp"
 #include "flash/geely_p416_workflow.hpp"
@@ -8,6 +9,7 @@
 #include "flash/longma_ars1_31_workflow.hpp"
 #include "flash/lp_arc_workflow.hpp"
 #include "flash/lp_arf_workflow.hpp"
+#include "flash/lp_arf231_project_workflows.hpp"
 #include "flash/shidaixinan_hjzj_fmr_workflow.hpp"
 #include "flash/xizhong_rsmr_workflow.hpp"
 
@@ -31,6 +33,18 @@ std::unique_ptr<FlashWorkflow> create_chery_ars1_33() {
 
 std::unique_ptr<FlashWorkflow> create_chery_kp31() {
   return std::make_unique<CheryKp31Workflow>();
+}
+
+std::unique_ptr<FlashWorkflow> create_chery_t1ej() {
+  return std::make_unique<CheryT1ejWorkflow>();
+}
+
+std::unique_ptr<FlashWorkflow> create_chery_t22() {
+  return std::make_unique<CheryT22Workflow>();
+}
+
+std::unique_ptr<FlashWorkflow> create_chery_e0y() {
+  return std::make_unique<CheryE0yWorkflow>();
 }
 
 std::unique_ptr<FlashWorkflow> create_longma_ars1_31() {
@@ -65,6 +79,14 @@ std::unique_ptr<FlashWorkflow> create_lp_arf() {
   return std::make_unique<LpArfWorkflow>();
 }
 
+std::unique_ptr<FlashWorkflow> create_lp_arf231_a12() {
+  return std::make_unique<LpArf231A12Workflow>();
+}
+
+std::unique_ptr<FlashWorkflow> create_lp_arf231_b11() {
+  return std::make_unique<LpArf231B11Workflow>();
+}
+
 std::unique_ptr<FlashWorkflow> create_geely_p416() {
   return std::make_unique<GeelyP416Workflow>();
 }
@@ -74,9 +96,9 @@ constexpr std::array kWorkflowRegistrations{
   WorkflowRegistration{L"chuneng_arc331", &create_chuneng_arc331},
   WorkflowRegistration{L"chery_ars1_33", &create_chery_ars1_33},
   WorkflowRegistration{L"chery_kp31", &create_chery_kp31},
-  WorkflowRegistration{L"chery_e0y", &create_chery_kp31},
-  WorkflowRegistration{L"chery_t22", &create_chery_kp31},
-  WorkflowRegistration{L"chery_t1ej", &create_chery_kp31},
+  WorkflowRegistration{L"chery_e0y", &create_chery_e0y},
+  WorkflowRegistration{L"chery_t22", &create_chery_t22},
+  WorkflowRegistration{L"chery_t1ej", &create_chery_t1ej},
   WorkflowRegistration{L"changan_c857", &create_changan_c857},
   WorkflowRegistration{L"longma_ars1_31", &create_longma_ars1_31},
    WorkflowRegistration{L"lingyao_b216", &create_lingyao_b216},
@@ -86,6 +108,8 @@ constexpr std::array kWorkflowRegistrations{
                        &create_shidaixinan_hjzj_fmr},
   WorkflowRegistration{L"lp_arc", &create_lp_arc},
   WorkflowRegistration{L"lp_arf", &create_lp_arf},
+  WorkflowRegistration{L"lp_arf231_a12", &create_lp_arf231_a12},
+  WorkflowRegistration{L"lp_arf231_b11", &create_lp_arf231_b11},
   WorkflowRegistration{L"geely_p416", &create_geely_p416},
 };
 

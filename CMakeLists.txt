@@ -110,6 +110,8 @@ target_compile_definitions(uds_core PUBLIC
 add_library(uds_flash STATIC
   src/flash/chery_ars1_33_flow.cpp
   src/flash/chery_ars1_33_workflow.cpp
+  src/flash/chery_ars1_31_app_flow.cpp
+  src/flash/chery_ars1_31_project_workflows.cpp
   src/flash/chery_kp31_flow.cpp
   src/flash/chery_kp31_workflow.cpp
   src/flash/c857_project_workflows.cpp
@@ -120,6 +122,7 @@ add_library(uds_flash STATIC
   src/flash/lp_arc_workflow.cpp
   src/flash/lp_arf_flow.cpp
   src/flash/lp_arf_workflow.cpp
+  src/flash/lp_arf231_project_workflows.cpp
   src/flash/geely_p416_flow.cpp
   src/flash/geely_p416_workflow.cpp
   src/flash/shidaixinan_hjzj_fmr_flow.cpp
@@ -230,6 +233,8 @@ if(UDS_BUILD_QT_UI AND CMAKE_SIZEOF_VOID_P EQUAL 8)
     add_library(uds_flash_qt STATIC
       src/flash/chery_ars1_33_flow.cpp
       src/flash/chery_ars1_33_workflow.cpp
+      src/flash/chery_ars1_31_app_flow.cpp
+      src/flash/chery_ars1_31_project_workflows.cpp
       src/flash/chery_kp31_flow.cpp
       src/flash/chery_kp31_workflow.cpp
       src/flash/c857_project_workflows.cpp
@@ -240,6 +245,7 @@ if(UDS_BUILD_QT_UI AND CMAKE_SIZEOF_VOID_P EQUAL 8)
       src/flash/lp_arc_workflow.cpp
       src/flash/lp_arf_flow.cpp
       src/flash/lp_arf_workflow.cpp
+      src/flash/lp_arf231_project_workflows.cpp
       src/flash/geely_p416_flow.cpp
       src/flash/geely_p416_workflow.cpp
       src/flash/shidaixinan_hjzj_fmr_flow.cpp
@@ -349,6 +355,31 @@ if(UDS_BUILD_QT_UI AND CMAKE_SIZEOF_VOID_P EQUAL 8)
               "$<TARGET_FILE_DIR:uds_tool_qt>/resources/chery_ars1_33"
       COMMAND ${CMAKE_COMMAND} -E remove_directory
               "$<TARGET_FILE_DIR:uds_tool_qt>/resources/chery_kp31"
+      COMMAND ${CMAKE_COMMAND} -E remove_directory
+              "$<TARGET_FILE_DIR:uds_tool_qt>/resources/chery_t1ej"
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+              "${CMAKE_CURRENT_SOURCE_DIR}/resources/chery_t1ej"
+              "$<TARGET_FILE_DIR:uds_tool_qt>/resources/chery_t1ej"
+      COMMAND ${CMAKE_COMMAND} -E remove_directory
+              "$<TARGET_FILE_DIR:uds_tool_qt>/resources/chery_t22"
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+              "${CMAKE_CURRENT_SOURCE_DIR}/resources/chery_t22"
+              "$<TARGET_FILE_DIR:uds_tool_qt>/resources/chery_t22"
+      COMMAND ${CMAKE_COMMAND} -E remove_directory
+              "$<TARGET_FILE_DIR:uds_tool_qt>/resources/chery_e0y"
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+              "${CMAKE_CURRENT_SOURCE_DIR}/resources/chery_e0y"
+              "$<TARGET_FILE_DIR:uds_tool_qt>/resources/chery_e0y"
+      COMMAND ${CMAKE_COMMAND} -E remove_directory
+              "$<TARGET_FILE_DIR:uds_tool_qt>/resources/lp_arf231_a12"
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+              "${CMAKE_CURRENT_SOURCE_DIR}/resources/lp_arf231_a12"
+              "$<TARGET_FILE_DIR:uds_tool_qt>/resources/lp_arf231_a12"
+      COMMAND ${CMAKE_COMMAND} -E remove_directory
+              "$<TARGET_FILE_DIR:uds_tool_qt>/resources/lp_arf231_b11"
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+              "${CMAKE_CURRENT_SOURCE_DIR}/resources/lp_arf231_b11"
+              "$<TARGET_FILE_DIR:uds_tool_qt>/resources/lp_arf231_b11"
       COMMAND ${CMAKE_COMMAND} -E copy_directory
               "${CMAKE_CURRENT_SOURCE_DIR}/resources/chery_kp31"
               "$<TARGET_FILE_DIR:uds_tool_qt>/resources/chery_kp31"
@@ -608,6 +639,11 @@ endfunction()
 install(DIRECTORY profiles DESTINATION .)
 install_runtime_resource(chery_ars1_33)
 install_runtime_resource(chery_kp31)
+install_runtime_resource(chery_t1ej)
+install_runtime_resource(chery_t22)
+install_runtime_resource(chery_e0y)
+install_runtime_resource(lp_arf231_a12)
+install_runtime_resource(lp_arf231_b11)
 install_runtime_resource(changan_c857)
 install_runtime_resource(lingyao_b216)
 install_runtime_resource(longma_ars1_31)

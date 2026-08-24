@@ -405,50 +405,6 @@ void CheryKp31Flow::run_app_cal(const CheryKp31Images& images) {
   if (log_) log_(100, "KP31 APP+CAL TC_2 completed");
 }
 
-void CheryKp31Flow::run_t1ej_app_only(const CheryKp31Images& images,
-                                      std::stop_token stop) {
-  stop_ = stop;
-  require_size(images.driver, layout_.driver_length, "Driver");
-  require_size(images.app, layout_.app_length, "APP");
-  require_size(images.driver_verification, 512U, "Driver RSA");
-  require_size(images.app_verification, 512U, "APP Hash/RSA");
-
-  send_functional_suppressed(
-      std::array<std::uint8_t, 2>{0x10, 0x83}, 1,
-      "FUNC 10 83 ExtendedSession suppressPositiveResponse (T1EJ)");
-  expect_routine(std::array<std::uint8_t, 4>{0x31, 0x01, 0xD0, 0x03},
-                 std::array<std::uint8_t, 4>{0x71, 0x01, 0xD0, 0x03},
-                 3, "31 01 D003 CheckProgrammingPrecondition (T1EJ)");
-  expect_routine(std::array<std::uint8_t, 4>{0x31, 0x01, 0xD0, 0x04},
-                 std::array<std::uint8_t, 4>{0x71, 0x01, 0xD0, 0x04},
-                 5, "31 01 D004 SecuritySignatureCheck (T1EJ)");
-  send_functional_suppressed(
-      std::array<std::uint8_t, 2>{0x85, 0x82}, 7,
-      "FUNC 85 82 ControlDTCSetting off suppressPositiveResponse (T1EJ)");
-  send_functional_suppressed(
-      std::array<std::uint8_t, 3>{0x28, 0x81, 0x03}, 9,
-      "FUNC 28 81 03 CommunicationControl suppressPositiveResponse (T1EJ)");
-  expect(physical_, std::array<std::uint8_t, 2>{0x10, 0x02},
-         std::array<std::uint8_t, 2>{0x50, 0x02}, 12,
-         "10 02 ProgrammingSession (T1EJ)");
-  unlock_security(16);
-
-  transfer_image(layout_.driver_start, images.driver, 20, 30, "Driver", true);
-  verify_rsa(0xD002, images.driver_verification, 33, "VerifyDriverRSA (T1EJ)");
-  wait_cancellable(2000ms);
-  expect_routine(chery_kp31_erase_memory(layout_.app_start, layout_.app_length),
-                 std::array<std::uint8_t, 4>{0x71, 0x01, 0xFF, 0x00},
-                 38, "31 01 FF00 EraseAPP (T1EJ)");
-  transfer_image(layout_.app_start, images.app, 42, 82, "APP", true);
-  verify_rsa(0xD002, images.app_verification, 86, "VerifyAppHash/RSA (T1EJ)");
-  check_dependencies(91);
-  expect_routine(std::array<std::uint8_t, 4>{0x31, 0x01, 0xD0, 0x05},
-                 std::array<std::uint8_t, 4>{0x71, 0x01, 0xD0, 0x05},
-                 94, "31 01 D005 FlashFileInstallation (T1EJ)");
-  hard_reset_and_clear_dtc(97, true);
-  if (log_) log_(100, "T1EJ APP Download completed");
-}
-
 void CheryKp31Flow::run_cal_only(const CheryKp31Images& images) {
   require_size(images.driver, layout_.driver_length, "Driver");
   require_size(images.cal, layout_.cal_length, "CAL");

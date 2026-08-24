@@ -65,8 +65,6 @@ public:
 
   void run(const CheryKp31Images& images, CheryKp31FlashMode mode,
            std::stop_token stop = {});
-  void run_t1ej_app_only(const CheryKp31Images& images,
-                         std::stop_token stop = {});
 
 private:
   UdsResponse expect(

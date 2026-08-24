@@ -1,0 +1,173 @@
+#include "flash/chery_ars1_31_project_workflows.hpp"
+
+#include "core/flash_data.hpp"
+#include "core/isotp.hpp"
+#include "core/keygen_client.hpp"
+#include "core/uds_client.hpp"
+#include "flash/chery_ars1_31_app_flow.hpp"
+
+#include <chrono>
+#include <filesystem>
+#include <sstream>
+#include <stdexcept>
+
+namespace uds {
+namespace {
+using namespace std::chrono_literals;
+
+std::filesystem::path resolve(const FlashJob& job,
+                              const std::filesystem::path& selected) {
+  if (selected.empty() || selected.is_absolute()) return selected;
+  return job.executable_directory / selected;
+}
+
+void report(const FlashWorkflowCallbacks& callbacks, std::string step,
+            std::string verdict, std::string detail) {
+  if (callbacks.report) callbacks.report(std::move(step), std::move(verdict),
+                                         std::move(detail));
+}
+
+void required(const std::filesystem::path& path, const char* label) {
+  if (path.empty()) throw std::runtime_error(std::string("select ") + label);
+  if (!std::filesystem::is_regular_file(path)) {
+    throw std::runtime_error(std::string(label) + " does not exist: " +
+                             path.string());
+  }
+}
+
+void run_project(CheryArs131Project project, std::wstring_view workflow_id,
+                 const FlashJob& job,
+                 const FlashWorkflowCallbacks& callbacks,
+                 std::stop_token stop) {
+  const auto& spec = chery_ars1_31_app_spec(project);
+  if (job.profile.flow != workflow_id) {
+    throw std::runtime_error(spec.name + " workflow/profile mismatch");
+  }
+  if (job.entry_mode != L"app" && !job.entry_mode.empty()) {
+    throw std::runtime_error(spec.name + " requirement supports normal APP mode only");
+  }
+  if (job.profile.placeholder || job.profile.can_fd ||
+      job.profile.extended_id || job.profile.uds_fd || job.profile.uds_brs ||
+      job.profile.power_control || job.profile.supports_ft_entry ||
+      job.profile.supports_cal_download ||
+      job.profile.nominal_bitrate != 500000 || job.profile.padding != 0x55 ||
+      job.profile.tx_id != spec.tx_id || job.profile.rx_id != spec.rx_id ||
+      job.profile.functional_id != 0x7DF ||
+      job.profile.security_level != spec.seed_subfunction ||
+      !job.profile.security_variant.empty()) {
+    throw std::runtime_error(
+        spec.name + " Profile conflicts with the frozen CANoe requirement contract");
+  }
+
+  CheryArs131AppLayout layout{job.profile.driver_start,
+                              job.profile.driver_length,
+                              job.profile.app_start,
+                              job.profile.app_length};
+  if (layout.driver_start != 0x08000000 || layout.driver_length != 0x400 ||
+      layout.app_start != 0xC0080000 || layout.app_length != 0xF5000) {
+    throw std::runtime_error(spec.name + " Driver/APP layout mismatch");
+  }
+
+  const auto driver = resolve(job, job.driver_file);
+  const auto app = resolve(job, job.app_file);
+  const auto driver_signature = resolve(job, job.driver_verify_file);
+  const auto app_signature = resolve(job, job.app_verify_file);
+  const auto dll = resolve(job, job.security_dll);
+  required(driver, "Driver S19");
+  required(app, "APP S19");
+  required(driver_signature, "Driver 512-byte RSA");
+  required(app_signature, "APP 512-byte RSA");
+  required(dll, "SeedKey DLL");
+
+  CheryArs131AppImages images;
+  try {
+    images.driver = load_srecord_window(driver, layout.driver_start,
+                                        layout.driver_length);
+    images.app = load_srecord_window(app, layout.app_start,
+                                     layout.app_length);
+    images.driver_signature = load_hex_bytes(driver_signature, 512, 512);
+    images.app_signature = load_hex_bytes(app_signature, 512, 512);
+  } catch (const std::exception& error) {
+    throw std::runtime_error(spec.name +
+                             " file preflight failed before CAN access: " +
+                             error.what());
+  }
+  std::ostringstream contract;
+  contract << spec.name << "; TX/RX=0x" << std::hex << std::uppercase
+           << spec.tx_id << "/0x" << spec.rx_id << "; 27 "
+           << static_cast<unsigned>(spec.seed_subfunction) << "/"
+           << static_cast<unsigned>(spec.seed_subfunction + 1)
+           << "; seed/key=" << std::dec << spec.seed_length << "/"
+           << spec.key_length << "; source=frozen public-share requirement";
+  report(callbacks, "Requirement contract", "PASS", contract.str());
+  report(callbacks, "Acceptance boundary", "WARN",
+         "Offline preflight passed; real ECU acceptance still requires a hash-bound bench report and trace");
+
+  if (!job.can_bus_provider) throw std::runtime_error("CAN bus provider is not configured");
+  auto bus = job.can_bus_provider->create(
+      {"", job.profile.channel, job.profile.nominal_bitrate,
+       job.profile.data_bitrate, false, L"UDSToolCpp"});
+  IsoTpSession physical_transport(
+      *bus, {job.profile.tx_id, job.profile.rx_id, job.profile.padding, 0,
+             job.profile.isotp_st_min});
+  IsoTpSession functional_transport(
+      *bus, {job.profile.functional_id, job.profile.rx_id,
+             job.profile.padding, 0, job.profile.isotp_st_min});
+  const auto uds_log = [&](const std::string& line) {
+    if (callbacks.log) callbacks.log(line);
+  };
+  UdsClient physical(physical_transport, uds_log, stop);
+  UdsClient functional(functional_transport, uds_log, stop);
+  const auto broker = job.executable_directory / L"keygen_broker.exe";
+  auto keygen = [broker, dll, variant = job.profile.security_variant](
+                    std::span<const std::uint8_t> seed, unsigned level) {
+    return generate_key_x86(broker, dll, seed, level, variant);
+  };
+  CheryArs131AppFlow flow(
+      physical, functional, spec, layout,
+      [&](int percent, const std::string& line) {
+        if (callbacks.log) callbacks.log(line);
+        if (callbacks.progress && !line.starts_with("36 ")) {
+          callbacks.progress(percent, line);
+        }
+        report(callbacks, line,
+               line.find("PASS:") == std::string::npos ? "INFO" : "PASS",
+               line);
+      },
+      keygen);
+  flow.run(images, stop);
+  report(callbacks, "Download", "PASS", spec.name + " normal APP flow completed");
+}
+} // namespace
+
+std::wstring_view CheryT1ejWorkflow::id() const noexcept { return L"chery_t1ej"; }
+std::string CheryT1ejWorkflow::report_title(const FlashProfile&) const {
+  return "奇瑞 T1EJ ARS1.31 正常刷写报告";
+}
+void CheryT1ejWorkflow::run(const FlashJob& job,
+                            const FlashWorkflowCallbacks& callbacks,
+                            std::stop_token stop) {
+  run_project(CheryArs131Project::t1ej, id(), job, callbacks, stop);
+}
+
+std::wstring_view CheryT22Workflow::id() const noexcept { return L"chery_t22"; }
+std::string CheryT22Workflow::report_title(const FlashProfile&) const {
+  return "奇瑞 T22 ARS1.31 正常刷写报告";
+}
+void CheryT22Workflow::run(const FlashJob& job,
+                           const FlashWorkflowCallbacks& callbacks,
+                           std::stop_token stop) {
+  run_project(CheryArs131Project::t22, id(), job, callbacks, stop);
+}
+
+std::wstring_view CheryE0yWorkflow::id() const noexcept { return L"chery_e0y"; }
+std::string CheryE0yWorkflow::report_title(const FlashProfile&) const {
+  return "奇瑞 E0Y ARS1.31 正常刷写报告";
+}
+void CheryE0yWorkflow::run(const FlashJob& job,
+                           const FlashWorkflowCallbacks& callbacks,
+                           std::stop_token stop) {
+  run_project(CheryArs131Project::e0y, id(), job, callbacks, stop);
+}
+
+} // namespace uds

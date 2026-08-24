@@ -79,16 +79,10 @@ std::string CheryKp31Workflow::report_title(const FlashProfile&) const {
 void CheryKp31Workflow::run(
     const FlashJob& job, const FlashWorkflowCallbacks& callbacks,
     std::stop_token stop) {
-  const auto t1ej = job.profile.flow == L"chery_t1ej";
-  const auto e0y = job.profile.flow == L"chery_e0y";
-  const auto t22 = job.profile.flow == L"chery_t22";
-  if (!t1ej && !e0y && !t22 && job.profile.flow != L"chery_kp31") {
-    throw std::runtime_error("Chery ARS1.31 workflow received an unsupported profile");
+  if (job.profile.flow != L"chery_kp31") {
+    throw std::runtime_error("Chery KP31 workflow/profile mismatch");
   }
   const auto plan = resolve_chery_kp31_download_plan(job.entry_mode);
-  if ((t1ej || e0y || t22) && plan.mode != CheryKp31FlashMode::AppOnly) {
-    throw std::runtime_error("This Chery normal-flow profile currently supports APP mode only");
-  }
   if (job.profile.can_fd || job.profile.nominal_bitrate != 500000) {
     throw std::runtime_error("Chery KP31 requires Classic CAN 500 kbit/s");
   }
@@ -210,11 +204,7 @@ void CheryKp31Workflow::run(
         record(callbacks, percent, line, pass ? "PASS" : "INFO", line);
       },
       keygen);
-  if (t1ej) {
-    flow.run_t1ej_app_only(images, stop);
-  } else {
-    flow.run(images, plan.mode, stop);
-  }
+  flow.run(images, plan.mode, stop);
   record(callbacks, 100, selected_mode, "PASS",
          "KP31 Flash.can::maintest " + std::string(capl_entry(plan.mode)) +
              " sequence completed");
