@@ -708,7 +708,7 @@ void MainWindow::connectActions() {
           "刷写文件 (*.s19 *.srec *.s28 *.s37 *.mot *.hex *.bin *.vbf *.cbf);;所有文件 (*.*)");
   const auto verificationFilter =
       QStringLiteral(
-          "校验数据 (*.asc *.txt *.rsa *.s19 *.srec *.s28 *.s37 *.mot *.hex *.bin);;所有文件 (*.*)");
+          "校验数据 (*.asc *.tmp *.txt *.rsa *.s19 *.srec *.s28 *.s37 *.mot *.hex *.bin);;所有文件 (*.*)");
   connectFileButton(ui_->driverBrowseButton, ui_->driverPathLineEdit,
                     QStringLiteral("选择 Driver 文件"), srecordFilter,
                     QStringLiteral("Driver"));
@@ -1059,7 +1059,27 @@ void MainWindow::populateProfileOptions() {
     saved_vendor = QStringLiteral("长安");
   }
   auto vendor_index = ui_->projectComboBox->findText(saved_vendor);
-  if (vendor_index < 0) vendor_index = 0;
+  if (vendor_index < 0) {
+    vendor_index = 0;
+    for (int candidate = 0; candidate < ui_->projectComboBox->count();
+         ++candidate) {
+      const auto profile_indexes =
+          ui_->projectComboBox->itemData(candidate).toList();
+      const auto has_usable_profile = std::any_of(
+          profile_indexes.cbegin(), profile_indexes.cend(),
+          [&profiles](const QVariant& value) {
+            bool valid{};
+            const auto profile_index = value.toInt(&valid);
+            return valid && profile_index >= 0 &&
+                   static_cast<std::size_t>(profile_index) < profiles.size() &&
+                   !profiles[profile_index].placeholder;
+          });
+      if (has_usable_profile) {
+        vendor_index = candidate;
+        break;
+      }
+    }
+  }
   ui_->projectComboBox->setCurrentIndex(vendor_index);
   project_blocker.unblock();
   device_blocker.unblock();

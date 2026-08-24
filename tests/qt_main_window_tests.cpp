@@ -1418,8 +1418,10 @@ int main(int argc, char* argv[]) {
       }
       check_project_devices(application, projects, devices,
                              QStringLiteral("零跑"),
-                             {QStringLiteral("ARC"),
-                              QStringLiteral("ARF631")});
+                             {QStringLiteral("A12"),
+                              QStringLiteral("ARC"),
+                              QStringLiteral("ARF631"),
+                              QStringLiteral("B11")});
       devices->setCurrentIndex(find_text(devices, QStringLiteral("ARC")));
       application.processEvents();
       auto* app_verify_label = window.findChild<QLabel*>(
@@ -1499,6 +1501,29 @@ int main(int argc, char* argv[]) {
                     QStringLiteral("APP 校验文件"),
             "LP-ARF UI endpoint, entry names or resources mismatch");
       check_file_panel_is_stable();
+      for (const auto& project_name :
+           {QStringLiteral("A12"), QStringLiteral("B11")}) {
+        devices->setCurrentIndex(find_text(devices, project_name));
+        application.processEvents();
+        check(radar->count() == 1 && tx_id->isReadOnly() &&
+                  rx_id->isReadOnly() &&
+                  tx_id->text() == QStringLiteral("0x751") &&
+                  rx_id->text() == QStringLiteral("0x759") &&
+                  entries->count() == 2 &&
+                  entries->itemText(entries->findData(QStringLiteral("app"))) ==
+                      QStringLiteral("APP") &&
+                  entries->itemText(entries->findData(QStringLiteral("ft"))) ==
+                      QStringLiteral("PLS") &&
+                  app_path->text().contains(project_name) &&
+                  window.findChild<QLineEdit*>(
+                      QStringLiteral("appVerifyPathLineEdit"))
+                      ->text()
+                      .endsWith(QStringLiteral(".tmp"),
+                                Qt::CaseInsensitive) &&
+                  c857_seed_key->text().contains(
+                      QStringLiteral("SeednKey"), Qt::CaseInsensitive),
+              "A12/B11 ARF2.31 independent UI resources or entry contract mismatch");
+      }
 
       checkpoint("profile-ui");
       run_ui_monkey_test(application, window, projects, devices, entries,
