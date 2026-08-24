@@ -10,6 +10,16 @@ inline constexpr std::chrono::milliseconds kChuneng331TesterPresentPeriod{2000};
 inline constexpr std::chrono::milliseconds kChuneng331SessionControlDelay{50};
 inline constexpr std::chrono::milliseconds kChuneng331FunctionalControlDelay{100};
 inline constexpr std::uint8_t kChuneng331RoutineStatusPassed = 0x04;
+inline constexpr std::uint8_t
+    kChuneng331UnsupportedProgrammingPreconditionNrc = 0x31;
+
+// The ARC331 reference flow tolerates RequestOutOfRange for RID 0x0203: some
+// Boot/DCM variants do not register this optional precondition routine.  Keep
+// this project rule here so the probe and the formal flash flow cannot drift.
+inline constexpr bool chuneng_331_precondition_nrc_allows_continue(
+    std::uint8_t nrc) noexcept {
+  return nrc == kChuneng331UnsupportedProgrammingPreconditionNrc;
+}
 
 inline constexpr std::array<std::uint8_t, 2>
     kChuneng331FunctionalDefaultSessionRequest{0x10, 0x01};

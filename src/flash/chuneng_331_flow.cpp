@@ -159,38 +159,40 @@ void Chuneng331Flow::enter_programming_session(
       if (log_) log_(4, "31 01 02 03 ProgrammingPrecondition");
       auto result = physical_.request(precondition);
       if (!result.success) {
-        if (result.nrc == 0x31) {
+        if (chuneng_331_precondition_nrc_allows_continue(result.nrc)) {
+          if (log_) {
+            log_(4,
+                 "31 01 02 03 ProgrammingPrecondition WARN: 7F 31 31 "
+                 "(当前Boot/DCM未注册RID 0203，按ARC331参考流程继续)");
+          }
+        } else {
           throw std::runtime_error(
-              "31 01 02 03 ProgrammingPrecondition: NRC 0x31；ECU很可能"
-              "在擦除中断后处于Boot/SBL恢复态。不要重复使用APP入口，"
-              "普通发布版不提供Boot恢复入口；请改用受控恢复版本并由"
-              "具备授权的人员执行恢复。");
-        }
-        throw std::runtime_error(
-            "31 01 02 03 ProgrammingPrecondition: NRC/timeout " +
-            result.detail);
-      }
-      const auto is_passed =
-          result.response.size() >= passed.size() &&
-          std::equal(passed.begin(), passed.end(), result.response.begin());
-      const auto is_not_met =
-          result.response.size() >= not_met.size() &&
-          std::equal(not_met.begin(), not_met.end(), result.response.begin());
-      if (is_passed) {
-        if (log_) {
-          log_(4, "31 01 02 03 ProgrammingPrecondition PASS: " +
-                      to_hex(result.response));
-        }
-      } else if (is_not_met) {
-        if (log_) {
-          log_(4, "31 01 02 03 ProgrammingPrecondition WARN: " +
-                      to_hex(result.response) +
-                      " (刷新条件未满足 0x05，按参考流程继续)");
+              "31 01 02 03 ProgrammingPrecondition: NRC/timeout " +
+              result.detail);
         }
       } else {
-        throw std::runtime_error(
-            "31 01 02 03 ProgrammingPrecondition: response mismatch " +
-            to_hex(result.response));
+        const auto is_passed =
+            result.response.size() >= passed.size() &&
+            std::equal(passed.begin(), passed.end(), result.response.begin());
+        const auto is_not_met =
+            result.response.size() >= not_met.size() &&
+            std::equal(not_met.begin(), not_met.end(), result.response.begin());
+        if (is_passed) {
+          if (log_) {
+            log_(4, "31 01 02 03 ProgrammingPrecondition PASS: " +
+                        to_hex(result.response));
+          }
+        } else if (is_not_met) {
+          if (log_) {
+            log_(4, "31 01 02 03 ProgrammingPrecondition WARN: " +
+                        to_hex(result.response) +
+                        " (刷新条件未满足 0x05，按参考流程继续)");
+          }
+        } else {
+          throw std::runtime_error(
+              "31 01 02 03 ProgrammingPrecondition: response mismatch " +
+              to_hex(result.response));
+        }
       }
     }
     send_functional_no_response(

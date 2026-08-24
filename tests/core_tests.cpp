@@ -1083,6 +1083,10 @@ void test_chuneng_331_updated_protocol_contract() {
             uds::kChuneng331ProgrammingSession ==
                 std::array<std::uint8_t, 2>{0x10, 0x02},
         "ChuNeng standard preprogramming sequence mismatch");
+  check(uds::chuneng_331_precondition_nrc_allows_continue(0x31) &&
+            !uds::chuneng_331_precondition_nrc_allows_continue(0x22) &&
+            !uds::chuneng_331_precondition_nrc_allows_continue(0x78),
+        "ChuNeng ARC331 precondition NRC continuation policy mismatch");
   check(uds::kChuneng331EnableDtc ==
             std::array<std::uint8_t, 2>{0x85, 0x81} &&
             uds::kChuneng331EnableCommunication ==

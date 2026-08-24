@@ -1017,10 +1017,11 @@ public:
       }
       if (pending_precondition_) {
         pending_precondition_ = false;
-        if (precondition_status_ == 0x31) {
+        if (precondition_status_ == 0x31 || precondition_status_ == 0x22) {
           return uds::CanFrame{
               response_id_,
-              {0x03, 0x7F, 0x31, 0x31, 0x00, 0x00, 0x00, 0x00},
+              {0x03, 0x7F, 0x31, precondition_status_, 0x00, 0x00, 0x00,
+               0x00},
               false, false, false};
         }
         return uds::CanFrame{
@@ -1376,7 +1377,7 @@ void test_probe_service_chuneng_arc331_boot_probe_is_non_intrusive() {
         "ARC331 Boot probe sent a precondition or programming-session request");
 }
 
-void test_probe_service_chuneng_arc331_nrc31_guides_boot_recovery() {
+void test_probe_service_chuneng_arc331_nrc31_warns_and_continues() {
   auto capture = std::make_shared<ProbeBusCapture>();
   uds::app::ProbeService service(
       [capture](const uds::app::ProbeRequest& request) {
@@ -1391,11 +1392,38 @@ void test_probe_service_chuneng_arc331_nrc31_guides_boot_recovery() {
   request.entry_mode = L"app";
   request.padding = 0x55;
 
+  std::vector<std::string> logs;
+  uds::app::ProbeServiceCallbacks callbacks;
+  callbacks.onLog = [&](const std::string& line) { logs.push_back(line); };
+  const auto result = service.run(request, callbacks, {});
+  const auto warned = std::any_of(logs.cbegin(), logs.cend(), [](const auto& line) {
+    return line.find("7F 31 31") != std::string::npos &&
+           line.find("容错继续") != std::string::npos;
+  });
+  check(result.success && warned &&
+            result.message.find("7F 31 31") != std::string::npos &&
+            result.message.find("容错继续") != std::string::npos,
+        "ARC331 NRC 0x31 was not retained as a warning/continue result");
+}
+
+void test_probe_service_chuneng_arc331_other_nrc_still_fails() {
+  auto capture = std::make_shared<ProbeBusCapture>();
+  uds::app::ProbeService service(
+      [capture](const uds::app::ProbeRequest& request) {
+        return std::make_unique<FakeChunengProbeBus>(capture, request.rx_id,
+                                                     std::uint8_t{0x22});
+      });
+  auto request = make_probe_request();
+  request.profile.flow = L"chuneng_arc331";
+  request.profile.tx_id = request.tx_id = 0x72E;
+  request.profile.rx_id = request.rx_id = 0x72F;
+  request.profile.functional_id = 0x7DF;
+  request.entry_mode = L"app";
+  request.padding = 0x55;
+
   const auto result = service.run(request, {}, {});
-  check(!result.success &&
-            result.message.find("Boot") != std::string::npos &&
-            result.message.find("受控恢复版本") != std::string::npos,
-        "ARC331 NRC 0x31 did not produce actionable Boot recovery guidance");
+  check(!result.success,
+        "ARC331 incorrectly tolerated a precondition NRC other than 0x31");
 }
 
 void test_probe_service_chuneng_rejects_failed_precondition() {
@@ -1645,7 +1673,8 @@ int main() {
     test_probe_service_chuneng_standard_precondition_sequence();
     test_probe_service_chuneng_arc331_selected_endpoint_online();
     test_probe_service_chuneng_arc331_boot_probe_is_non_intrusive();
-    test_probe_service_chuneng_arc331_nrc31_guides_boot_recovery();
+    test_probe_service_chuneng_arc331_nrc31_warns_and_continues();
+    test_probe_service_chuneng_arc331_other_nrc_still_fails();
     test_probe_service_chuneng_rejects_failed_precondition();
     test_probe_service_chuneng_custom_app_endpoint();
     test_probe_service_lingpao_radar_entry_sequences();
