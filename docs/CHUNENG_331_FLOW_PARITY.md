@@ -1,12 +1,12 @@
 # 楚能 ARC331 当前刷写与版本读取流程
 
-更新日期：2026-08-19
+更新日期：2026-08-24
 
 ## 当前结论
 
 当前 Profile 的注册 Workflow ID 是 `chuneng_arc331`。右后与左后雷达共用一个 `ChunengArc331Workflow`，设备差异只由 Profile 的 `target_N_*` 选择物理端点，不复制第二套刷写流程，也不使用零跑 ARC 的旧 `0x771` 过渡帧。
 
-当前状态是源码、Profile、资源、一键版本读取配置和离线测试已接入；右后 APP、左后 APP 及两个设备的 FT 组合仍需分别完成台架验收。
+当前状态是源码、Profile、资源、一键版本读取配置和离线测试已接入。2026-08-24，左后雷达 APP 使用当前 Release 工具和成对 Driver/APP CBF 完成 1 次真实 ECU 完整刷写，`31 01 02 03 -> 7F 31 31` 按项目参考流程 WARN 后继续，Driver/APP 下载、校验、复位与恢复全部 PASS。证据冻结在 `validation/2026-08-24_chuneng_arc331_left_rear_app_pass/`。右后 APP、左右雷达 FT 和其他固件组合仍需分别完成台架验收。
 
 ## 当前入口与地址
 
@@ -15,7 +15,7 @@
 | 入口/目标 | TX | RX | 状态 |
 |---|---:|---:|---|
 | APP－右后雷达（默认） | `0x72C` | `0x72D` | `pending_validation=true` |
-| APP－左后雷达 | `0x72E` | `0x72F` | `pending_validation=true` |
+| APP－左后雷达 | `0x72E` | `0x72F` | 2026-08-24 当前 Release + CBF 实刷 PASS；Profile 目标级 `pending_validation=true` 为未验 FT 保留 |
 | FT/PLS | `0x701` | `0x761` | 已实现，需与所选目标组合验收 |
 | 功能寻址 | `0x7DF` | — | Profile 固定值 |
 
@@ -84,8 +84,10 @@ APP CBF
 至少分别完成以下组合并保存所用 EXE 哈希、Profile、输入文件哈希、HTML 报告、ASC Trace、版本读取结果和 ECU 身份：
 
 1. 右后雷达 APP；
-2. 左后雷达 APP；
+2. 左后雷达 APP：2026-08-24 当前 Release + 指定 CBF 已完成完整实刷 PASS；刷后版本读取仍未随本次证据冻结；
 3. 右后雷达 FT 恢复刷写；
 4. 左后雷达 FT 恢复刷写。
 
 构建、8/8 CTest、Fake Bus、CBF 离线重算或既有另一设备的历史 PASS，均不能替代以上组合的真实 ECU 验收。
+
+本次左后 APP PASS 只覆盖证据目录中哈希绑定的 EXE、Profile、Driver/APP CBF 和 SeedKey DLL。它证明当前 `7F 31 31` 容错修改已在真实 ECU 完整流程中生效，不自动证明右后端点、FT 入口或其他输入文件组合。
