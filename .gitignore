@@ -1,7 +1,6 @@
 # Generated build trees and package staging
 /build/
 /dist/
-/dist-*/
 /tmp/
 /TEST/
 /out/

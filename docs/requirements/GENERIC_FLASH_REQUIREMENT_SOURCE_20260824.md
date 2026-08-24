@@ -31,10 +31,11 @@
 
 ## 2026-08-24 离线发布记录
 
-- 候选目录：`D:\project\UDS_tools\UDS_tools\dist-requirements-20260824`
+- 唯一发布目录：`D:\project\UDS_tools\UDS_tools\dist`
 - 文件数/总字节：335 / 228613913
 - `UDS_Tool.exe` SHA-256：`E76764B026CF4AC145F07EEEA867703438B6C2797D5CCE82FDEF502674802B58`
 - `keygen_broker.exe` SHA-256：`7C4071E35A7E4A1AFB5BC5DB92BC66E2E413A9D4984590CBC8994B0D9A396BF0`
 - Release x86/x64 与 Qt 构建通过，CTest 8/8 PASS。
 - T1EJ/T22 `GenerateKeyExOpt` level 0x07、E0Y/KP31 level 0x11、A12/B11 level 0x11，以及既有项目 SeedKey/资源完整性发布门禁全部 PASS。
 - 未连接 CAN 硬件，未向 ECU 发送 UDS，未执行真实刷写；上述项目仍为 `pending_validation=true`。
+- 发布约束：`scripts\build.ps1` 默认且唯一更新仓库根目录下的 `dist`；不再创建 `dist-*` 或 `dist-ui-*` 并行候选目录。

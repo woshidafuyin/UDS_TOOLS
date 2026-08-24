@@ -17,7 +17,7 @@ $x86Output=Join-Path $x86Build $Config
 $x64Output=Join-Path $x64Build $Config
 $qtExecutableName='UDS_Tool.exe'
 $dist=if([string]::IsNullOrWhiteSpace($DistPath)){
-  Join-Path $root 'dist-ui-professional'
+  Join-Path $root 'dist'
 } else {
   [System.IO.Path]::GetFullPath($DistPath)
 }
