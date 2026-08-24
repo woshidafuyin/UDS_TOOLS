@@ -29,3 +29,12 @@
 4. 不因多个项目局部相似而复用同一个固定 Workflow；只复用显式参数化、可测试的高内聚组件。
 5. 离线单测、构建、安装包冒烟不等于真实 ECU 刷写 PASS。台架结论必须绑定实际 Profile、硬件、通道、软件文件哈希、日志和报告。
 
+## 2026-08-24 离线发布记录
+
+- 候选目录：`D:\project\UDS_tools\UDS_tools\dist-requirements-20260824`
+- 文件数/总字节：335 / 228613913
+- `UDS_Tool.exe` SHA-256：`E76764B026CF4AC145F07EEEA867703438B6C2797D5CCE82FDEF502674802B58`
+- `keygen_broker.exe` SHA-256：`7C4071E35A7E4A1AFB5BC5DB92BC66E2E413A9D4984590CBC8994B0D9A396BF0`
+- Release x86/x64 与 Qt 构建通过，CTest 8/8 PASS。
+- T1EJ/T22 `GenerateKeyExOpt` level 0x07、E0Y/KP31 level 0x11、A12/B11 level 0x11，以及既有项目 SeedKey/资源完整性发布门禁全部 PASS。
+- 未连接 CAN 硬件，未向 ECU 发送 UDS，未执行真实刷写；上述项目仍为 `pending_validation=true`。

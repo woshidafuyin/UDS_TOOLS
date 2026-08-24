@@ -1636,6 +1636,7 @@ void test_chery_ars131_project_contracts() {
     const auto profile = uds::load_profile_ini(source / "profiles" / profile_name);
     const auto workflow = uds::create_flash_workflow(profile.flow);
     check(workflow && workflow->id() == profile.flow &&
+              !profile.lock_diagnostic_ids &&
               !workflow->report_title(profile).empty() &&
               !profile.driver_file.empty() && !profile.app_file.empty() &&
               !profile.driver_verify_file.empty() &&

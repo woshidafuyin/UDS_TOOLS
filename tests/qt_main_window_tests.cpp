@@ -1192,6 +1192,24 @@ int main(int argc, char* argv[]) {
                 entries->currentData().toString() == QStringLiteral("app") &&
                 entries->currentText() == QStringLiteral("APP"),
             "Chery KP31 project/endpoint/mode mapping mismatch");
+      const std::array chery_editable_endpoints{
+          std::pair{QStringLiteral("T1EJ"),
+                    std::pair{QStringLiteral("0x7AF"),
+                              QStringLiteral("0x7BF")}},
+          std::pair{QStringLiteral("T22"),
+                    std::pair{QStringLiteral("0x7AF"),
+                              QStringLiteral("0x7BF")}},
+          std::pair{QStringLiteral("E0Y"),
+                    std::pair{QStringLiteral("0x70D"),
+                              QStringLiteral("0x78D")}}};
+      for (const auto& [project, endpoint] : chery_editable_endpoints) {
+        devices->setCurrentIndex(find_text(devices, project));
+        application.processEvents();
+        check(!tx_id->isReadOnly() && !rx_id->isReadOnly() &&
+                  tx_id->text() == endpoint.first &&
+                  rx_id->text() == endpoint.second,
+              "Chery CANoe default endpoint was not applied as an editable UI value");
+      }
       check_file_panel_is_stable();
       check_project_devices(application, projects, devices,
                              QStringLiteral("长马"),

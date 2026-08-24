@@ -53,7 +53,6 @@ void run_project(CheryArs131Project project, std::wstring_view workflow_id,
       job.profile.power_control || job.profile.supports_ft_entry ||
       job.profile.supports_cal_download ||
       job.profile.nominal_bitrate != 500000 || job.profile.padding != 0x55 ||
-      job.profile.tx_id != spec.tx_id || job.profile.rx_id != spec.rx_id ||
       job.profile.functional_id != 0x7DF ||
       job.profile.security_level != spec.seed_subfunction ||
       !job.profile.security_variant.empty()) {
@@ -95,8 +94,10 @@ void run_project(CheryArs131Project project, std::wstring_view workflow_id,
                              error.what());
   }
   std::ostringstream contract;
-  contract << spec.name << "; TX/RX=0x" << std::hex << std::uppercase
-           << spec.tx_id << "/0x" << spec.rx_id << "; 27 "
+  contract << spec.name << "; effective TX/RX=0x" << std::hex
+           << std::uppercase << job.profile.tx_id << "/0x"
+           << job.profile.rx_id << "; CANoe default=0x" << spec.tx_id
+           << "/0x" << spec.rx_id << "; 27 "
            << static_cast<unsigned>(spec.seed_subfunction) << "/"
            << static_cast<unsigned>(spec.seed_subfunction + 1)
            << "; seed/key=" << std::dec << spec.seed_length << "/"
