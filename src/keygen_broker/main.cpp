@@ -48,14 +48,36 @@ int wmain(int argc, wchar_t** argv) {
     // corrupts the x86 stack after return.
     using GenerateKeyEx = int(__cdecl*)(const unsigned char*, unsigned, unsigned, const char*,
                                           unsigned char*, unsigned, unsigned*);
-    auto fn = reinterpret_cast<GenerateKeyEx>(GetProcAddress(dll, "GenerateKeyEx"));
-    if (!fn) { FreeLibrary(dll); throw std::runtime_error("GenerateKeyEx export not found"); }
     std::vector<std::uint8_t> key(64);
     unsigned actual = 0;
-    const auto rc = fn(seed.data(), static_cast<unsigned>(seed.size()), level, variant.c_str(),
-                       key.data(), static_cast<unsigned>(key.size()), &actual);
+    int rc{};
+    if (auto fn = reinterpret_cast<GenerateKeyEx>(
+            GetProcAddress(dll, "GenerateKeyEx"))) {
+      rc = fn(seed.data(), static_cast<unsigned>(seed.size()), level,
+              variant.c_str(), key.data(), static_cast<unsigned>(key.size()),
+              &actual);
+    } else {
+      // Newer Vector security DLLs may expose only GenerateKeyExOpt.  Its
+      // empty options string preserves the same project-configured algorithm
+      // while retaining compatibility with the classic GenerateKeyEx ABI.
+      using GenerateKeyExOpt = int(__cdecl*)(
+          const unsigned char*, unsigned, unsigned, const char*, const char*,
+          unsigned char*, unsigned, unsigned*);
+      auto fn_opt = reinterpret_cast<GenerateKeyExOpt>(
+          GetProcAddress(dll, "GenerateKeyExOpt"));
+      if (!fn_opt) {
+        FreeLibrary(dll);
+        throw std::runtime_error(
+            "GenerateKeyEx/GenerateKeyExOpt export not found");
+      }
+      rc = fn_opt(seed.data(), static_cast<unsigned>(seed.size()), level,
+                  variant.c_str(), "", key.data(),
+                  static_cast<unsigned>(key.size()), &actual);
+    }
     FreeLibrary(dll);
-    if (rc != 0 || actual == 0 || actual > key.size()) throw std::runtime_error("GenerateKeyEx failed");
+    if (rc != 0 || actual == 0 || actual > key.size()) {
+      throw std::runtime_error("Vector SeedKey API failed");
+    }
     key.resize(actual);
     std::cout << std::uppercase << std::hex << std::setfill('0');
     for (auto b : key) std::cout << std::setw(2) << static_cast<unsigned>(b);

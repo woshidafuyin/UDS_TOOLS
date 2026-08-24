@@ -6,6 +6,8 @@
 #include "core/uds_client.hpp"
 #include "flash/chery_ars1_31_app_flow.hpp"
 
+#include <algorithm>
+#include <array>
 #include <chrono>
 #include <filesystem>
 #include <sstream>
@@ -103,6 +105,43 @@ void run_project(CheryArs131Project project, std::wstring_view workflow_id,
   report(callbacks, "Acceptance boundary", "WARN",
          "Offline preflight passed; real ECU acceptance still requires a hash-bound bench report and trace");
 
+  const auto broker = job.executable_directory / L"keygen_broker.exe";
+  required(broker, "x86 SeedKey broker");
+  auto keygen = [broker, dll, variant = job.profile.security_variant](
+                    std::span<const std::uint8_t> seed, unsigned level) {
+    return generate_key_x86(broker, dll, seed, level, variant);
+  };
+  try {
+    if (spec.seed_length == 4) {
+      constexpr std::array<std::uint8_t, 4> zero_seed{};
+      constexpr std::array<std::uint8_t, 4> expected{
+          0xFF, 0xFF, 0x93, 0xBC};
+      const auto actual = keygen(zero_seed, spec.seed_subfunction);
+      if (actual.size() != expected.size() ||
+          !std::equal(actual.begin(), actual.end(), expected.begin())) {
+        throw std::runtime_error("GenerateKeyExOpt level 0x07 vector mismatch");
+      }
+    } else {
+      constexpr std::array<std::uint8_t, 16> zero_seed{};
+      constexpr std::array<std::uint8_t, 16> expected{
+          0xEB, 0x45, 0x8E, 0xD6, 0x24, 0x35, 0xF7, 0xED,
+          0x59, 0xC0, 0xC0, 0x32, 0xD1, 0x6E, 0x9E, 0xDC};
+      const auto actual = keygen(zero_seed, spec.seed_subfunction);
+      if (actual.size() != expected.size() ||
+          !std::equal(actual.begin(), actual.end(), expected.begin())) {
+        throw std::runtime_error("GenerateKeyEx level 0x11 vector mismatch");
+      }
+    }
+  } catch (const std::exception& error) {
+    throw std::runtime_error(spec.name +
+                             " SeedKey preflight failed before CAN access: " +
+                             error.what());
+  }
+  report(callbacks, "SeedKey preflight", "PASS",
+         spec.seed_length == 4
+             ? "GenerateKeyExOpt: 00000000 -> FFFF93BC at level 0x07"
+             : "GenerateKeyEx: 16-byte zero seed vector matched at level 0x11");
+
   if (!job.can_bus_provider) throw std::runtime_error("CAN bus provider is not configured");
   auto bus = job.can_bus_provider->create(
       {"", job.profile.channel, job.profile.nominal_bitrate,
@@ -118,11 +157,6 @@ void run_project(CheryArs131Project project, std::wstring_view workflow_id,
   };
   UdsClient physical(physical_transport, uds_log, stop);
   UdsClient functional(functional_transport, uds_log, stop);
-  const auto broker = job.executable_directory / L"keygen_broker.exe";
-  auto keygen = [broker, dll, variant = job.profile.security_variant](
-                    std::span<const std::uint8_t> seed, unsigned level) {
-    return generate_key_x86(broker, dll, seed, level, variant);
-  };
   CheryArs131AppFlow flow(
       physical, functional, spec, layout,
       [&](int percent, const std::string& line) {

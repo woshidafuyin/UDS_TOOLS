@@ -223,14 +223,25 @@ function Test-ChunengInputSet([string]$Location) {
 }
 function Test-CheryKp31Keygen([string]$Location) {
   $broker=Join-Path $Location 'keygen_broker.exe'
-  $dll=Join-Path $Location `
-    'resources\chery_kp31\dll\CHERY_E0Y_UPDATE23231115.dll'
-  $key=(& $broker $dll `
-    '00000000000000000000000000000000' '0x11' '' |
-    Out-String).Trim()
-  if($LASTEXITCODE -ne 0 -or
-     $key -ne 'EB458ED62435F7ED59C0C032D16E9EDC'){
-    throw "Chery KP31 keygen zero vector failed at ${Location}: $key"
+  foreach($project in @('chery_kp31','chery_e0y')){
+    $dll=Join-Path $Location `
+      "resources\$project\dll\CHERY_E0Y_UPDATE23231115.dll"
+    $key=(& $broker $dll `
+      '00000000000000000000000000000000' '0x11' '' |
+      Out-String).Trim()
+    if($LASTEXITCODE -ne 0 -or
+       $key -ne 'EB458ED62435F7ED59C0C032D16E9EDC'){
+      throw "Chery $project level 0x11 keygen zero vector failed at ${Location}: $key"
+    }
+  }
+  foreach($project in @('chery_t1ej','chery_t22')){
+    $dll=Join-Path $Location `
+      "resources\$project\dll\CIR_GenerateKeyEx.dll"
+    $key=(& $broker $dll '00000000' '0x07' '' |
+      Out-String).Trim()
+    if($LASTEXITCODE -ne 0 -or $key -ne 'FFFF93BC'){
+      throw "Chery $project GenerateKeyExOpt level 0x07 vector failed at ${Location}: $key"
+    }
   }
 }
 function Test-ShidaixinanKeygen([string]$Location) {
@@ -253,18 +264,21 @@ function Test-ShidaixinanKeygen([string]$Location) {
 }
 function Test-LingpaoRadarKeygen([string]$Location) {
   $broker=Join-Path $Location 'keygen_broker.exe'
-  foreach($project in @('lp_arc','lp_arf')){
-    $dll=Join-Path $Location `
-      "resources\$project\dll\66272f124ced1_lingpao_SeednKey_cdd.dll"
+  foreach($relativeDll in @(
+    'resources\lp_arc\dll\66272f124ced1_lingpao_SeednKey_cdd.dll',
+    'resources\lp_arf\dll\66272f124ced1_lingpao_SeednKey_cdd.dll',
+    'resources\lp_arf231_a12\dll\ARF2.31CC3_LPA12P_SeednKey_cdd.dll',
+    'resources\lp_arf231_b11\dll\lingpao_SeednKey_cdd.dll')){
+    $dll=Join-Path $Location $relativeDll
     $key1=(& $broker $dll 'FFFD13DE' '0x11' 'lingpao' |
       Out-String).Trim()
     if($LASTEXITCODE -ne 0 -or $key1 -ne 'C0828573'){
-      throw "$project keygen vector 1 failed at ${Location}: $key1"
+      throw "$relativeDll keygen vector 1 failed at ${Location}: $key1"
     }
     $key2=(& $broker $dll 'FFFD03D0' '0x11' 'lingpao' |
       Out-String).Trim()
     if($LASTEXITCODE -ne 0 -or $key2 -ne '1407370F'){
-      throw "$project keygen vector 2 failed at ${Location}: $key2"
+      throw "$relativeDll keygen vector 2 failed at ${Location}: $key2"
     }
   }
 }
@@ -289,7 +303,7 @@ Write-Host 'Xizhong RSMR keygen vector in build output and dist: PASS'
 Write-Host 'Changan C857 and B216 independent main/slave keygen resources: PASS'
 Write-Host 'Chuneng 331 keygen vector in build output and selected dist: PASS'
 Write-Host 'Chuneng ARC331 paired Driver + APP CBF input hashes: PASS'
-Write-Host 'Chery KP31 level 0x11 keygen vector in build output and dist: PASS'
+Write-Host 'Chery KP31/E0Y level 0x11 and T1EJ/T22 GenerateKeyExOpt level 0x07 vectors: PASS'
 Write-Host 'Shidaixinan HJZJ_FMR level 1/3 keygen vectors in build output and dist: PASS'
-Write-Host 'LP-ARC/LP-ARF level 11 keygen vectors in build output and dist: PASS'
+Write-Host 'LP-ARC/LP-ARF/A12/B11 level 11 keygen vectors in build output and dist: PASS'
 Write-Host "Built: $dist"
