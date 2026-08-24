@@ -38,6 +38,7 @@
 #include <QScrollBar>
 #include <QSettings>
 #include <QSignalBlocker>
+#include <QSizePolicy>
 #include <QSpinBox>
 #include <QStatusBar>
 #include <QTextCursor>
@@ -619,6 +620,14 @@ QStatusBar {
   ui_->filesGroupBox->setMinimumHeight(270);
   ui_->configurationScrollArea->setMinimumWidth(500);
   ui_->logGroupBox->setMinimumWidth(420);
+
+  // Runtime status is shared by probe, flash and power operations for every
+  // profile.  Its text can range from a short phase name to a detailed error;
+  // keep that content inside the existing left column instead of allowing the
+  // QLabel size hint to redistribute the two workspace columns.
+  ui_->progressStatusLabel->setWordWrap(true);
+  ui_->progressStatusLabel->setSizePolicy(QSizePolicy::Ignored,
+                                          QSizePolicy::Preferred);
 
   ui_->entryModeLabel->setText(QStringLiteral("刷写模式"));
   ui_->driverPathLabel->setText(QStringLiteral("Driver 文件"));

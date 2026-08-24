@@ -21,6 +21,7 @@
 #include <QSettings>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QSizePolicy>
 #include <QSpinBox>
 #include <QTabWidget>
 #include <QTableWidget>
@@ -808,6 +809,31 @@ int main(int argc, char* argv[]) {
           QStringLiteral("logPlainTextEdit"));
       auto* clear_log = window.findChild<QAction*>(
           QStringLiteral("clearLogAction"));
+      auto* left_work_panel = window.findChild<QWidget*>(
+          QStringLiteral("leftWorkPanel"));
+      auto* log_group = window.findChild<QGroupBox*>(
+          QStringLiteral("logGroupBox"));
+      auto* progress_status = window.findChild<QLabel*>(
+          QStringLiteral("progressStatusLabel"));
+      check(left_work_panel && log_group && progress_status &&
+                progress_status->wordWrap() &&
+                progress_status->sizePolicy().horizontalPolicy() ==
+                    QSizePolicy::Ignored,
+            "Shared runtime status does not constrain long text to its column");
+      const auto left_width = left_work_panel->width();
+      const auto log_width = log_group->width();
+      for (const auto& status : {
+               QStringLiteral("在线探测运行中……"),
+               QStringLiteral(
+                   "APP入口不可用：ECU很可能处于Boot/SBL恢复态（常见于擦除中断）；普通发布版不提供Boot恢复入口。请停止重复使用APP入口，改用受控恢复版本并由具备授权的人员执行恢复。"),
+               QStringLiteral(
+                   "完整刷写运行中：正在等待当前UDS请求结束、生成报告并确认ECU恢复状态，请保持供电。")}) {
+        progress_status->setText(status);
+        application.processEvents();
+        check(left_work_panel->width() == left_width &&
+                  log_group->width() == log_width,
+              "Runtime status text moved the shared workspace columns");
+      }
       const auto execution_log =
           window.property("executionLogPath").toString();
       check(log_view && clear_log && !execution_log.isEmpty() &&
