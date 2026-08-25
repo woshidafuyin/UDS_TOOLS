@@ -1539,6 +1539,11 @@ int main(int argc, char* argv[]) {
                           QStringLiteral("appVerifyPathLineEdit"))
                         ->property("embeddedVerification")
                         .toBool() &&
+                window.findChild<QLineEdit*>(
+                          QStringLiteral("appVerifyPathLineEdit"))
+                        ->property("fullPath")
+                        .toString()
+                        .isEmpty() &&
                 window.findChild<QPushButton*>(
                           QStringLiteral("appVerifyBrowseButton"))
                         ->text() == QStringLiteral("详情") &&
@@ -1548,6 +1553,25 @@ int main(int argc, char* argv[]) {
                 app_verify_label->text() == QStringLiteral("APP 验签（内置）"),
             "LP-ARF UI endpoint, entry names or resources mismatch");
       check_file_panel_is_stable(true);
+
+      // Keep the green embedded-certificate summary in the UI, but never
+      // forward it as an external verification-file path.
+      QObject::disconnect(&window, &uds::ui::qt::MainWindow::flashRequested,
+                          nullptr, nullptr);
+      int arf_flash_request_count{};
+      QString arf_app_verify_path;
+      QObject::connect(
+          &window, &uds::ui::qt::MainWindow::flashRequested, &window,
+          [&](int, const QString&, const QString&, unsigned, unsigned, quint32,
+              quint32, const QString&, const QString&, const QString&,
+              const QString&, const QString& app_verify_path) {
+            ++arf_flash_request_count;
+            arf_app_verify_path = app_verify_path;
+          });
+      start_flash->click();
+      application.processEvents();
+      check(arf_flash_request_count == 1 && arf_app_verify_path.isEmpty(),
+            "LP-ARF embedded TMP summary leaked into app_verify_path");
 
       checkpoint("profile-ui");
       run_ui_monkey_test(application, window, projects, devices, entries,

@@ -125,6 +125,9 @@ std::optional<UdsRoutineResult> failedRoutineFromLogLine(
 }
 
 QString fullPath(const QLineEdit* path_edit) {
+  // Embedded TMP verification is presentation state, not an external file.
+  // Never let the user-facing summary fall back into the execution path.
+  if (path_edit->property(kEmbeddedVerificationProperty).toBool()) return {};
   const auto stored = path_edit->property(kFullPathProperty).toString();
   return stored.isEmpty() ? path_edit->text().trimmed() : stored;
 }
