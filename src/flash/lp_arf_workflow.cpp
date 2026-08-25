@@ -53,7 +53,7 @@ std::wstring_view LpArfWorkflow::id() const noexcept {
 }
 
 std::string LpArfWorkflow::report_title(const FlashProfile&) const {
-  return "Leapmotor LP-ARF 631 Download Report";
+  return "Leapmotor ARF Download Report";
 }
 
 void LpArfWorkflow::run(
@@ -161,9 +161,9 @@ void LpArfWorkflow::run(
   report(callbacks, "SeedKey preflight", "PASS",
          "FFFD13DE->C0828573 and FFFD03D0->1407370F");
   report(callbacks, "Acceptance boundary", "WARN",
-         "Unified 631 entry follows the common LP-ARF protocol; select a "
-         "project-matched APP/certificate pair. C++ bench acceptance remains "
-         "separate for each ECU variant");
+         "Unified ARF entry covers A12/B11 ARF2.31 and ARF6.31; select one "
+         "project-matched TMP package or APP/certificate pair. C++ bench "
+         "acceptance remains separate for each ECU variant");
 
   if (!job.can_bus_provider) {
     throw std::runtime_error("CAN bus provider is not configured");

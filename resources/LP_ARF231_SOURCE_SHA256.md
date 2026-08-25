@@ -1,5 +1,7 @@
 # 零跑 A12/B11 ARF2.31 默认资源来源
 
+工具界面与执行入口已统一为 `profiles/lp_arf.ini` / `lp_arf`；下列 A12/B11 目录仅作为可手动选择的固件、TMP和来源证据保留，不再注册独立项目或独立 Workflow。
+
 来源：`D:\project\通用自动化刷写工程需求资料_公盘冻结_20260824`。A12 与 B11 使用相同哈希的 `Flash_ARF2.31_V1.0.7z` 协议工程，但软件包、TMP 证书和 Profile 独立。
 
 本机历史工具 `D:\project\30_工具与平台\S19TmpCutter\S19TmpTailExport.exe` 及其 README 用 S19 尾部特征在 TMP 中定位并导出 HEX-ASCII ASC。它的输出已作为兼容基准：A12/B11 均导出 1322 字节且与 TMP 尾部逐字节一致。但 B11 的尾部特征在 APP 填充区存在大量重复匹配，因此生产代码不依赖该未签名 EXE，也不使用“最后一次匹配”作为安全边界。

@@ -945,15 +945,15 @@ void test_workflow_registry() {
         "ChuNeng ARC331 radar workflow is not registered");
   check(uds::is_flash_workflow_registered(L"lp_arf"),
         "LP-ARF workflow is not registered");
-  check(uds::is_flash_workflow_registered(L"lp_arf231_a12") &&
-            uds::is_flash_workflow_registered(L"lp_arf231_b11"),
-        "A12/B11 ARF2.31 workflows are not independently registered");
+  check(!uds::is_flash_workflow_registered(L"lp_arf231_a12") &&
+            !uds::is_flash_workflow_registered(L"lp_arf231_b11"),
+        "retired A12/B11 duplicate ARF workflows are still registered");
   check(uds::is_flash_workflow_registered(L"geely_p416"),
         "Geely P416 workflow is not registered");
   check(!uds::is_flash_workflow_registered(L"future_flow"),
         "unknown workflow was reported as registered");
   const auto registered = uds::registered_flash_workflows();
-  check(registered.size() == 17 &&
+  check(registered.size() == 15 &&
             std::find(registered.begin(), registered.end(), L"chuneng_331") == registered.end() &&
             std::find(registered.begin(), registered.end(), L"chuneng_arc331") != registered.end() &&
              std::find(registered.begin(), registered.end(), L"chery_ars1_33") != registered.end() &&
@@ -972,10 +972,6 @@ void test_workflow_registry() {
                       L"lp_arc") != registered.end() &&
             std::find(registered.begin(), registered.end(),
                       L"lp_arf") != registered.end() &&
-            std::find(registered.begin(), registered.end(),
-                      L"lp_arf231_a12") != registered.end() &&
-            std::find(registered.begin(), registered.end(),
-                      L"lp_arf231_b11") != registered.end() &&
             std::find(registered.begin(), registered.end(),
                       L"geely_p416") != registered.end(),
         "workflow registry enumeration mismatch");
@@ -1722,43 +1718,31 @@ void test_chery_ars131_project_contracts() {
   }
 }
 
-void test_lp_arf231_project_contracts() {
+void test_lp_arf_tmp_packages() {
   const auto source = std::filesystem::path(UDS_SOURCE_DIR);
-  for (const auto* profile_name : {"lp_arf231_a12.ini", "lp_arf231_b11.ini"}) {
-    const auto profile = uds::load_profile_ini(source / "profiles" / profile_name);
-    check(profile.tx_id == 0x751 && profile.rx_id == 0x759 &&
-              profile.ft_tx_id == 0x701 && profile.ft_rx_id == 0x761 &&
-              profile.functional_id == 0x7DF && profile.can_fd &&
-              !profile.uds_fd && profile.supports_ft_entry &&
-              profile.supports_app_tmp_package &&
-              profile.app_start == 0xC0000 && profile.app_length == 0x180000 &&
-              profile.driver_length == 0 && profile.targets.size() == 1 &&
-              profile.targets[0].pending_validation,
-          std::string("ARF2.31 Profile contract mismatch: ") + profile_name);
-    const auto workflow = uds::create_flash_workflow(profile.flow);
-    check(workflow && workflow->id() == profile.flow &&
-              workflow->report_title(profile).find("ARF2.31") != std::string::npos,
-          std::string("ARF2.31 independent workflow mismatch: ") + profile_name);
+  for (const auto& package_path : {
+           source / "resources/lp_arf231_a12/Verification/"
+                    "LP-MRS050-BA_V3.01.07_R_20260608.tmp",
+           source / "resources/lp_arf231_b11/Verification/"
+                    "LP-MRS050-BA_V2.10.16_R_20240802.tmp"}) {
     const auto package =
-        uds::load_leapmotor_tmp(source / profile.app_file);
+        uds::load_leapmotor_tmp(package_path);
     const auto artifacts =
-        uds::load_lp_arf_artifacts(source / profile.app_file);
+        uds::load_lp_arf_artifacts(package_path);
     const auto hash = uds::sha256(package.app.data);
-    check(package.app.address == profile.app_start &&
+    check(package.app.address == uds::kLpArfAppAddress &&
               artifacts.certificate_embedded &&
               artifacts.images.app.address == package.app.address &&
               artifacts.images.app.data == package.app.data &&
               artifacts.images.certificate == package.certificate &&
-              package.app.data.size() == profile.app_length &&
-              profile.app_verify_file.empty() &&
+              package.app.data.size() == uds::kLpArfAppLength &&
               package.certificate.size() == uds::kLpArfCertificateLength &&
               package.metadata_json.find("\"SignInfoLen\":\t1322") !=
                   std::string::npos &&
               std::equal(hash.begin(), hash.end(),
-                         package.certificate.begin()) &&
-              std::filesystem::file_size(source / profile.security_dll) == 777216,
-          std::string("ARF2.31 structured APP/TMP/DLL binding mismatch: ") +
-              profile_name);
+                         package.certificate.begin()),
+          std::string("ARF structured TMP package mismatch: ") +
+              package_path.string());
   }
   const auto valid_tmp =
       source / "resources/lp_arf231_a12/Verification/"
@@ -2537,7 +2521,7 @@ void test_shidaixinan_arf232_project_profiles_and_resources() {
   }
 
   const auto catalog = uds::discover_flash_profiles(source / "profiles");
-  check(catalog.errors.empty() && catalog.profiles.size() == 21,
+  check(catalog.errors.empty() && catalog.profiles.size() == 19,
         "Shidaixinan project profiles were not discovered cleanly");
   for (const auto& project : projects) {
     check(std::any_of(
@@ -2838,17 +2822,18 @@ void test_lp_arf_protocol_and_resources() {
       uds::load_profile_ini(source / "profiles" / "lp_arf.ini");
   check(profile.id == L"lp_arf" && profile.flow == L"lp_arf" &&
             profile.vendor_name == L"零跑" &&
-            profile.project_name == L"ARF631" &&
-            profile.device_name == L"LP-ARF" &&
+            profile.project_name == L"ARF" &&
+            profile.device_name == L"ARF 雷达" &&
             !profile.placeholder && profile.can_fd &&
             !profile.power_control && !profile.extended_id &&
             !profile.uds_fd && !profile.uds_brs &&
             profile.supports_ft_entry &&
             !profile.supports_cal_download &&
+            profile.supports_app_tmp_package &&
             profile.lock_diagnostic_ids &&
             profile.default_entry_mode == L"app" &&
             profile.app_entry_label == L"APP" &&
-            profile.ft_entry_label == L"FT" &&
+            profile.ft_entry_label == L"PLS" &&
             profile.tx_id == 0x751 && profile.rx_id == 0x759 &&
             profile.functional_id == 0x7DF &&
             profile.ft_tx_id == 0x701 && profile.ft_rx_id == 0x761 &&
@@ -2863,6 +2848,9 @@ void test_lp_arf_protocol_and_resources() {
             profile.driver_length == 0 && profile.driver_file.empty() &&
             profile.app_start == uds::kLpArfAppAddress &&
             profile.app_length == uds::kLpArfAppLength &&
+            profile.app_file.filename() ==
+                L"LP-MRS050-BA_V2.10.16_R_20240802.tmp" &&
+            profile.app_verify_file.empty() &&
             profile.app_verify_label == L"Certificate",
         "LP-ARF packaged profile mismatch");
 
@@ -2940,7 +2928,7 @@ void test_lp_arf_protocol_and_resources() {
 
   const auto workflow = uds::create_flash_workflow(L"lp_arf");
   check(workflow && workflow->id() == L"lp_arf" &&
-            workflow->report_title(profile).find("LP-ARF 631") !=
+            workflow->report_title(profile).find("Leapmotor ARF") !=
                 std::string::npos,
         "LP-ARF workflow factory/report mapping mismatch");
 }
@@ -2999,8 +2987,7 @@ int main() {
         test_lp_arc_protocol_and_resources);
     run("lp_arf_protocol_and_resources",
         test_lp_arf_protocol_and_resources);
-    run("lp_arf231_project_contracts",
-        test_lp_arf231_project_contracts);
+    run("lp_arf_tmp_packages", test_lp_arf_tmp_packages);
     std::cout << "core_tests PASS\n";
     return 0;
   } catch (const std::exception& error) {

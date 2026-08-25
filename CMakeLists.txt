@@ -122,7 +122,6 @@ add_library(uds_flash STATIC
   src/flash/lp_arc_workflow.cpp
   src/flash/lp_arf_flow.cpp
   src/flash/lp_arf_workflow.cpp
-  src/flash/lp_arf231_project_workflows.cpp
   src/flash/geely_p416_flow.cpp
   src/flash/geely_p416_workflow.cpp
   src/flash/shidaixinan_hjzj_fmr_flow.cpp
@@ -245,7 +244,6 @@ if(UDS_BUILD_QT_UI AND CMAKE_SIZEOF_VOID_P EQUAL 8)
       src/flash/lp_arc_workflow.cpp
       src/flash/lp_arf_flow.cpp
       src/flash/lp_arf_workflow.cpp
-      src/flash/lp_arf231_project_workflows.cpp
       src/flash/geely_p416_flow.cpp
       src/flash/geely_p416_workflow.cpp
       src/flash/shidaixinan_hjzj_fmr_flow.cpp

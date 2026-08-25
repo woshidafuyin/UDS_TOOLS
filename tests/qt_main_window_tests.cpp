@@ -762,7 +762,8 @@ int main(int argc, char* argv[]) {
                     .toString()
                     .contains(QStringLiteral("*.s19")),
             "Qt file dialogs still hide S19 resources");
-      const auto check_file_panel_is_stable = [&window]() {
+      const auto check_file_panel_is_stable =
+          [&window](const bool allow_embedded_verification = false) {
         const auto* driver_label =
             window.findChild<QLabel*>(QStringLiteral("driverPathLabel"));
         const auto* app_verify_label = window.findChild<QLabel*>(
@@ -772,8 +773,13 @@ int main(int argc, char* argv[]) {
         check(driver_label &&
                   driver_label->text() == QStringLiteral("Driver 文件") &&
                   app_verify_label &&
-                  app_verify_label->text() ==
-                      QStringLiteral("APP 校验文件") &&
+                  (app_verify_label->text() ==
+                       QStringLiteral("APP 校验文件") ||
+                   (allow_embedded_verification &&
+                    app_verify_label->text() ==
+                        QStringLiteral("APP 验签（内置）") &&
+                    app_verify_path->property("embeddedVerification")
+                        .toBool())) &&
                    app_verify_path,
                "Flash-file labels changed between projects");
         for (const auto& name :
@@ -1448,10 +1454,8 @@ int main(int argc, char* argv[]) {
       }
       check_project_devices(application, projects, devices,
                              QStringLiteral("零跑"),
-                             {QStringLiteral("A12"),
-                              QStringLiteral("ARC"),
-                              QStringLiteral("ARF631"),
-                              QStringLiteral("B11")});
+                             {QStringLiteral("ARC"),
+                              QStringLiteral("ARF")});
       devices->setCurrentIndex(find_text(devices, QStringLiteral("ARC")));
       application.processEvents();
       auto* app_verify_label = window.findChild<QLabel*>(
@@ -1505,10 +1509,10 @@ int main(int argc, char* argv[]) {
       entries->setCurrentIndex(entries->findData(QStringLiteral("app")));
       application.processEvents();
       check_file_panel_is_stable();
-      devices->setCurrentIndex(find_text(devices, QStringLiteral("ARF631")));
+      devices->setCurrentIndex(find_text(devices, QStringLiteral("ARF")));
       application.processEvents();
       check(!radar->isHidden() && radar->count() == 1 &&
-                radar->currentText() == QStringLiteral("LP-ARF") &&
+                radar->currentText() == QStringLiteral("ARF 雷达") &&
                 tx_id->isReadOnly() &&
                  rx_id->isReadOnly() &&
                 tx_id->text() == QStringLiteral("0x751") &&
@@ -1521,48 +1525,29 @@ int main(int argc, char* argv[]) {
                      QStringLiteral("APP") &&
                  entries->itemText(
                      entries->findData(QStringLiteral("ft"))) ==
-                     QStringLiteral("FT") &&
+                     QStringLiteral("PLS") &&
                 driver_path->text().isEmpty() &&
-                app_path->text().contains(QStringLiteral("ARF6.31")) &&
+                window.findChild<QLabel*>(QStringLiteral("appPathLabel"))
+                        ->text() == QStringLiteral("APP 文件/升级包") &&
+                app_path->text().endsWith(QStringLiteral(".tmp"),
+                                          Qt::CaseInsensitive) &&
+                window.findChild<QLineEdit*>(
+                          QStringLiteral("appVerifyPathLineEdit"))
+                        ->text()
+                        .contains(QStringLiteral("TMP 内置 Certificate")) &&
+                window.findChild<QLineEdit*>(
+                          QStringLiteral("appVerifyPathLineEdit"))
+                        ->property("embeddedVerification")
+                        .toBool() &&
+                window.findChild<QPushButton*>(
+                          QStringLiteral("appVerifyBrowseButton"))
+                        ->text() == QStringLiteral("详情") &&
                 c857_seed_key->text().contains(
                     QStringLiteral("lingpao_SeednKey")) &&
                 app_verify_label &&
-                app_verify_label->text() ==
-                    QStringLiteral("APP 校验文件"),
+                app_verify_label->text() == QStringLiteral("APP 验签（内置）"),
             "LP-ARF UI endpoint, entry names or resources mismatch");
-      check_file_panel_is_stable();
-      for (const auto& project_name :
-           {QStringLiteral("A12"), QStringLiteral("B11")}) {
-        devices->setCurrentIndex(find_text(devices, project_name));
-        application.processEvents();
-        check(radar->count() == 1 && tx_id->isReadOnly() &&
-                  rx_id->isReadOnly() &&
-                  tx_id->text() == QStringLiteral("0x751") &&
-                  rx_id->text() == QStringLiteral("0x759") &&
-                  entries->count() == 2 &&
-                  entries->itemText(entries->findData(QStringLiteral("app"))) ==
-                      QStringLiteral("APP") &&
-                  entries->itemText(entries->findData(QStringLiteral("ft"))) ==
-                      QStringLiteral("PLS") &&
-                  window.findChild<QLabel*>(QStringLiteral("appPathLabel"))
-                          ->text() == QStringLiteral("APP 文件/升级包") &&
-                  app_path->text().endsWith(QStringLiteral(".tmp"),
-                                            Qt::CaseInsensitive) &&
-                  window.findChild<QLineEdit*>(
-                            QStringLiteral("appVerifyPathLineEdit"))
-                          ->text()
-                          .contains(QStringLiteral("TMP 内置 Certificate")) &&
-                  window.findChild<QLineEdit*>(
-                            QStringLiteral("appVerifyPathLineEdit"))
-                          ->property("embeddedVerification")
-                          .toBool() &&
-                  window.findChild<QPushButton*>(
-                            QStringLiteral("appVerifyBrowseButton"))
-                          ->text() == QStringLiteral("详情") &&
-                  c857_seed_key->text().contains(
-                      QStringLiteral("SeednKey"), Qt::CaseInsensitive),
-              "A12/B11 ARF2.31 independent UI resources or entry contract mismatch");
-      }
+      check_file_panel_is_stable(true);
 
       checkpoint("profile-ui");
       run_ui_monkey_test(application, window, projects, devices, entries,

@@ -31,7 +31,7 @@
 | `shidaixinan_muxing2_fmr.ini` | 时代新安 木星2代 FMR | 9 | 无 |
 | `shidaixinan_qingling_fmr.ini` | 时代新安 庆铃 FMR | 9 | 无 |
 | `lp_arc.ini` | 零跑 ARC | 10 | 无 |
-| `lp_arf.ini` | 零跑 ARF631 | 8 | 无 |
+| `lp_arf.ini` | 零跑 ARF统一入口 | 8 | 无 |
 | `geely_p416.ini` | 吉利 P416 | 13 | 无 |
 
 ## 配置格式
