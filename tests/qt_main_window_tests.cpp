@@ -1544,12 +1544,21 @@ int main(int argc, char* argv[]) {
                       QStringLiteral("APP") &&
                   entries->itemText(entries->findData(QStringLiteral("ft"))) ==
                       QStringLiteral("PLS") &&
-                  app_path->text().contains(project_name) &&
+                  window.findChild<QLabel*>(QStringLiteral("appPathLabel"))
+                          ->text() == QStringLiteral("APP 文件/升级包") &&
+                  app_path->text().endsWith(QStringLiteral(".tmp"),
+                                            Qt::CaseInsensitive) &&
                   window.findChild<QLineEdit*>(
-                      QStringLiteral("appVerifyPathLineEdit"))
-                      ->text()
-                      .endsWith(QStringLiteral(".tmp"),
-                                Qt::CaseInsensitive) &&
+                            QStringLiteral("appVerifyPathLineEdit"))
+                          ->text()
+                          .contains(QStringLiteral("TMP 内置 Certificate")) &&
+                  window.findChild<QLineEdit*>(
+                            QStringLiteral("appVerifyPathLineEdit"))
+                          ->property("embeddedVerification")
+                          .toBool() &&
+                  window.findChild<QPushButton*>(
+                            QStringLiteral("appVerifyBrowseButton"))
+                          ->text() == QStringLiteral("详情") &&
                   c857_seed_key->text().contains(
                       QStringLiteral("SeednKey"), Qt::CaseInsensitive),
               "A12/B11 ARF2.31 independent UI resources or entry contract mismatch");

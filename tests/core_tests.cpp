@@ -780,6 +780,7 @@ void test_profile_round_trip() {
     expected.placeholder = false;
     expected.can_fd = false;
     expected.power_control = false;
+    expected.supports_app_tmp_package = true;
     expected.lock_diagnostic_ids = true;
     expected.app_entry_label = L"APP";
     expected.ft_entry_label = L"FT";
@@ -823,6 +824,8 @@ void test_profile_round_trip() {
               actual.placeholder == expected.placeholder &&
                actual.can_fd == expected.can_fd &&
                actual.power_control == expected.power_control &&
+               actual.supports_app_tmp_package ==
+                   expected.supports_app_tmp_package &&
                actual.lock_diagnostic_ids == expected.lock_diagnostic_ids &&
                actual.app_entry_label == expected.app_entry_label &&
                actual.ft_entry_label == expected.ft_entry_label &&
@@ -1727,6 +1730,7 @@ void test_lp_arf231_project_contracts() {
               profile.ft_tx_id == 0x701 && profile.ft_rx_id == 0x761 &&
               profile.functional_id == 0x7DF && profile.can_fd &&
               !profile.uds_fd && profile.supports_ft_entry &&
+              profile.supports_app_tmp_package &&
               profile.app_start == 0xC0000 && profile.app_length == 0x180000 &&
               profile.driver_length == 0 && profile.targets.size() == 1 &&
               profile.targets[0].pending_validation,
@@ -1735,23 +1739,58 @@ void test_lp_arf231_project_contracts() {
     check(workflow && workflow->id() == profile.flow &&
               workflow->report_title(profile).find("ARF2.31") != std::string::npos,
           std::string("ARF2.31 independent workflow mismatch: ") + profile_name);
-    const auto app = uds::load_srecord_window(source / profile.app_file,
-                                               profile.app_start,
-                                               profile.app_length);
-    std::ifstream input(source / profile.app_verify_file, std::ios::binary);
-    const std::vector<std::uint8_t> package(
-        (std::istreambuf_iterator<char>(input)), {});
-    check(package.size() > uds::kLpArfCertificateLength &&
-              package[0] == 'L' && package[1] == 'E' &&
-              package[2] == 'A' && package[3] == 'P',
-          std::string("ARF2.31 TMP package invalid: ") + profile_name);
-    const auto hash = uds::sha256(app);
-    check(std::equal(hash.begin(), hash.end(),
-                     package.end() - static_cast<std::ptrdiff_t>(
-                                         uds::kLpArfCertificateLength)) &&
+    const auto package =
+        uds::load_leapmotor_tmp(source / profile.app_file);
+    const auto artifacts =
+        uds::load_lp_arf_artifacts(source / profile.app_file);
+    const auto hash = uds::sha256(package.app.data);
+    check(package.app.address == profile.app_start &&
+              artifacts.certificate_embedded &&
+              artifacts.images.app.address == package.app.address &&
+              artifacts.images.app.data == package.app.data &&
+              artifacts.images.certificate == package.certificate &&
+              package.app.data.size() == profile.app_length &&
+              profile.app_verify_file.empty() &&
+              package.certificate.size() == uds::kLpArfCertificateLength &&
+              package.metadata_json.find("\"SignInfoLen\":\t1322") !=
+                  std::string::npos &&
+              std::equal(hash.begin(), hash.end(),
+                         package.certificate.begin()) &&
               std::filesystem::file_size(source / profile.security_dll) == 777216,
-          std::string("ARF2.31 APP/TMP/DLL binding mismatch: ") + profile_name);
+          std::string("ARF2.31 structured APP/TMP/DLL binding mismatch: ") +
+              profile_name);
   }
+  const auto valid_tmp =
+      source / "resources/lp_arf231_a12/Verification/"
+               "LP-MRS050-BA_V3.01.07_R_20260608.tmp";
+  std::ifstream package_input(valid_tmp, std::ios::binary);
+  std::vector<std::uint8_t> corrupted_package(
+      (std::istreambuf_iterator<char>(package_input)), {});
+  const auto metadata_length =
+      (static_cast<std::uint32_t>(corrupted_package[4]) << 24U) |
+      (static_cast<std::uint32_t>(corrupted_package[5]) << 16U) |
+      (static_cast<std::uint32_t>(corrupted_package[6]) << 8U) |
+      static_cast<std::uint32_t>(corrupted_package[7]);
+  const auto app_offset = 8U + metadata_length + 13U;
+  corrupted_package[app_offset] ^= 0x01U;
+  const auto corrupted_tmp =
+      std::filesystem::temp_directory_path() /
+      "uds_cpp_corrupted_leapmotor.tmp";
+  {
+    std::ofstream output(corrupted_tmp, std::ios::binary | std::ios::trunc);
+    output.write(reinterpret_cast<const char*>(corrupted_package.data()),
+                 static_cast<std::streamsize>(corrupted_package.size()));
+  }
+  bool corrupted_rejected = false;
+  try {
+    static_cast<void>(uds::load_leapmotor_tmp(corrupted_tmp));
+  } catch (const std::runtime_error&) {
+    corrupted_rejected = true;
+  }
+  std::error_code remove_error;
+  std::filesystem::remove(corrupted_tmp, remove_error);
+  check(corrupted_rejected,
+        "Leapmotor TMP parser accepted an APP with invalid CRC32");
   const auto blocked = uds::load_profile_ini(
       source / "profiles" / "beiqi_requirement_blocked.ini");
   check(blocked.placeholder && blocked.flow.empty() &&

@@ -78,6 +78,8 @@ private:
   void populateTargetOptions(int device_index);
   void applySelectedProfile(int device_index);
   void applySelectedRadar(bool log_change);
+  void updateAppPackagePresentation(bool report_error = false);
+  [[nodiscard]] bool selectedProfileSupportsAppTmpPackage() const;
   [[nodiscard]] int selectedProfileIndex(bool* valid = nullptr) const;
   [[nodiscard]] bool hasRadarSelector() const;
   [[nodiscard]] QString selectedTargetId() const;

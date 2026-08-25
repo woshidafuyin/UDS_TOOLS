@@ -75,6 +75,7 @@ struct ControllerProfileOption {
   VersionReadItems version_items;
   quint32 ft_tx_id{};
   quint32 ft_rx_id{};
+  bool supports_app_tmp_package{};
 };
 
 // Owns the application-layer controllers and adapts their standard C++ worker

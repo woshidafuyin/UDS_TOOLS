@@ -11,8 +11,6 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
-#include <cwctype>
-#include <fstream>
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
@@ -48,28 +46,6 @@ bool same_bytes(std::span<const std::uint8_t> left,
          std::equal(left.begin(), left.end(), right.begin());
 }
 
-SRecordSegment load_replaceable_app(const std::filesystem::path& path) {
-  if (path.empty()) {
-    throw std::runtime_error("select an LP-ARF APP S19/SREC/BIN file");
-  }
-  auto extension = path.extension().wstring();
-  std::transform(extension.begin(), extension.end(), extension.begin(),
-                 [](wchar_t value) { return std::towlower(value); });
-  if (extension == L".bin") {
-    std::ifstream input(path, std::ios::binary);
-    if (!input) throw std::runtime_error("cannot open LP-ARF APP binary");
-    std::vector<std::uint8_t> data(
-        (std::istreambuf_iterator<char>(input)),
-        std::istreambuf_iterator<char>());
-    if (data.size() != kLpArfAppLength) {
-      throw std::runtime_error("LP-ARF APP BIN must be exactly 0x180000 bytes");
-    }
-    return {kLpArfAppAddress, std::move(data)};
-  }
-  return {kLpArfAppAddress,
-          load_srecord_window(path, kLpArfAppAddress, kLpArfAppLength)};
-}
-
 } // namespace
 
 std::wstring_view LpArfWorkflow::id() const noexcept {
@@ -85,6 +61,7 @@ void LpArfWorkflow::run(
     std::stop_token stop) {
   if (!job.profile.can_fd || job.profile.extended_id ||
       job.profile.uds_fd || job.profile.uds_brs ||
+      job.profile.tx_id != 0x751 || job.profile.rx_id != 0x759 ||
       job.profile.functional_id != 0x7DF ||
       job.profile.ft_tx_id != 0x701 || job.profile.ft_rx_id != 0x761 ||
       job.profile.ft_extended_id || job.profile.ft_uds_fd ||
@@ -92,7 +69,11 @@ void LpArfWorkflow::run(
       job.profile.ft_padding != 0x55 ||
       job.profile.nominal_bitrate != 500000 ||
       job.profile.data_bitrate != 2000000 ||
-      job.profile.isotp_st_min != 0) {
+      job.profile.isotp_st_min != 0 ||
+      job.profile.security_level != 0x11 ||
+      job.profile.app_start != kLpArfAppAddress ||
+      job.profile.app_length != kLpArfAppLength ||
+      job.profile.driver_length != 0) {
     throw std::runtime_error(
         "LP-ARF requires a CAN-FD-capable 500k/2M channel with Classic UDS, "
         "APP 751/759, PLS 701/761, functional 7DF, padding 55 and STmin 0");
@@ -119,17 +100,15 @@ void LpArfWorkflow::run(
       resolve_path(job.executable_directory, job.security_dll);
   const auto broker = job.executable_directory / L"keygen_broker.exe";
 
-  LpArfImages images;
+  LpArfArtifacts artifacts;
   try {
-    images.app = load_replaceable_app(app_path);
-    images.certificate = load_asc_hex(
-        certificate_path, kLpArfCertificateLength,
-        kLpArfCertificateLength);
+    artifacts = load_lp_arf_artifacts(app_path, certificate_path);
   } catch (const std::exception& error) {
     throw std::runtime_error(
         std::string("LP-ARF file preflight failed before CAN access: ") +
         error.what());
   }
+  auto& images = artifacts.images;
   if (images.app.address != kLpArfAppAddress ||
       images.app.data.size() != kLpArfAppLength) {
     throw std::runtime_error(
@@ -148,8 +127,12 @@ void LpArfWorkflow::run(
       hex_u32(static_cast<std::uint32_t>(images.app.data.size())) +
       ", CRC32=" + hex_u32(app_crc) + ", SHA-256=" + to_hex(app_hash) +
       "; certificate=1322 bytes matched to selected APP; "
+      "certificate-source=" +
+      std::string(artifacts.certificate_embedded ? "TMP embedded" :
+                                                   "external file") +
+      "; "
       "Driver=disabled by CANoe baseline";
-  if (callbacks.log) callbacks.log("LP-ARF S19 preflight complete: " + layout);
+  if (callbacks.log) callbacks.log("LP-ARF package preflight complete: " + layout);
   report(callbacks, "File preflight", "PASS", layout);
 
   const auto keygen =

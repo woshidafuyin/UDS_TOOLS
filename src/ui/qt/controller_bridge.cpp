@@ -770,6 +770,8 @@ void ControllerBridge::buildProfileOptions() {
     auto& option = profile_options_.back();
     option.ft_tx_id = record.profile.ft_tx_id;
     option.ft_rx_id = record.profile.ft_rx_id;
+    option.supports_app_tmp_package =
+        record.profile.supports_app_tmp_package;
     try {
       const auto plan = load_version_check_plan(record.source, {});
       option.version_check_available = !plan.items.empty();

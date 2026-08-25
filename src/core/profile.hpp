@@ -43,6 +43,10 @@ struct FlashProfile {
   bool uds_brs{};
   bool supports_ft_entry{};
   bool supports_cal_download{};
+  // The APP selector may accept a self-contained package whose parser yields
+  // both the APP image and its verification payload. Keep this capability in
+  // the Profile so the generic UI does not hard-code project identifiers.
+  bool supports_app_tmp_package{};
   bool lock_diagnostic_ids{};
   std::wstring default_entry_mode{L"app"};
   std::wstring app_entry_label{L"APP"};

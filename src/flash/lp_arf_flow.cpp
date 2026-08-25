@@ -1,8 +1,99 @@
 #include "flash/lp_arf_flow.hpp"
 
+#include "core/flash_data.hpp"
+
+#include <algorithm>
+#include <cwctype>
+#include <fstream>
+#include <stdexcept>
 #include <utility>
 
 namespace uds {
+
+namespace {
+
+std::wstring lowercase_extension(const std::filesystem::path& path) {
+  auto extension = path.extension().wstring();
+  std::transform(extension.begin(), extension.end(), extension.begin(),
+                 [](wchar_t value) { return std::towlower(value); });
+  return extension;
+}
+
+bool same_bytes(std::span<const std::uint8_t> left,
+                std::span<const std::uint8_t> right) {
+  return left.size() == right.size() &&
+         std::equal(left.begin(), left.end(), right.begin());
+}
+
+SRecordSegment load_external_app(const std::filesystem::path& path) {
+  if (path.empty()) {
+    throw std::runtime_error("select an LP-ARF APP S19/SREC/BIN or TMP package");
+  }
+  if (lowercase_extension(path) == L".bin") {
+    std::ifstream input(path, std::ios::binary);
+    if (!input) throw std::runtime_error("cannot open LP-ARF APP binary");
+    std::vector<std::uint8_t> data{
+        std::istreambuf_iterator<char>(input), {}};
+    if (data.size() != kLpArfAppLength) {
+      throw std::runtime_error("LP-ARF APP BIN must be exactly 0x180000 bytes");
+    }
+    return {kLpArfAppAddress, std::move(data)};
+  }
+  return {kLpArfAppAddress,
+          load_srecord_window(path, kLpArfAppAddress, kLpArfAppLength)};
+}
+
+void require_valid_package(const LeapmotorTmpPackage& package) {
+  if (package.app.address != kLpArfAppAddress ||
+      package.app.data.size() != kLpArfAppLength) {
+    throw std::runtime_error(
+        "LP-ARF TMP APP must resolve to 000C0000/180000");
+  }
+  if (package.certificate.size() != kLpArfCertificateLength) {
+    throw std::runtime_error(
+        "LP-ARF TMP certificate must be exactly 1322 bytes");
+  }
+}
+
+} // namespace
+
+LpArfArtifacts load_lp_arf_artifacts(
+    const std::filesystem::path& app_path,
+    const std::filesystem::path& certificate_path) {
+  if (lowercase_extension(app_path) == L".tmp") {
+    if (!certificate_path.empty()) {
+      throw std::runtime_error(
+          "LP-ARF TMP already embeds its certificate; clear the external APP verification file");
+    }
+    auto package = load_leapmotor_tmp(app_path);
+    require_valid_package(package);
+    return {{{}, {package.app.address, std::move(package.app.data)},
+             std::move(package.certificate)},
+            true};
+  }
+
+  auto app = load_external_app(app_path);
+  if (certificate_path.empty()) {
+    throw std::runtime_error(
+        "select the APP verification ASC/TMP for the selected S19/SREC/BIN");
+  }
+  if (lowercase_extension(certificate_path) == L".tmp") {
+    auto package = load_leapmotor_tmp(certificate_path);
+    require_valid_package(package);
+    if (package.app.address != app.address ||
+        !same_bytes(package.app.data, app.data)) {
+      throw std::runtime_error(
+          "LP-ARF TMP APP does not match the selected S19/BIN");
+    }
+    return {{{}, {app.address, std::move(app.data)},
+             std::move(package.certificate)},
+            false};
+  }
+  return {{{}, {app.address, std::move(app.data)},
+           load_asc_hex(certificate_path, kLpArfCertificateLength,
+                        kLpArfCertificateLength)},
+          false};
+}
 
 LingpaoRadarSpec lp_arf_radar_spec() {
   // The ARF6.31 CANoe Download() intentionally leaves the Driver 34/36/37

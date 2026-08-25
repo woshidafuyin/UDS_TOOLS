@@ -328,6 +328,111 @@ std::vector<std::uint8_t> load_asc_hex(const std::filesystem::path& path,
   return load_hex_bytes(path, take, minimum);
 }
 
+LeapmotorTmpPackage load_leapmotor_tmp(
+    const std::filesystem::path& path) {
+  std::ifstream input(path, std::ios::binary);
+  if (!input) throw std::runtime_error("cannot open Leapmotor TMP package");
+  const std::vector<std::uint8_t> file{
+      std::istreambuf_iterator<char>(input), {}};
+  constexpr std::array<std::uint8_t, 4> kLeapMagic{'L', 'E', 'A', 'P'};
+  if (file.size() < 8U ||
+      !std::equal(kLeapMagic.begin(), kLeapMagic.end(), file.begin())) {
+    throw std::runtime_error("invalid Leapmotor TMP magic");
+  }
+  const auto read_tmp_be32 = [&file](std::size_t offset,
+                                     const char* field) {
+    if (offset > file.size() || file.size() - offset < 4U) {
+      throw std::runtime_error(std::string("Leapmotor TMP is truncated at ") +
+                               field);
+    }
+    return (static_cast<std::uint32_t>(file[offset]) << 24U) |
+           (static_cast<std::uint32_t>(file[offset + 1U]) << 16U) |
+           (static_cast<std::uint32_t>(file[offset + 2U]) << 8U) |
+           static_cast<std::uint32_t>(file[offset + 3U]);
+  };
+
+  const auto metadata_length =
+      static_cast<std::size_t>(read_tmp_be32(4U, "metadata length"));
+  constexpr std::size_t kMetadataOffset = 8U;
+  if (metadata_length > file.size() - kMetadataOffset) {
+    throw std::runtime_error("Leapmotor TMP metadata length exceeds file");
+  }
+  const auto descriptor_offset = kMetadataOffset + metadata_length;
+  constexpr std::size_t kDescriptorLength = 13U;
+  if (descriptor_offset > file.size() ||
+      file.size() - descriptor_offset < kDescriptorLength) {
+    throw std::runtime_error("Leapmotor TMP APP descriptor is truncated");
+  }
+
+  LeapmotorTmpPackage package;
+  package.metadata_json.assign(
+      reinterpret_cast<const char*>(file.data() + kMetadataOffset),
+      metadata_length);
+  if (package.metadata_json.empty() ||
+      package.metadata_json.front() != '{' ||
+      package.metadata_json.back() != '}') {
+    throw std::runtime_error("Leapmotor TMP metadata is not a JSON object");
+  }
+  const std::regex sign_length_pattern(
+      R"("SignInfoLen"\s*:\s*([0-9]+))");
+  std::smatch sign_length_match;
+  if (!std::regex_search(package.metadata_json, sign_length_match,
+                         sign_length_pattern)) {
+    throw std::runtime_error(
+        "Leapmotor TMP metadata is missing SignInfoLen");
+  }
+  const auto sign_length_u64 =
+      std::stoull(sign_length_match[1].str());
+  if (sign_length_u64 == 0U ||
+      sign_length_u64 > std::numeric_limits<std::size_t>::max()) {
+    throw std::runtime_error("Leapmotor TMP SignInfoLen is invalid");
+  }
+  const auto sign_length = static_cast<std::size_t>(sign_length_u64);
+
+  if (file[descriptor_offset] != 1U) {
+    throw std::runtime_error(
+        "Leapmotor TMP requires exactly one APP image segment");
+  }
+  package.app_crc32 =
+      read_tmp_be32(descriptor_offset + 1U, "APP CRC32");
+  package.app.address =
+      read_tmp_be32(descriptor_offset + 5U, "APP address");
+  const auto app_length_u32 =
+      read_tmp_be32(descriptor_offset + 9U, "APP length");
+  if (app_length_u32 == 0U) {
+    throw std::runtime_error("Leapmotor TMP APP length is zero");
+  }
+  const auto app_offset = descriptor_offset + kDescriptorLength;
+  const auto app_length = static_cast<std::size_t>(app_length_u32);
+  if (app_offset > file.size() || app_length > file.size() - app_offset) {
+    throw std::runtime_error("Leapmotor TMP APP data is truncated");
+  }
+  const auto certificate_offset = app_offset + app_length;
+  if (certificate_offset > file.size() ||
+      file.size() - certificate_offset != sign_length) {
+    throw std::runtime_error(
+        "Leapmotor TMP SignInfoLen does not match the package tail");
+  }
+
+  package.app.data.assign(
+      file.begin() + static_cast<std::ptrdiff_t>(app_offset),
+      file.begin() + static_cast<std::ptrdiff_t>(certificate_offset));
+  package.certificate.assign(
+      file.begin() + static_cast<std::ptrdiff_t>(certificate_offset),
+      file.end());
+  if (crc32_ieee(package.app.data) != package.app_crc32) {
+    throw std::runtime_error("Leapmotor TMP APP CRC32 mismatch");
+  }
+  const auto app_hash = sha256(package.app.data);
+  if (package.certificate.size() < app_hash.size() ||
+      !std::equal(app_hash.begin(), app_hash.end(),
+                  package.certificate.begin())) {
+    throw std::runtime_error(
+        "Leapmotor TMP certificate is not bound to the APP SHA-256");
+  }
+  return package;
+}
+
 CbfImage load_chuneng_cbf(const std::filesystem::path& path) {
   std::ifstream input(path, std::ios::binary);
   if (!input) throw std::runtime_error("cannot open CBF file");

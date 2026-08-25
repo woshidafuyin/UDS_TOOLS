@@ -130,6 +130,8 @@ FlashProfile load_profile_ini(const std::filesystem::path& path) {
   p.supports_cal_download =
       read_bool(values, L"supports_cal_download",
                 p.supports_cal_download);
+  p.supports_app_tmp_package = read_bool(
+      values, L"supports_app_tmp_package", p.supports_app_tmp_package);
   p.lock_diagnostic_ids =
       read_bool(values, L"lock_diagnostic_ids", p.lock_diagnostic_ids);
   p.default_entry_mode =
@@ -233,6 +235,8 @@ void save_profile_ini(const FlashProfile& p, const std::filesystem::path& path) 
   append_value(contents, L"supports_ft_entry", p.supports_ft_entry ? L"true" : L"false");
   append_value(contents, L"supports_cal_download",
                p.supports_cal_download ? L"true" : L"false");
+  append_value(contents, L"supports_app_tmp_package",
+               p.supports_app_tmp_package ? L"true" : L"false");
   append_value(contents, L"lock_diagnostic_ids",
                p.lock_diagnostic_ids ? L"true" : L"false");
   append_value(contents, L"default_entry_mode", p.default_entry_mode);

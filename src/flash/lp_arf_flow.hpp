@@ -2,6 +2,8 @@
 
 #include "flash/lingpao_radar_flow.hpp"
 
+#include <filesystem>
+
 namespace uds {
 
 inline constexpr std::uint32_t kLpArfAppAddress{0x000C0000};
@@ -12,6 +14,21 @@ inline constexpr std::size_t kLpArfCertificateLength{1322};
 using LpArfEntryMode = LingpaoRadarEntryMode;
 using LpArfImages = LingpaoRadarImages;
 using LpArfTiming = LingpaoRadarTiming;
+
+struct LpArfArtifacts {
+  LpArfImages images;
+  bool certificate_embedded{};
+};
+
+// Normalize both supported operator inputs into one execution artifact:
+//   TMP              -> embedded APP + embedded certificate
+//   S19/SREC/BIN+ASC -> selected APP + external certificate
+//   S19/SREC/BIN+TMP -> selected APP + matched package certificate
+// This is deliberately UI-independent so every ARF workflow shares the same
+// package policy and fail-closed validation.
+LpArfArtifacts load_lp_arf_artifacts(
+    const std::filesystem::path& app_path,
+    const std::filesystem::path& certificate_path = {});
 
 LingpaoRadarSpec lp_arf_radar_spec();
 LpArfEntryMode resolve_lp_arf_entry_mode(std::wstring_view entry_mode);

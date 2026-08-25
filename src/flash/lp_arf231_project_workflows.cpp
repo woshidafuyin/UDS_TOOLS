@@ -11,8 +11,6 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
-#include <cwctype>
-#include <fstream>
 #include <stdexcept>
 
 namespace uds {
@@ -43,45 +41,6 @@ bool same(std::span<const std::uint8_t> left,
           std::span<const std::uint8_t> right) {
   return left.size() == right.size() &&
          std::equal(left.begin(), left.end(), right.begin());
-}
-
-SRecordSegment load_app(const std::filesystem::path& path) {
-  if (path.empty()) throw std::runtime_error("select the project APP S19/BIN");
-  auto extension = path.extension().wstring();
-  std::transform(extension.begin(), extension.end(), extension.begin(),
-                 [](wchar_t value) { return std::towlower(value); });
-  if (extension == L".bin") {
-    std::ifstream input(path, std::ios::binary);
-    if (!input) throw std::runtime_error("cannot open APP BIN");
-    std::vector<std::uint8_t> data((std::istreambuf_iterator<char>(input)), {});
-    if (data.size() != kLpArfAppLength) {
-      throw std::runtime_error("ARF2.31 APP BIN must be exactly 0x180000 bytes");
-    }
-    return {kLpArfAppAddress, std::move(data)};
-  }
-  return {kLpArfAppAddress,
-          load_srecord_window(path, kLpArfAppAddress, kLpArfAppLength)};
-}
-
-std::vector<std::uint8_t> load_certificate(
-    const std::filesystem::path& path) {
-  auto extension = path.extension().wstring();
-  std::transform(extension.begin(), extension.end(), extension.begin(),
-                 [](wchar_t value) { return std::towlower(value); });
-  if (extension != L".tmp") {
-    return load_asc_hex(path, kLpArfCertificateLength,
-                        kLpArfCertificateLength);
-  }
-  std::ifstream input(path, std::ios::binary);
-  if (!input) throw std::runtime_error("cannot open Leapmotor TMP package");
-  std::vector<std::uint8_t> package((std::istreambuf_iterator<char>(input)), {});
-  constexpr std::array<std::uint8_t, 4> magic{'L', 'E', 'A', 'P'};
-  if (package.size() <= kLpArfCertificateLength + 8 ||
-      !std::equal(magic.begin(), magic.end(), package.begin())) {
-    throw std::runtime_error("invalid Leapmotor TMP package header/length");
-  }
-  return {package.end() - static_cast<std::ptrdiff_t>(kLpArfCertificateLength),
-          package.end()};
 }
 
 void run_project(const ProjectContract& contract, const FlashJob& job,
@@ -119,15 +78,15 @@ void run_project(const ProjectContract& contract, const FlashJob& job,
     throw std::runtime_error(contract.name + " SeedKey DLL is missing");
   }
 
-  LingpaoRadarImages images;
+  LpArfArtifacts artifacts;
   try {
-    images.app = load_app(app_path);
-    images.certificate = load_certificate(certificate_path);
+    artifacts = load_lp_arf_artifacts(app_path, certificate_path);
   } catch (const std::exception& error) {
     throw std::runtime_error(contract.name +
                              " file preflight failed before CAN access: " +
                              error.what());
   }
+  auto& images = artifacts.images;
   const auto app_hash = sha256(images.app.data);
   if (!same(app_hash, std::span(images.certificate).first(app_hash.size()))) {
     throw std::runtime_error(contract.name +
@@ -154,7 +113,9 @@ void run_project(const ProjectContract& contract, const FlashJob& job,
   }
   report(callbacks, "Requirement contract", "PASS",
          contract.name +
-             "; APP=751/759; PLS=701/761; APP window=000C0000/00180000; TMP certificate=1322 bytes and SHA-256 bound");
+             "; APP=751/759; PLS=701/761; APP window=000C0000/00180000; certificate=1322 bytes and SHA-256 bound; source=" +
+             (artifacts.certificate_embedded ? "TMP embedded" :
+                                                "external verification file"));
   report(callbacks, "Acceptance boundary", "WARN",
          "A12 and B11 share the parameterized ARF2.31 protocol engine, but retain independent Profiles/resources and require independent bench acceptance");
 

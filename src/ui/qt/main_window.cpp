@@ -1,5 +1,6 @@
 #include "ui/qt/main_window.hpp"
 
+#include "core/flash_data.hpp"
 #include "drivers/can/can_bus_provider.hpp"
 #include "core/uds_nrc.hpp"
 #include "ui/qt/bus_monitor_page.hpp"
@@ -52,6 +53,7 @@
 
 #include <algorithm>
 #include <array>
+#include <filesystem>
 #include <optional>
 #include <tuple>
 #include <utility>
@@ -62,6 +64,8 @@ namespace {
 
 constexpr auto kFullPathProperty = "fullPath";
 constexpr auto kConfiguredPlaceholderProperty = "configuredPathPlaceholder";
+constexpr auto kEmbeddedVerificationProperty = "embeddedVerification";
+constexpr auto kPackageValidProperty = "appPackageValid";
 
 std::optional<std::uint8_t> nrcFromLogLine(const QString& message) {
   static const QRegularExpression explicit_nrc(
@@ -632,7 +636,7 @@ QStatusBar {
   ui_->entryModeLabel->setText(QStringLiteral("刷写模式"));
   ui_->driverPathLabel->setText(QStringLiteral("Driver 文件"));
   ui_->driverVerifyPathLabel->setText(QStringLiteral("Driver 校验文件"));
-  ui_->appPathLabel->setText(QStringLiteral("APP 文件"));
+  ui_->appPathLabel->setText(QStringLiteral("APP 文件/升级包"));
   ui_->appVerifyPathLabel->setText(QStringLiteral("APP 校验文件"));
   ui_->calPathLabel->setText(QStringLiteral("CAL 文件"));
   ui_->calVerifyPathLabel->setText(QStringLiteral("CAL 校验文件"));
@@ -716,13 +720,52 @@ void MainWindow::connectActions() {
                     ui_->driverVerifyPathLineEdit,
                     QStringLiteral("选择 DriverData 文件"),
                     verificationFilter, QStringLiteral("DriverData"));
-  connectFileButton(ui_->appBrowseButton, ui_->appPathLineEdit,
-                    QStringLiteral("选择 APP 文件"), srecordFilter,
-                    QStringLiteral("APP"));
-  connectFileButton(ui_->appVerifyBrowseButton,
-                    ui_->appVerifyPathLineEdit,
-                    QStringLiteral("选择 APP 校验文件"),
-                    verificationFilter, QStringLiteral("APP 校验文件"));
+  const auto appPackageFilter =
+      QStringLiteral(
+          "APP 文件/升级包 (*.s19 *.srec *.s28 *.s37 *.mot *.hex *.bin *.tmp);;"
+          "零跑 TMP 升级包 (*.tmp);;S-record/二进制 (*.s19 *.srec *.s28 *.s37 *.mot *.hex *.bin);;"
+          "所有文件 (*.*)");
+  ui_->appBrowseButton->setProperty("fileDialogFilter", appPackageFilter);
+  connect(ui_->appBrowseButton, &QPushButton::clicked, this,
+          [this, srecordFilter, appPackageFilter] {
+            const auto supports_package =
+                selectedProfileSupportsAppTmpPackage();
+            const auto selected = selectFile(
+                this, ui_->appPathLineEdit,
+                supports_package ? QStringLiteral("选择 APP 文件或 TMP 升级包")
+                                 : QStringLiteral("选择 APP 文件"),
+                supports_package ? appPackageFilter : srecordFilter);
+            if (selected.isEmpty()) return;
+            showPath(ui_->appPathLineEdit, selected);
+            if (supports_package) {
+              // A newly selected standalone APP must never silently reuse a
+              // certificate that belonged to the previous APP/package.
+              showPath(ui_->appVerifyPathLineEdit, {});
+            }
+            updateAppPackagePresentation(true);
+            appendUiLog(QStringLiteral("APP输入：%1")
+                            .arg(fullPath(ui_->appPathLineEdit)));
+          });
+  ui_->appVerifyBrowseButton->setProperty("fileDialogFilter",
+                                          verificationFilter);
+  connect(ui_->appVerifyBrowseButton, &QPushButton::clicked, this,
+          [this, verificationFilter] {
+            if (ui_->appVerifyPathLineEdit
+                    ->property(kEmbeddedVerificationProperty)
+                    .toBool()) {
+              QMessageBox::information(
+                  this, QStringLiteral("TMP 内置验签详情"),
+                  ui_->appVerifyPathLineEdit->toolTip());
+              return;
+            }
+            const auto selected = selectFile(
+                this, ui_->appVerifyPathLineEdit,
+                QStringLiteral("选择 APP 校验文件"), verificationFilter);
+            if (selected.isEmpty()) return;
+            showPath(ui_->appVerifyPathLineEdit, selected);
+            appendUiLog(QStringLiteral("APP 校验文件：%1")
+                            .arg(fullPath(ui_->appVerifyPathLineEdit)));
+          });
   connectFileButton(ui_->calBrowseButton, ui_->calPathLineEdit,
                     QStringLiteral("选择 CAL 文件"), srecordFilter,
                     QStringLiteral("CAL"));
@@ -1222,7 +1265,9 @@ void MainWindow::applySelectedProfile(int device_index) {
   ui_->driverPathLabel->setText(QStringLiteral("Driver 文件"));
   ui_->appPathLabel->setText(
       geely_p416 ? QStringLiteral("APP VBF 文件")
-                 : QStringLiteral("APP 文件"));
+                 : profile.supports_app_tmp_package
+                       ? QStringLiteral("APP 文件/升级包")
+                       : QStringLiteral("APP 文件"));
   ui_->calPathLabel->setText(
       geely_p416 ? QStringLiteral("ESS VBF 文件")
                  : QStringLiteral("CAL 文件"));
@@ -1303,6 +1348,7 @@ void MainWindow::applySelectedProfile(int device_index) {
   ui_->txIdLineEdit->setReadOnly(profile.lock_diagnostic_ids);
   ui_->rxIdLineEdit->setReadOnly(profile.lock_diagnostic_ids);
   applySelectedRadar(false);
+  updateAppPackagePresentation(false);
   activateSelectedLogTarget();
   // Keep every generic file row stable while switching projects.
   updateEnabledState();
@@ -1335,6 +1381,78 @@ bool MainWindow::hasRadarSelector() const {
   return valid && profile_index >= 0 &&
          static_cast<std::size_t>(profile_index) < profiles.size() &&
          !profiles[profile_index].target_options.empty();
+}
+
+bool MainWindow::selectedProfileSupportsAppTmpPackage() const {
+  bool valid{};
+  const auto profile_index = selectedProfileIndex(&valid);
+  const auto& profiles = controller_bridge_->profileOptions();
+  return valid && profile_index >= 0 &&
+         static_cast<std::size_t>(profile_index) < profiles.size() &&
+         profiles[profile_index].supports_app_tmp_package;
+}
+
+void MainWindow::updateAppPackagePresentation(bool report_error) {
+  auto* verification = ui_->appVerifyPathLineEdit;
+  verification->setProperty(kEmbeddedVerificationProperty, false);
+  ui_->appPathLineEdit->setProperty(kPackageValidProperty, true);
+  ui_->appVerifyPathLabel->setText(QStringLiteral("APP 校验文件"));
+  ui_->appVerifyBrowseButton->setText(QStringLiteral("浏览"));
+  verification->setStyleSheet({});
+
+  const auto app_path = fullPath(ui_->appPathLineEdit);
+  if (!selectedProfileSupportsAppTmpPackage() ||
+      !app_path.endsWith(QStringLiteral(".tmp"), Qt::CaseInsensitive)) {
+    verification->setToolTip(fullPath(verification));
+    return;
+  }
+
+  try {
+    const auto package = load_leapmotor_tmp(
+        std::filesystem::path(app_path.toStdWString()));
+    const auto summary =
+        QStringLiteral(
+            "来源：%1\nAPP 地址：0x%2\nAPP 长度：0x%3（%4 bytes）\n"
+            "APP CRC32：0x%5\nCertificate：%6 bytes\n状态：结构、CRC32及APP哈希绑定校验通过")
+            .arg(QDir::toNativeSeparators(app_path))
+            .arg(package.app.address, 8, 16, QLatin1Char('0'))
+            .arg(package.app.data.size(), 0, 16)
+            .arg(package.app.data.size())
+            .arg(package.app_crc32, 8, 16, QLatin1Char('0'))
+            .arg(package.certificate.size())
+            .toUpper();
+    verification->setProperty(kFullPathProperty, QString{});
+    verification->setProperty(kEmbeddedVerificationProperty, true);
+    verification->setText(
+        QStringLiteral("TMP 内置 Certificate · %1 B · 已验证")
+            .arg(package.certificate.size()));
+    verification->setToolTip(summary);
+    verification->setCursorPosition(0);
+    verification->setStyleSheet(
+        QStringLiteral("QLineEdit { color: #16803C; font-weight: 600; }"));
+    ui_->appVerifyPathLabel->setText(QStringLiteral("APP 验签（内置）"));
+    ui_->appVerifyBrowseButton->setText(QStringLiteral("详情"));
+    if (report_error) {
+      appendUiLog(
+          QStringLiteral("TMP解析通过：APP 0x%1 bytes @ 0x%2；内置Certificate %3 bytes")
+              .arg(package.app.data.size(), 0, 16)
+              .arg(package.app.address, 8, 16, QLatin1Char('0'))
+              .arg(package.certificate.size()),
+          UiLogTone::Success);
+    }
+  } catch (const std::exception& error) {
+    showPath(verification, {});
+    ui_->appPathLineEdit->setProperty(kPackageValidProperty, false);
+    verification->setPlaceholderText(QStringLiteral("TMP 解析失败，禁止刷写"));
+    const auto message =
+        QStringLiteral("TMP升级包解析失败：%1")
+            .arg(QString::fromUtf8(error.what()));
+    verification->setToolTip(message);
+    appendUiLog(message, UiLogTone::Failure);
+    if (report_error) {
+      QMessageBox::warning(this, QStringLiteral("TMP升级包无效"), message);
+    }
+  }
 }
 
 QString MainWindow::selectedTargetId() const {
@@ -1377,6 +1495,7 @@ void MainWindow::applySelectedRadar(bool log_change) {
   showPath(ui_->appVerifyPathLineEdit, selected->app_verify_path);
   showPath(ui_->calVerifyPathLineEdit, selected->cal_verify_path);
   showPath(ui_->seedKeyDllPathLineEdit, selected->seed_key_dll_path);
+  updateAppPackagePresentation(false);
   activateSelectedLogTarget();
   if (log_change) {
     appendUiLog(
@@ -1707,8 +1826,26 @@ void MainWindow::startFlashFromUi() {
   const auto entry_mode = ui_->entryModeComboBox->currentData().toString();
   const auto needs_app =
       entry_mode != QStringLiteral("cal");
+  const auto embedded_tmp =
+      needs_app && profile.supports_app_tmp_package &&
+      fullPath(ui_->appPathLineEdit)
+          .endsWith(QStringLiteral(".tmp"), Qt::CaseInsensitive);
+  if (embedded_tmp &&
+      !ui_->appPathLineEdit->property(kPackageValidProperty).toBool()) {
+    QMessageBox::warning(
+        this, QStringLiteral("TMP升级包无效"),
+        QStringLiteral("当前TMP未通过结构、CRC32或APP哈希绑定校验，禁止刷写。"));
+    return;
+  }
+  if (needs_app && profile.supports_app_tmp_package && !embedded_tmp &&
+      fullPath(ui_->appVerifyPathLineEdit).isEmpty()) {
+    QMessageBox::warning(
+        this, QStringLiteral("缺少APP验签文件"),
+        QStringLiteral("当前导入的是S19/SREC/BIN，请手动选择与APP匹配的ASC或TMP验签文件。"));
+    return;
+  }
   const auto needs_app_verification =
-      needs_app ||
+      (needs_app && !embedded_tmp) ||
       (profile.profile_id == QStringLiteral("chery_t22") &&
        entry_mode == QStringLiteral("cal"));
   const auto needs_cal =

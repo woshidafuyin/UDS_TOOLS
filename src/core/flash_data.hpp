@@ -33,6 +33,16 @@ struct CbfImage {
   std::vector<std::uint8_t> device_signature;
 };
 
+// Leapmotor OTA TMP packages contain a UTF-8 metadata block, one APP image
+// descriptor, the complete APP bytes and the certificate bytes that are
+// otherwise distributed as HEX-ASCII .asc files.
+struct LeapmotorTmpPackage {
+  std::string metadata_json;
+  std::uint32_t app_crc32{};
+  SRecordSegment app;
+  std::vector<std::uint8_t> certificate;
+};
+
 // Parse all S1/S2/S3 data records and merge adjacent records into their
 // natural address segments. Addresses and lengths come from the S-record
 // contents; S7/S8/S9 execution-start records are deliberately not treated as
@@ -49,6 +59,9 @@ std::vector<std::uint8_t> load_hex_bytes(const std::filesystem::path& path,
                                          std::size_t take, std::size_t minimum);
 std::vector<std::uint8_t> load_asc_hex(const std::filesystem::path& path,
                                        std::size_t take, std::size_t minimum);
+
+LeapmotorTmpPackage load_leapmotor_tmp(
+    const std::filesystem::path& path);
 
 CbfImage load_chuneng_cbf(const std::filesystem::path& path);
 } // namespace uds
