@@ -2833,7 +2833,7 @@ void test_lp_arf_protocol_and_resources() {
             profile.lock_diagnostic_ids &&
             profile.default_entry_mode == L"app" &&
             profile.app_entry_label == L"APP" &&
-            profile.ft_entry_label == L"PLS" &&
+            profile.ft_entry_label == L"FT" &&
             profile.tx_id == 0x751 && profile.rx_id == 0x759 &&
             profile.functional_id == 0x7DF &&
             profile.ft_tx_id == 0x701 && profile.ft_rx_id == 0x761 &&
@@ -2858,7 +2858,7 @@ void test_lp_arf_protocol_and_resources() {
                 uds::LpArfEntryMode::app_to_app &&
             uds::resolve_lp_arf_entry_mode(L"ft") ==
                 uds::LpArfEntryMode::pls_to_app,
-        "LP-ARF APP/PLS entry mapping mismatch");
+        "LP-ARF APP/FT entry mapping mismatch");
   bool rejected = false;
   try {
     static_cast<void>(uds::resolve_lp_arf_entry_mode(L"auto"));

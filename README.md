@@ -171,7 +171,7 @@
 | 时代新安 HJZJ FMR | `shidaixinan_hjzj_fmr.ini` / `shidaixinan_hjzj_fmr` | APP、FT |
 | 时代新安 天王星、木星2代、庆铃 FMR | 独立 Profile / 复用 HJZJ Workflow | 独立端点和资源 |
 | 零跑 ARC | `lp_arc.ini` / `lp_arc` | 四设备；APP、FT |
-| 零跑 ARF | `lp_arf.ini` / `lp_arf` | APP、PLS；TMP单包或S19/SREC/BIN配套ASC/TMP |
+| 零跑 ARF | `lp_arf.ini` / `lp_arf` | APP、FT（PLS→APP）；TMP单包或S19/SREC/BIN配套ASC/TMP |
 | 吉利 P416 | `geely_p416.ini` / `geely_p416` | SBL、APP、ESS VBF；项目 NM 和专用传输 |
 
 ## 11. 楚能 ARC331 专项说明

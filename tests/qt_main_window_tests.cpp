@@ -1525,7 +1525,7 @@ int main(int argc, char* argv[]) {
                      QStringLiteral("APP") &&
                  entries->itemText(
                      entries->findData(QStringLiteral("ft"))) ==
-                     QStringLiteral("PLS") &&
+                     QStringLiteral("FT") &&
                 driver_path->text().isEmpty() &&
                 window.findChild<QLabel*>(QStringLiteral("appPathLabel"))
                         ->text() == QStringLiteral("APP 文件/升级包") &&
