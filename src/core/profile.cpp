@@ -158,6 +158,8 @@ FlashProfile load_profile_ini(const std::filesystem::path& path) {
   p.isotp_st_min = static_cast<std::uint8_t>(read_uint(values, L"isotp_st_min", p.isotp_st_min));
   p.security_level = read_uint(values, L"security_level", p.security_level);
   p.security_variant = read_text(values, L"security_variant", p.security_variant);
+  p.vbf_signature_policy = lowercase(
+      read_text(values, L"vbf_signature_policy", p.vbf_signature_policy));
   p.driver0_start = read_uint(values, L"driver0_start", p.driver0_start);
   p.driver0_length = read_uint(values, L"driver0_length", p.driver0_length);
   p.driver_start = read_uint(values, L"driver_start", p.driver_start);
@@ -258,6 +260,7 @@ void save_profile_ini(const FlashProfile& p, const std::filesystem::path& path) 
   append_value(contents, L"isotp_st_min", std::to_wstring(p.isotp_st_min));
   append_value(contents, L"security_level", std::to_wstring(p.security_level));
   append_value(contents, L"security_variant", p.security_variant);
+  append_value(contents, L"vbf_signature_policy", p.vbf_signature_policy);
   append_value(contents, L"driver0_start", std::to_wstring(p.driver0_start));
   append_value(contents, L"driver0_length", std::to_wstring(p.driver0_length));
   append_value(contents, L"driver_start", std::to_wstring(p.driver_start));

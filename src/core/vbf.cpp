@@ -34,6 +34,15 @@ std::string required_match(const std::string& header,
   return match[1].str();
 }
 
+std::string optional_match(const std::string& header,
+                           const std::regex& expression) {
+  std::smatch match;
+  if (!std::regex_search(header, match, expression) || match.size() < 2U) {
+    return {};
+  }
+  return match[1].str();
+}
+
 std::uint32_t parse_u32(const std::string& text, const char* field) {
   const auto value = std::stoull(text, nullptr, 16);
   if (value > std::numeric_limits<std::uint32_t>::max()) {
@@ -141,11 +150,27 @@ VbfFile load_vbf(const std::filesystem::path& path) {
                      std::regex(R"(file_checksum\s*=\s*0x([0-9A-Fa-f]+))"),
                      "file_checksum"),
       "file_checksum");
-  result.signature = parse_hex_bytes(
-      required_match(header,
-                     std::regex(R"(sw_signature_dev\s*=\s*0x([0-9A-Fa-f]+))"),
-                     "sw_signature_dev"),
-      "sw_signature_dev");
+  const auto signature_dev = optional_match(
+      header, std::regex(R"(sw_signature_dev\s*=\s*0x([0-9A-Fa-f]+))"));
+  const auto signature_prod = optional_match(
+      header, std::regex(R"(sw_signature_prod\s*=\s*0x([0-9A-Fa-f]+))"));
+  if (!signature_dev.empty()) {
+    result.signature_dev = parse_hex_bytes(signature_dev, "sw_signature_dev");
+  }
+  if (!signature_prod.empty()) {
+    result.signature_prod =
+        parse_hex_bytes(signature_prod, "sw_signature_prod");
+  }
+  result.signature = !result.signature_dev.empty() ? result.signature_dev
+                                                    : result.signature_prod;
+
+  std::smatch ecu_match;
+  if (std::regex_search(
+          header, ecu_match,
+          std::regex(R"(\becu_address\s*=\s*0x([0-9A-Fa-f]+))"))) {
+    result.ecu_address = parse_u32(ecu_match[1].str(), "ecu_address");
+    result.has_ecu_address = true;
+  }
 
   std::smatch call_match;
   if (std::regex_search(

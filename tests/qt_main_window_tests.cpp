@@ -1091,7 +1091,9 @@ int main(int argc, char* argv[]) {
             "Target selection did not restore its default diagnostic IDs");
       check_project_devices(application, projects, devices,
                             QStringLiteral("吉利"),
-                            {QStringLiteral("P416")});
+                            {QStringLiteral("P146"), QStringLiteral("P416")});
+      devices->setCurrentIndex(find_text(devices, QStringLiteral("P416")));
+      application.processEvents();
       check(radar->count() == 1 &&
                 radar->currentText() == QStringLiteral("ARS1.31L"),
             "Geely P416 device mapping mismatch");
@@ -1103,6 +1105,15 @@ int main(int argc, char* argv[]) {
                 version_table->item(0, 3)->text().contains(
                     QStringLiteral("Boot软件标识")),
             "Version page did not follow P416 or show its DID meanings");
+      devices->setCurrentIndex(find_text(devices, QStringLiteral("P146")));
+      application.processEvents();
+      check(radar->count() == 1 &&
+                radar->currentText() == QStringLiteral("GEEA2.0 SWDL") &&
+                tx_id->text() == QStringLiteral("0x0") &&
+                rx_id->text() == QStringLiteral("0x0") &&
+                !tx_id->isReadOnly() && !rx_id->isReadOnly() &&
+                version_table->rowCount() == 0,
+            "Geely P146 safe configurable UI mapping mismatch");
       const auto chery_log_project =
           find_text(projects, QStringLiteral("奇瑞"));
       const auto xizhong_log_project =

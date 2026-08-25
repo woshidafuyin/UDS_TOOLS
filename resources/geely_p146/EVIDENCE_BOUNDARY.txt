@@ -1,0 +1,15 @@
+Geely P146 GEEA2.0 normal Download integration
+
+Requirement source:
+\\jdatasrv\测试部公共盘\01_软件测试组\02_项目管理\客户项目测试工程\吉利\P146\02-刷写工程\GEEA2.0_SWDLonCAN_V7.6.zip
+
+Source ZIP SHA-256:
+C59AF6CE269E767E17D0B64F034D65D613D0EC779073E8200007EC7C3512384D
+
+Implemented: configurable GEEA2.0 normal Download state machine and VBF
+metadata parsing for optional SBL plus APP/CAL/DATA images.
+VBF signature policy is configurable as auto, development or production.
+
+Not established by the generic public package: P146 target Tx/Rx IDs,
+SeedKey DLL/variant, firmware set, version DIDs, bench power policy or ECU PASS.
+Configure and validate these items against the selected P146 ECU before use.

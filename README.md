@@ -105,6 +105,7 @@
 | 零跑 ARC | 10 |
 | 零跑 ARF（A12/B11 ARF2.31、ARF6.31统一入口） | 8 |
 | 吉利 P416 | 13 |
+| 吉利 P146 | 0（公盘通用框架未冻结项目版本 DID，待配置） |
 
 ## 7. 单次诊断报文
 
@@ -173,6 +174,7 @@
 | 零跑 ARC | `lp_arc.ini` / `lp_arc` | 四设备；APP、FT |
 | 零跑 ARF | `lp_arf.ini` / `lp_arf` | APP、FT（PLS→APP）；TMP单包或S19/SREC/BIN配套ASC/TMP |
 | 吉利 P416 | `geely_p416.ini` / `geely_p416` | SBL、APP、ESS VBF；项目 NM 和专用传输 |
+| 吉利 P146 | `geely_p146.ini` / `geely_p146` | 通用 GEEA2.0 正常 Download；VBF 元数据驱动；SBL 可选；APP、CAL/DATA、APP+CAL；端点与 SeedKey 待目标配置 |
 
 ## 11. 楚能 ARC331 专项说明
 
@@ -195,7 +197,7 @@
 ## 12. 构建、验证与证据边界
 
 - 构建命令：`scripts\build.ps1 -Config Release -DistPath dist`；
-- 当前离线 CTest 共 8 项：核心、P416、CAN 适配、厂商 API 边界、厂商清单、应用状态、Qt 探测桥接和 Qt 主窗口；
+- 当前离线 CTest 共 9 项：核心、P416、P146 GEEA2.0、CAN 适配、厂商 API 边界、厂商清单、应用状态、Qt 探测桥接和 Qt 主窗口；
 - 离线测试覆盖 Profile/Workflow、文件预检、ISO-TP/UDS、Fake ECU、共享通道、监听、日志尾随、审计和 UI 状态等回归；
 - 构建成功、CTest PASS、历史报告、硬件探针、真实 CAN 通信和真实 ECU 完整刷写是不同证据层级；
 - 某一项目、某一设备或某一模式的 PASS 不自动证明另一设备、FT/CAL、其他后端或相似项目通过；

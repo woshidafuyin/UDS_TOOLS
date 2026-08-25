@@ -67,6 +67,10 @@ struct FlashProfile {
   std::uint8_t isotp_st_min{10};
   unsigned security_level{0x11};
   std::wstring security_variant{L"chuneng"};
+  // VBF containers may carry development and production signatures. Projects
+  // select "development", "production" or "auto" without coupling that
+  // policy to the generic parser.
+  std::wstring vbf_signature_policy{L"auto"};
   std::uint32_t driver0_start{};
   std::uint32_t driver0_length{};
   std::uint32_t driver_start{};

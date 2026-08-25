@@ -27,7 +27,14 @@ struct VbfFile {
   std::uint32_t file_checksum{};
   std::uint32_t call_address{};
   bool has_call_address{};
+  std::uint32_t ecu_address{};
+  bool has_ecu_address{};
   std::vector<VbfEraseRange> erase_ranges;
+  std::vector<std::uint8_t> signature_dev;
+  std::vector<std::uint8_t> signature_prod;
+  // Backward-compatible preferred signature. Development is preferred when
+  // present; otherwise this aliases the production signature. Project policy
+  // still decides which signature is acceptable for an actual download.
   std::vector<std::uint8_t> signature;
   std::vector<VbfBlock> blocks;
   bool block_crc16_verified{true};
