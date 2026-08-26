@@ -60,7 +60,11 @@ std::unique_ptr<FlashWorkflow> create_lingyao_b216() {
 }
 
 std::unique_ptr<FlashWorkflow> create_xizhong_rsmr() {
-  return std::make_unique<XizhongRsmrWorkflow>();
+  return std::make_unique<XizhongRadarWorkflow>(XizhongRadarTarget::rsmr);
+}
+
+std::unique_ptr<FlashWorkflow> create_xizhong_lsmr() {
+  return std::make_unique<XizhongRadarWorkflow>(XizhongRadarTarget::lsmr);
 }
 
 std::unique_ptr<FlashWorkflow> create_shidaixinan_hjzj_fmr() {
@@ -97,10 +101,10 @@ constexpr std::array kWorkflowRegistrations{
   WorkflowRegistration{L"chery_t1ej", &create_chery_t1ej},
   WorkflowRegistration{L"changan_c857", &create_changan_c857},
   WorkflowRegistration{L"longma_ars1_31", &create_longma_ars1_31},
-   WorkflowRegistration{L"lingyao_b216", &create_lingyao_b216},
-   WorkflowRegistration{L"xizhong_rsmr", &create_xizhong_rsmr},
-   WorkflowRegistration{L"xizhong_lsmr", &create_xizhong_rsmr},
-   WorkflowRegistration{L"shidaixinan_hjzj_fmr",
+  WorkflowRegistration{L"lingyao_b216", &create_lingyao_b216},
+  WorkflowRegistration{L"xizhong_rsmr", &create_xizhong_rsmr},
+  WorkflowRegistration{L"xizhong_lsmr", &create_xizhong_lsmr},
+  WorkflowRegistration{L"shidaixinan_hjzj_fmr",
                        &create_shidaixinan_hjzj_fmr},
   WorkflowRegistration{L"lp_arc", &create_lp_arc},
   WorkflowRegistration{L"lp_arf", &create_lp_arf},

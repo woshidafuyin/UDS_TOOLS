@@ -23,7 +23,7 @@
 ## 当前实现
 
 - 运行编排：`src/flash/lp_arc_workflow.cpp`；
-- 流程接口：`src/flash/lp_arc_flow.hpp` 及其实现；
+- 流程接口：`src/flash/lp_arc_flow.hpp` 与当前实现 `src/flash/lp_arc_flow_configurable.cpp`；
 - APP→APP 直接使用 APP 物理端点；
 - PLS/FT→APP 先使用恢复端点，然后切换到 APP 端点执行共同下载主体；
 - Driver 窗口为 `0x00000000/0x00004000`，APP 窗口为 `0x000C0000/0x00180000`；

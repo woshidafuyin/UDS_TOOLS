@@ -83,12 +83,6 @@ VersionConfirmationPage::VersionConfirmationPage(QWidget* parent)
   actions->addStretch();
   page->addLayout(actions);
 
-  summary_ = new QLabel(QStringLiteral("尚未读取版本"), this);
-  summary_->setObjectName(QStringLiteral("versionSummaryLabel"));
-  summary_->setFrameShape(QFrame::StyledPanel);
-  summary_->setMargin(6);
-  page->addWidget(summary_);
-
   table_ = new QTableWidget(0, 5, this);
   table_->setObjectName(QStringLiteral("versionResultTable"));
   table_->setHorizontalHeaderLabels(
@@ -172,7 +166,6 @@ void VersionConfirmationPage::setRunning(bool running) {
   if (running) {
     showPlannedItems();
     raw_view_->clear();
-    summary_->setText(QStringLiteral("正在读取版本……"));
   }
   updateControls();
 }
@@ -223,7 +216,6 @@ void VersionConfirmationPage::appendResult(
 void VersionConfirmationPage::showPlannedItems() {
   table_->setRowCount(0);
   raw_view_->clear();
-  int required_count{};
   for (const auto& item : planned_items_) {
     const auto row = table_->rowCount();
     table_->insertRow(row);
@@ -237,19 +229,8 @@ void VersionConfirmationPage::showPlannedItems() {
         cell(item.meaning.isEmpty() ? QStringLiteral("含义未配置")
                                     : item.meaning));
     table_->setItem(row, 4, cell(QStringLiteral("-"), true));
-    if (item.required) ++required_count;
   }
   rendered_context_key_ = contextKey();
-  summary_->setStyleSheet(QString{});
-  if (planned_items_.empty()) {
-    summary_->setText(QStringLiteral("当前Profile未配置版本读取项目"));
-    return;
-  }
-  summary_->setText(
-      QStringLiteral("已加载 %1 个DID：必读 %2，可选 %3；等待一键读取")
-          .arg(static_cast<qulonglong>(planned_items_.size()))
-          .arg(required_count)
-          .arg(static_cast<int>(planned_items_.size()) - required_count));
 }
 
 QString VersionConfirmationPage::contextKey() const {
@@ -262,14 +243,8 @@ QString VersionConfirmationPage::contextKey() const {
       .arg(rx_id_);
 }
 
-void VersionConfirmationPage::finish(bool success, bool cancelled,
-                                     const QString& message) {
+void VersionConfirmationPage::finish(bool, bool, const QString&) {
   running_ = false;
-  summary_->setText(message);
-  summary_->setStyleSheet(
-      cancelled ? QString()
-                : success ? QStringLiteral("color: #137333;")
-                          : QStringLiteral("color: #b3261e;"));
   updateControls();
 }
 

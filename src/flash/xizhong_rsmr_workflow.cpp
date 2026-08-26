@@ -19,6 +19,30 @@ namespace uds {
 using namespace std::chrono_literals;
 namespace {
 
+struct XizhongRadarSpec {
+  std::wstring_view workflow_id;
+  std::string_view report_target;
+  std::string_view identity;
+  std::uint32_t tx_id;
+  std::uint32_t rx_id;
+  std::uint32_t ft_tx_id;
+  std::uint32_t ft_rx_id;
+  std::uint32_t nm_id;
+  std::array<std::uint8_t, 4> known_key;
+  bool supports_ft_entry;
+};
+
+constexpr XizhongRadarSpec kRsmrSpec{
+    L"xizhong_rsmr", "RSMR", "RSMR_AA", 0x18DAB7F1, 0x18DAF1B7,
+    0x701, 0x761, 0x18FFA025, {0x29, 0x98, 0x42, 0x58}, true};
+constexpr XizhongRadarSpec kLsmrSpec{
+    L"xizhong_lsmr", "LSMR", "LSMR_AA", 0x18DAB6F1, 0x18DAF1B6,
+    0x714, 0x71C, 0x18FFA0B6, {0x2A, 0x98, 0x42, 0x58}, false};
+
+const XizhongRadarSpec& radar_spec(XizhongRadarTarget target) noexcept {
+  return target == XizhongRadarTarget::lsmr ? kLsmrSpec : kRsmrSpec;
+}
+
 struct TesterPresentState {
   mutable std::mutex mutex;
   std::string error;
@@ -56,27 +80,41 @@ bool xizhong_rsmr_report_line(std::string_view line) noexcept {
           line.find("WARN") != std::string_view::npos);
 }
 
-std::wstring_view XizhongRsmrWorkflow::id() const noexcept { return L"xizhong_rsmr"; }
+XizhongRadarWorkflow::XizhongRadarWorkflow(
+    XizhongRadarTarget target) noexcept
+    : target_(target) {}
 
-std::string XizhongRsmrWorkflow::report_title(const FlashProfile& profile) const {
-  return profile.flow == L"xizhong_lsmr"
-             ? "Xizhong LSMR Download Report"
-             : "Xizhong RSMR Download Report";
+std::wstring_view XizhongRadarWorkflow::id() const noexcept {
+  return radar_spec(target_).workflow_id;
 }
 
-void XizhongRsmrWorkflow::run(const FlashJob& job,
-                              const FlashWorkflowCallbacks& callbacks,
-                              std::stop_token stop) {
+std::string XizhongRadarWorkflow::report_title(const FlashProfile&) const {
+  return "Xizhong " + std::string(radar_spec(target_).report_target) +
+         " Download Report";
+}
+
+void XizhongRadarWorkflow::run(const FlashJob& job,
+                               const FlashWorkflowCallbacks& callbacks,
+                               std::stop_token stop) {
+  const auto& spec = radar_spec(target_);
+  if (job.profile.flow != spec.workflow_id) {
+    throw std::runtime_error(
+        "犀重Profile与RSMR/LSMR Workflow目标不匹配，尚未访问总线");
+  }
   if (!job.profile.can_fd || !job.profile.extended_id || !job.profile.uds_fd ||
       !job.profile.uds_brs) {
     throw std::runtime_error("犀重要求29位CAN FD+BRS诊断配置");
   }
-  const bool lsmr = job.profile.flow == L"xizhong_lsmr";
-  const auto expected_nm_id = lsmr ? 0x18FFA0B6U : 0x18FFA025U;
-  const std::string target_identity = lsmr ? "LSMR_AA" : "RSMR_AA";
-  if (job.profile.functional_id != 0x18DBFFF1 || job.profile.ft_tx_id != 0x701 ||
-      job.profile.ft_rx_id != 0x761) {
-    throw std::runtime_error("犀重诊断端点配置不匹配");
+  if (job.profile.tx_id != spec.tx_id || job.profile.rx_id != spec.rx_id ||
+      job.profile.functional_id != 0x18DBFFF1 ||
+      job.profile.ft_tx_id != spec.ft_tx_id ||
+      job.profile.ft_rx_id != spec.ft_rx_id) {
+    throw std::runtime_error(
+        "犀重RSMR/LSMR诊断端点与CANoe目标配置不匹配，尚未访问总线");
+  }
+  if (job.profile.supports_ft_entry != spec.supports_ft_entry) {
+    throw std::runtime_error(
+        "犀重RSMR/LSMR产线入口能力与CANoe有效分支不匹配，尚未访问总线");
   }
   if (job.profile.nominal_bitrate != 500000 ||
       job.profile.data_bitrate != 2000000 || job.profile.padding != 0xCC ||
@@ -89,12 +127,27 @@ void XizhongRsmrWorkflow::run(const FlashJob& job,
     throw std::runtime_error(
          "犀重 LSMR/RSMR GenerateKeyEx 要求level=0x11且variant为空");
   }
+  if (job.entry_mode != L"app" && job.entry_mode != L"ft") {
+    throw std::runtime_error(
+        "犀重只允许APP或已声明的FT入口，尚未访问总线");
+  }
   if (job.entry_mode == L"ft") {
+    if (!spec.supports_ft_entry) {
+      throw std::runtime_error(
+          "犀重CANoe的LSMR/RaderID=1下载分支为空，禁止推断执行FT刷写");
+    }
     if (callbacks.log) {
       callbacks.log("警告：本次2026-07-22成功基线只验证APP入口；FT入口尚未实刷验收。");
     }
     report(callbacks, 0, "Entry mode", "WARN",
            "FT recovery entry selected; not proven by the 2026-07-22 APP pass");
+  }
+  if (job.driver_file.empty() || job.app_file.empty() ||
+      job.app_verify_file.empty()) {
+    throw std::runtime_error(
+        target_ == XizhongRadarTarget::lsmr
+            ? "犀重LSMR源工程没有可复刻下载分支和固件默认值；必须手动选择同一LSMR发布包的Driver、APP与Hash，尚未访问总线"
+            : "犀重RSMR必须提供Driver、APP与Hash，尚未访问总线");
   }
 
   XizhongRsmrImages images;
@@ -119,9 +172,6 @@ void XizhongRsmrWorkflow::run(const FlashJob& job,
     return generate_key_x86(broker, dll, seed, 0x11, L"");
   };
   constexpr std::array<std::uint8_t, 4> kKnownSeed{0xFD, 0xBA, 0xAF, 0x18};
-  const std::array<std::uint8_t, 4> known_key_expected =
-      lsmr ? std::array<std::uint8_t, 4>{0x2A, 0x98, 0x42, 0x58}
-           : std::array<std::uint8_t, 4>{0x29, 0x98, 0x42, 0x58};
   std::vector<std::uint8_t> known_key;
   try {
     known_key = keygen(kKnownSeed);
@@ -130,8 +180,9 @@ void XizhongRsmrWorkflow::run(const FlashJob& job,
         std::string("犀重SeedKey DLL/broker预检失败，尚未访问总线: ") +
         error.what());
   }
-  if (!std::equal(known_key_expected.begin(), known_key_expected.end(), known_key.begin(),
-                  known_key.end())) {
+  if (known_key.size() != spec.known_key.size() ||
+      !std::equal(spec.known_key.begin(), spec.known_key.end(),
+                  known_key.begin(), known_key.end())) {
     throw std::runtime_error(
         "犀重SeedKey DLL/broker已运行，但LSMR/RSMR项目对应的已知向量不匹配");
   }
@@ -204,7 +255,7 @@ void XizhongRsmrWorkflow::run(const FlashJob& job,
   TesterPresentState tester_present_state;
   const auto tester_present_frames =
       xizhong_tester_present_frames(job.profile.functional_id);
-  const auto nm_wakeup_frame = xizhong_nm_wakeup_frame(expected_nm_id);
+  const auto nm_wakeup_frame = xizhong_nm_wakeup_frame(spec.nm_id);
   // CANoe's passing environment keeps NM_ICG active before and throughout the
   // test. Start the same stream and allow one second of wakeup settling before
   // the first DID request, matching the already-running CAN IG precondition.
@@ -320,7 +371,8 @@ void XizhongRsmrWorkflow::run(const FlashJob& job,
   }
 
   XizhongRsmrFlow flow(
-      app_physical, app_functional, ft_physical, log, progress, keygen, target_identity,
+      app_physical, app_functional, ft_physical, log, progress, keygen,
+      std::string(spec.identity),
       [&tester_present_state]() { check_tester_present(tester_present_state); });
   const auto stop_tester_present = [&tester_present_sender]() {
     tester_present_sender.request_stop();
@@ -341,7 +393,9 @@ void XizhongRsmrWorkflow::run(const FlashJob& job,
     throw;
   }
   if (callbacks.report) {
-    callbacks.report("Download", "PASS", "犀重 RSMR 刷写流程完成");
+    callbacks.report("Download", "PASS",
+                     "犀重 " + std::string(spec.report_target) +
+                         " 刷写流程完成");
   }
 }
 

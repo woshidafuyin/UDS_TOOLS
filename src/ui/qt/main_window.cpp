@@ -637,6 +637,10 @@ QStatusBar {
                                           QSizePolicy::Preferred);
 
   ui_->entryModeLabel->setText(QStringLiteral("刷写模式"));
+  ui_->txIdLabel->setToolTip(QStringLiteral("双击恢复当前设备的默认 Tx ID"));
+  ui_->rxIdLabel->setToolTip(QStringLiteral("双击恢复当前设备的默认 Rx ID"));
+  ui_->txIdLabel->installEventFilter(this);
+  ui_->rxIdLabel->installEventFilter(this);
   ui_->driverPathLabel->setText(QStringLiteral("Driver 文件"));
   ui_->driverVerifyPathLabel->setText(QStringLiteral("Driver 校验文件"));
   ui_->appPathLabel->setText(QStringLiteral("APP 文件/升级包"));
@@ -1249,6 +1253,16 @@ void MainWindow::populateTargetOptions(int project_index) {
 
 void MainWindow::applySelectedProfile(int device_index) {
   if (device_index < 0) return;
+  // A target/project change rebuilds the list because capabilities may differ,
+  // but it must not silently discard a mode that the user explicitly chose.
+  // Keep the semantic value (app/ft/cal/...) and restore it when the newly
+  // selected profile supports the same mode; otherwise use that profile's
+  // declared default.
+  const auto previous_entry_mode =
+      ui_->entryModeComboBox->currentData().toString();
+  const auto preserve_previous_entry =
+      !last_applied_entry_default_.isEmpty() &&
+      previous_entry_mode != last_applied_entry_default_;
   bool valid{};
   const auto profile_index = selectedProfileIndex(&valid);
   const auto& profiles = controller_bridge_->profileOptions();
@@ -1322,6 +1336,13 @@ void MainWindow::applySelectedProfile(int device_index) {
   const auto entry_index =
       ui_->entryModeComboBox->findData(profile.default_entry_mode);
   ui_->entryModeComboBox->setCurrentIndex(entry_index < 0 ? 0 : entry_index);
+  if (preserve_previous_entry && !previous_entry_mode.isEmpty()) {
+    const auto previous_entry_index =
+        ui_->entryModeComboBox->findData(previous_entry_mode);
+    if (previous_entry_index >= 0) {
+      ui_->entryModeComboBox->setCurrentIndex(previous_entry_index);
+    }
+  }
   if (restoring_combo_selections_) {
     QSettings settings;
     const auto saved_profile_id =
@@ -1336,6 +1357,7 @@ void MainWindow::applySelectedProfile(int device_index) {
       }
     }
   }
+  last_applied_entry_default_ = profile.default_entry_mode;
   showPath(ui_->driverPathLineEdit, profile.driver_path);
   showPath(ui_->appPathLineEdit, profile.app_path);
   showPath(ui_->calPathLineEdit, profile.cal_path);
@@ -1344,8 +1366,11 @@ void MainWindow::applySelectedProfile(int device_index) {
   ui_->appVerifyPathLabel->setText(QStringLiteral("APP 校验文件"));
   showPath(ui_->calVerifyPathLineEdit, profile.cal_verify_path);
   showPath(ui_->seedKeyDllPathLineEdit, profile.seed_key_dll_path);
-  ui_->txIdLineEdit->setReadOnly(profile.lock_diagnostic_ids);
-  ui_->rxIdLineEdit->setReadOnly(profile.lock_diagnostic_ids);
+  // Profile IDs remain the defaults and are restored by double-clicking the
+  // corresponding label. Operators may override either ID for every project
+  // without editing the Profile on disk.
+  ui_->txIdLineEdit->setReadOnly(false);
+  ui_->rxIdLineEdit->setReadOnly(false);
   applySelectedRadar(false);
   updateAppPackagePresentation(false);
   activateSelectedLogTarget();
@@ -1508,6 +1533,41 @@ void MainWindow::applySelectedRadar(bool log_change) {
                      ? QStringLiteral("；该端点待台架/实车验证")
                      : QString{}));
   }
+  syncVersionContext();
+  syncBusMonitorContext();
+  syncDiagnosticRequestContext();
+}
+
+void MainWindow::restoreDefaultDiagnosticId(bool restore_tx) {
+  bool valid{};
+  const auto profile_index = selectedProfileIndex(&valid);
+  const auto& profiles = controller_bridge_->profileOptions();
+  if (!valid || profile_index < 0 ||
+      static_cast<std::size_t>(profile_index) >= profiles.size()) {
+    return;
+  }
+
+  const auto& profile = profiles[profile_index];
+  auto default_id = restore_tx ? profile.tx_id : profile.rx_id;
+  if (hasRadarSelector()) {
+    const auto target_id = selectedTargetId();
+    const auto selected = std::find_if(
+        profile.target_options.cbegin(), profile.target_options.cend(),
+        [&target_id](const ControllerTargetOption& target) {
+          return target.target_id == target_id;
+        });
+    if (selected != profile.target_options.cend()) {
+      default_id = restore_tx ? selected->tx_id : selected->rx_id;
+    }
+  }
+
+  auto* editor = restore_tx ? ui_->txIdLineEdit : ui_->rxIdLineEdit;
+  editor->setText(QStringLiteral("0x%1").arg(
+      QString::number(default_id, 16).toUpper()));
+  appendUiLog(QStringLiteral("已恢复当前设备默认 %1：%2")
+                  .arg(restore_tx ? QStringLiteral("Tx ID")
+                                  : QStringLiteral("Rx ID"),
+                       editor->text()));
   syncVersionContext();
   syncBusMonitorContext();
   syncDiagnosticRequestContext();
@@ -1945,8 +2005,6 @@ void MainWindow::updateEnabledState() {
       profile_valid && profile_index >= 0 &&
       static_cast<std::size_t>(profile_index) < profiles.size() &&
       ui_->radarComboBox->count() > 1;
-  const auto diagnostic_ids_locked =
-      usable && profiles[profile_index].lock_diagnostic_ids;
   const auto has_profiles = !profiles.empty();
 
   // A passive monitor may switch backends safely: the backend action stops the
@@ -1964,8 +2022,8 @@ void MainWindow::updateEnabledState() {
   ui_->vectorChannelComboBox->setEnabled(!busy && usable);
   ui_->txIdLineEdit->setEnabled(!busy && usable);
   ui_->rxIdLineEdit->setEnabled(!busy && usable);
-  ui_->txIdLineEdit->setReadOnly(diagnostic_ids_locked);
-  ui_->rxIdLineEdit->setReadOnly(diagnostic_ids_locked);
+  ui_->txIdLineEdit->setReadOnly(false);
+  ui_->rxIdLineEdit->setReadOnly(false);
   ui_->entryModeComboBox->setEnabled(!busy && profile_valid);
   ui_->repeatCountSpinBox->setEnabled(!busy && usable);
   // Placeholder profiles remain fail-closed for CAN operations, but file
@@ -2235,6 +2293,16 @@ void MainWindow::clearActiveUiLog() {
 }
 
 bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
+  if (event->type() == QEvent::MouseButtonDblClick) {
+    if (watched == ui_->txIdLabel) {
+      restoreDefaultDiagnosticId(true);
+      return true;
+    }
+    if (watched == ui_->rxIdLabel) {
+      restoreDefaultDiagnosticId(false);
+      return true;
+    }
+  }
   if (event->type() == QEvent::Wheel &&
       (qobject_cast<QComboBox*>(watched) ||
        qobject_cast<QAbstractSpinBox*>(watched))) {

@@ -435,6 +435,10 @@ int main(int argc, char* argv[]) {
           window.findChild<QLabel*>(QStringLiteral("radarLabel"));
       auto* channels = window.findChild<QComboBox*>(
           QStringLiteral("vectorChannelComboBox"));
+      auto* tx_id_label =
+          window.findChild<QLabel*>(QStringLiteral("txIdLabel"));
+      auto* rx_id_label =
+          window.findChild<QLabel*>(QStringLiteral("rxIdLabel"));
       auto* repeat_count = window.findChild<QSpinBox*>(
           QStringLiteral("repeatCountSpinBox"));
       auto* start_flash = window.findChild<QPushButton*>(
@@ -514,6 +518,8 @@ int main(int argc, char* argv[]) {
                  version_page && version_table &&
                  version_table->columnCount() == 5 && version_button &&
                  version_selection && version_address &&
+                 !window.findChild<QLabel*>(
+                     QStringLiteral("versionSummaryLabel")) &&
                  version_button->text() == QStringLiteral("一键读取") &&
                 diagnostic_page && diagnostic_context &&
                 diagnostic_context->text().contains(QStringLiteral("CH")) &&
@@ -1051,7 +1057,7 @@ int main(int argc, char* argv[]) {
                 radar->currentText() == QStringLiteral("右后雷达") &&
                 target_id(radar, radar->currentIndex()) ==
                     QStringLiteral("right_rear") &&
-                tx_id->isReadOnly() && rx_id->isReadOnly() &&
+                !tx_id->isReadOnly() && !rx_id->isReadOnly() &&
                 tx_id->text() == QStringLiteral("0x72C") &&
                 rx_id->text() == QStringLiteral("0x72D") &&
                 chuneng_driver_path->text() ==
@@ -1083,8 +1089,8 @@ int main(int argc, char* argv[]) {
                 version_address->text().contains(QStringLiteral("0X72E")) &&
                 version_address->text().contains(QStringLiteral("0X72F")),
             "Version page did not follow the selected ARC331 device");
-      check(tx_id->isReadOnly() && rx_id->isReadOnly(),
-            "Locked Chuneng diagnostic IDs became editable");
+      check(!tx_id->isReadOnly() && !rx_id->isReadOnly(),
+            "Chuneng diagnostic ID overrides are not editable");
       radar->setCurrentIndex(find_target(radar, QStringLiteral("right_rear")));
       application.processEvents();
       check(tx_id->text() == QStringLiteral("0x72C") &&
@@ -1198,7 +1204,7 @@ int main(int argc, char* argv[]) {
                 radar->currentText() == QStringLiteral("雷达") &&
                 target_id(radar, radar->currentIndex()) ==
                     QStringLiteral("radar") &&
-                tx_id->isReadOnly() && rx_id->isReadOnly() &&
+                !tx_id->isReadOnly() && !rx_id->isReadOnly() &&
                 tx_id->text() == QStringLiteral("0x70D") &&
                 rx_id->text() == QStringLiteral("0x78D") &&
                 entries->count() == 3 && kp31_app >= 0 && kp31_cal >= 0 &&
@@ -1358,8 +1364,8 @@ int main(int argc, char* argv[]) {
       check(!radar->isHidden() && !radar_label->isHidden() &&
                 radar->count() == 2 &&
                 radar->currentText() == QStringLiteral("RSMR") &&
-                tx_id->isReadOnly() && rx_id->isReadOnly(),
-            "Xizhong locked diagnostic IDs became editable");
+                !tx_id->isReadOnly() && !rx_id->isReadOnly(),
+            "Xizhong diagnostic ID overrides are not editable");
       check_file_panel_is_stable();
       check(entries->currentData().toString() == QStringLiteral("app"),
             "Xizhong must default to the passing APP entry");
@@ -1389,14 +1395,15 @@ int main(int argc, char* argv[]) {
                  !cal_verify_browse->isHidden() &&
                  !driver_browse->isHidden(),
              "Generic file rows changed visibility for the Xizhong profile");
-      radar->setCurrentIndex(find_text(radar, QStringLiteral("LSMR")));
+      radar->setCurrentIndex(find_target(radar, QStringLiteral("lsmr")));
       application.processEvents();
-      check(radar->currentText() == QStringLiteral("LSMR") &&
+      check(radar->currentText() == QStringLiteral("LSMR 从雷达（待验证）") &&
                 tx_id->text() == QStringLiteral("0x18DAB6F1") &&
                 rx_id->text() == QStringLiteral("0x18DAF1B6") &&
                 entries->currentData().toString() == QStringLiteral("app") &&
                 entries->findData(QStringLiteral("ft")) < 0 && app_path &&
-                app_path->text().isEmpty(),
+                app_path->text().isEmpty() &&
+                chuneng_driver_path->text().isEmpty(),
             "Xizhong LSMR profile endpoint or APP-only entry mismatch");
       check_project_devices(application, projects, devices,
                              QStringLiteral("时代新安"),
@@ -1423,7 +1430,7 @@ int main(int argc, char* argv[]) {
       check(!radar->isHidden() && !radar_label->isHidden() &&
                 radar->count() == 1 &&
                 radar->currentText() == QStringLiteral("FMR 主雷达") &&
-                tx_id->isReadOnly() && rx_id->isReadOnly() &&
+                !tx_id->isReadOnly() && !rx_id->isReadOnly() &&
                 tx_id->text() == QStringLiteral("0x7A4") &&
                 rx_id->text() == QStringLiteral("0x7AC") &&
                 entries->count() == 2 &&
@@ -1449,7 +1456,7 @@ int main(int argc, char* argv[]) {
         application.processEvents();
         check(!radar->isHidden() && radar->count() == 1 &&
                   radar->currentText() == QStringLiteral("FMR") &&
-                  tx_id->isReadOnly() && rx_id->isReadOnly() &&
+                  !tx_id->isReadOnly() && !rx_id->isReadOnly() &&
                   tx_id->text() == QStringLiteral("0x7A4") &&
                   rx_id->text() == QStringLiteral("0x7AC") &&
                   entries->count() == 2 &&
@@ -1500,6 +1507,11 @@ int main(int argc, char* argv[]) {
                 app_verify_label->text() ==
                     QStringLiteral("APP 校验文件"),
             "ARC merged four-target UI or preset resources mismatch");
+      check(!tx_id->isReadOnly() && !rx_id->isReadOnly() && tx_id_label &&
+                rx_id_label &&
+                tx_id_label->toolTip().contains(QStringLiteral("双击恢复")) &&
+                rx_id_label->toolTip().contains(QStringLiteral("双击恢复")),
+            "Diagnostic ID override or default-restore affordance is missing");
       const std::array<std::pair<QString, QString>, 4> arc_endpoints{{
           {QStringLiteral("0x772"), QStringLiteral("0x77A")},
           {QStringLiteral("0x773"), QStringLiteral("0x77B")},
@@ -1513,11 +1525,46 @@ int main(int argc, char* argv[]) {
                   rx_id->text() == arc_endpoints[static_cast<std::size_t>(index)].second,
               "ARC target selection did not lock the expected endpoint");
       }
+      tx_id->setText(QStringLiteral("0x123"));
+      rx_id->setText(QStringLiteral("0x456"));
+      QEvent restore_tx_event(QEvent::MouseButtonDblClick);
+      QCoreApplication::sendEvent(tx_id_label, &restore_tx_event);
+      check(tx_id->text() == QStringLiteral("0x770") &&
+                rx_id->text() == QStringLiteral("0x456"),
+            "Double-clicking Tx ID did not restore only the target default");
+      QEvent restore_rx_event(QEvent::MouseButtonDblClick);
+      QCoreApplication::sendEvent(rx_id_label, &restore_rx_event);
+      check(tx_id->text() == QStringLiteral("0x770") &&
+                rx_id->text() == QStringLiteral("0x778"),
+            "Double-clicking Rx ID did not restore only the target default");
       entries->setCurrentIndex(entries->findData(QStringLiteral("ft")));
       application.processEvents();
       check(entries->currentData().toString() == QStringLiteral("ft") &&
                 entries->currentText() == QStringLiteral("FT"),
             "ARC FT entry selection mismatch");
+
+      // Switching between devices of the same project must preserve the
+      // explicit FT selection instead of rebuilding the combo at APP.
+      radar->setCurrentIndex(3);
+      application.processEvents();
+      check(entries->currentData().toString() == QStringLiteral("ft"),
+            "ARC device switch silently reset FT entry mode to APP");
+      radar->setCurrentIndex(0);
+      application.processEvents();
+      check(entries->currentData().toString() == QStringLiteral("ft"),
+            "ARC second device switch did not preserve FT entry mode");
+
+      // The same rule applies when changing projects: preserve the selected
+      // semantic mode when the destination Profile supports it.
+      devices->setCurrentIndex(find_text(devices, QStringLiteral("ARF")));
+      application.processEvents();
+      check(entries->currentData().toString() == QStringLiteral("ft"),
+            "LP project switch silently reset the supported FT mode to APP");
+      devices->setCurrentIndex(find_text(devices, QStringLiteral("ARC")));
+      application.processEvents();
+      check(entries->currentData().toString() == QStringLiteral("ft"),
+            "LP reverse project switch did not preserve FT entry mode");
+
       entries->setCurrentIndex(entries->findData(QStringLiteral("app")));
       application.processEvents();
       check_file_panel_is_stable();
@@ -1525,8 +1572,8 @@ int main(int argc, char* argv[]) {
       application.processEvents();
       check(!radar->isHidden() && radar->count() == 1 &&
                 radar->currentText() == QStringLiteral("ARF 雷达") &&
-                tx_id->isReadOnly() &&
-                 rx_id->isReadOnly() &&
+                !tx_id->isReadOnly() &&
+                 !rx_id->isReadOnly() &&
                 tx_id->text() == QStringLiteral("0x751") &&
                 rx_id->text() == QStringLiteral("0x759") &&
                 entries->count() == 2 &&

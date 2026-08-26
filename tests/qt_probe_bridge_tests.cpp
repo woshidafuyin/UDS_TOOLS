@@ -354,12 +354,13 @@ int main(int argc, char* argv[]) {
     check(callbacks_on_ui_thread,
           "Qt probe bridge delivered a callback outside the UI thread");
     check(capture->opened && capture->sent_count == 1 &&
-              capture->sent_id == 0x772 && capture->sent_service == 0x10,
-          "Qt bridge did not enforce a locked profile diagnostic endpoint");
+              capture->sent_id == 0x702 && capture->sent_service == 0x10,
+          "Qt bridge did not pass the user-edited diagnostic endpoint to "
+          "the probe service");
 
     timed_out = false;
     QTimer::singleShot(0, &bridge, [&bridge] {
-      bridge.startFlash(0, {}, QStringLiteral("ft"), 1, 2, 0x772, 0x77A,
+      bridge.startFlash(0, {}, QStringLiteral("ft"), 1, 2, 0x703, 0x763,
                         QStringLiteral("driver.s19"),
                         QStringLiteral("app.s19"), {}, {}, {}, {},
                         QStringLiteral("security.dll"));
@@ -376,14 +377,15 @@ int main(int argc, char* argv[]) {
     check(flash_running_started && flash_running_finished,
           "Qt flash bridge did not report running state transitions");
     check(flash_capture->ran && flash_capture->job.profile.channel == 2 &&
-              flash_capture->job.profile.tx_id == 0x772 &&
-              flash_capture->job.profile.rx_id == 0x77A &&
+              flash_capture->job.profile.tx_id == 0x703 &&
+              flash_capture->job.profile.rx_id == 0x763 &&
               flash_capture->job.profile.ft_tx_id == 0x701 &&
               flash_capture->job.profile.ft_rx_id == 0x761 &&
               flash_capture->job.entry_mode == L"ft" &&
               flash_capture->job.driver_file ==
                   std::filesystem::path(L"driver.s19"),
-          "Qt flash bridge did not assemble the expected FlashJob");
+          "Qt flash bridge did not assemble the FlashJob with the "
+          "user-edited diagnostic endpoint");
     check(!flash_report.isEmpty() &&
               std::filesystem::is_regular_file(
                   std::filesystem::path(flash_report.toStdWString())),
@@ -409,8 +411,8 @@ int main(int argc, char* argv[]) {
     });
     application.exec();
     check(!timed_out && finished && succeeded && !cancelled &&
-              capture->sent_id == 0x760,
-          "Longma secondary probe did not use the resolved 0x760/0x768 endpoint");
+              capture->sent_id == 0x123,
+          "Longma secondary probe ignored the user-edited diagnostic endpoint");
 
     capture->sent_count = 0;
     capture->sent_id = 0;
@@ -452,9 +454,9 @@ int main(int argc, char* argv[]) {
     application.exec();
     check(!timed_out && flash_finished && flash_succeeded &&
                !flash_cancelled && flash_capture->ran &&
-               flash_capture->job.profile.tx_id == 0x760 &&
-               flash_capture->job.profile.rx_id == 0x768,
-           "Longma secondary flash did not use the resolved 0x760/0x768 endpoint");
+               flash_capture->job.profile.tx_id == 0x123 &&
+               flash_capture->job.profile.rx_id == 0x456,
+           "Longma secondary flash ignored the user-edited diagnostic endpoint");
     check(std::any_of(
               emitted_logs.cbegin(), emitted_logs.cend(),
               [](const QString& line) {

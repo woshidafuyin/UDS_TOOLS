@@ -708,10 +708,7 @@ std::pair<quint32, quint32> ControllerBridge::resolveDiagnosticEndpoint(
   }
   const auto& profile = profile_options_[static_cast<std::size_t>(profile_index)];
   if (profile.target_options.empty()) {
-    return profile.lock_diagnostic_ids
-               ? std::pair<quint32, quint32>{profile.tx_id, profile.rx_id}
-               : std::pair<quint32, quint32>{displayed_tx_id,
-                                             displayed_rx_id};
+    return {displayed_tx_id, displayed_rx_id};
   }
 
   const auto target = std::find_if(
@@ -722,10 +719,7 @@ std::pair<quint32, quint32> ControllerBridge::resolveDiagnosticEndpoint(
   if (target == profile.target_options.cend()) {
     throw std::runtime_error("target role is missing or unsupported");
   }
-  return profile.lock_diagnostic_ids
-             ? std::pair<quint32, quint32>{target->tx_id, target->rx_id}
-             : std::pair<quint32, quint32>{displayed_tx_id,
-                                           displayed_rx_id};
+  return {displayed_tx_id, displayed_rx_id};
 }
 
 void ControllerBridge::buildProfileOptions() {

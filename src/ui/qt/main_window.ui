@@ -588,7 +588,7 @@
           <item>
            <widget class="QLabel" name="progressStatusLabel">
             <property name="text">
-             <string>界面就绪（探测与刷写均已连接）</string>
+             <string>界面就绪，ECU在线状态未确认</string>
             </property>
            </widget>
           </item>

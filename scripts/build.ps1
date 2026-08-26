@@ -158,10 +158,16 @@ function Test-LongmaKeygen([string]$Location) {
 }
 function Test-XizhongKeygen([string]$Location) {
   $broker=Join-Path $Location 'keygen_broker.exe'
-  $xizhongDll=Join-Path $Location 'resources\xizhong_rsmr\XZ_GenerateKeyEx_RSMR.dll'
-  $key=(& $broker $xizhongDll 'FDBAAF18' '0x11' '' | Out-String).Trim()
-  if($LASTEXITCODE -ne 0 -or $key -ne '29984258'){
-    throw "Xizhong RSMR keygen vector failed at ${Location}: $key"
+  $vectors=@(
+    @('RSMR','resources\xizhong_rsmr\XZ_GenerateKeyEx_RSMR.dll','29984258'),
+    @('LSMR','resources\xizhong_lsmr\XZ_GenerateKeyEx_LSMR.dll','2A984258')
+  )
+  foreach($vector in $vectors){
+    $xizhongDll=Join-Path $Location $vector[1]
+    $key=(& $broker $xizhongDll 'FDBAAF18' '0x11' '' | Out-String).Trim()
+    if($LASTEXITCODE -ne 0 -or $key -ne $vector[2]){
+      throw "Xizhong $($vector[0]) keygen vector failed at ${Location}: $key"
+    }
   }
 }
 function Test-C857Keygen([string]$Location) {
@@ -299,7 +305,7 @@ Test-CheryKp31Keygen $dist
 Test-ShidaixinanKeygen $dist
 Test-LingpaoRadarKeygen $dist
 Write-Host 'Longma ARS1.31 keygen vectors in build output and dist: PASS'
-Write-Host 'Xizhong RSMR keygen vector in build output and dist: PASS'
+Write-Host 'Xizhong RSMR/LSMR keygen vectors in build output and dist: PASS'
 Write-Host 'Changan C857 and B216 independent main/slave keygen resources: PASS'
 Write-Host 'Chuneng 331 keygen vector in build output and selected dist: PASS'
 Write-Host 'Chuneng ARC331 paired Driver + APP CBF input hashes: PASS'

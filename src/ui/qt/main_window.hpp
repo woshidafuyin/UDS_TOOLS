@@ -78,6 +78,7 @@ private:
   void populateTargetOptions(int device_index);
   void applySelectedProfile(int device_index);
   void applySelectedRadar(bool log_change);
+  void restoreDefaultDiagnosticId(bool restore_tx);
   void updateAppPackagePresentation(bool report_error = false);
   [[nodiscard]] bool selectedProfileSupportsAppTmpPackage() const;
   [[nodiscard]] int selectedProfileIndex(bool* valid = nullptr) const;
@@ -123,6 +124,7 @@ private:
   bool bus_monitor_running_{};
   bool restoring_combo_selections_{};
   int flash_progress_{};
+  QString last_applied_entry_default_;
   QString latest_report_path_;
   std::unique_ptr<QFile> execution_log_file_;
   QActionGroup* can_backend_group_{};

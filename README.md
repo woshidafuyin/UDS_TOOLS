@@ -1,6 +1,6 @@
 # UDS 通用刷写工具
 
-更新日期：2026-08-21
+更新日期：2026-08-25
 当前正式程序：`UDS_Tool.exe`
 
 ## 1. 文档定位
@@ -11,8 +11,8 @@
 
 ## 2. 当前交付组成
 
-- 18 个项目 Profile；
-- 15 个已注册 Workflow ID；
+- 20 个 Profile 文件（19 个可执行项目 Profile、1 个北汽需求阻断占位）；
+- 16 个已注册 Workflow ID；
 - 4 类 CAN 硬件后端：Vector XL、ZLG/ZCAN、TOSUN/TSMaster、Kvaser；
 - 4 个用户功能页：刷写作业、版本读取、诊断报文、总线监听；
 - 统一主程序 `UDS_Tool.exe`；
@@ -40,7 +40,8 @@
 - 按厂商、项目和设备选择 Profile 与 Target；
 - 从 Profile 加载 CAN 后端、通道、仲裁波特率、数据波特率、CAN/CAN FD、Tx ID、Rx ID、功能 ID、扩展寻址、Padding、默认文件和能力开关；
 - 项目可声明 APP、FT、CAL、APP+CAL、自动检测等入口，界面只显示该 Profile 支持的模式；
-- `lock_diagnostic_ids=true` 的项目锁定 Tx/Rx ID，避免误改固定端点；未锁定的项目允许按台架需要修改，切换项目或目标时恢复其默认端点；
+- 所有项目均允许按台架需要修改 Tx/Rx ID，修改值会贯穿在线探测、刷写、版本读取和诊断请求；切换项目或目标时加载对应默认端点，双击 Tx ID 或 Rx ID 标签可分别恢复默认值；
+- `lock_diagnostic_ids` 仅作为历史 Profile 配置元数据保留，不再阻止通用界面覆盖诊断端点；
 - 各 CAN 后端分别保存和恢复自己的通道选择；切换后端时，刷写页、版本读取页和监听页同步更新。
 
 ### 4.2 文件输入和预检
@@ -82,7 +83,7 @@
 ## 6. 一键版本读取
 
 - 版本读取页自动跟随刷写页的厂商、项目、设备、后端、通道和当前 Tx/Rx ID；
-- 18 个 Profile 均配置 `[version_check]`，当前合计 123 个读取项；
+- 19 个可执行 Profile 均配置 `[version_check]`，当前合计 123 个读取项；
 - 每项由 Profile 配置请求、正响应前缀、解码器、期望值和必读属性，不在界面中按项目复制 DID 逻辑；
 - 读取前显示 DID、请求、含义和必读属性，读取后显示成功/错误、ASCII 或解析值及原始 UDS 通信；
 - 支持 ASCII、十六进制、犀重结构化版本、计数 ASCII、BCD+ASCII 零件号和计数零件号列表解码；
@@ -168,7 +169,7 @@
 | 长安 B216 | `lingyao_b216.ini` / `lingyao_b216` | 主/从目标；Profile 声明模式 |
 | 长马 J90K / ARS1.31 | `longma_ars1_31.ini` / `longma_ars1_31` | APP、FT |
 | 犀重 RSMR | `xizhong_rsmr.ini` / `xizhong_rsmr` | APP、FT；项目 NM 和 ISO-TP 规则 |
-| 犀重 LSMR | `xizhong_lsmr.ini` / `xizhong_lsmr` | APP；独立扩展 ID、NM 和 SeedKey |
+| 犀重 LSMR | `xizhong_lsmr.ini` / `xizhong_lsmr` | APP 待验证入口；独立扩展 ID、NM 和 SeedKey；Driver/APP/Hash 必须从同一 LSMR 发布包手动选择，源 CANoe 的 LSMR 下载分支为空 |
 | 时代新安 HJZJ FMR | `shidaixinan_hjzj_fmr.ini` / `shidaixinan_hjzj_fmr` | APP、FT |
 | 时代新安 天王星、木星2代、庆铃 FMR | 独立 Profile / 复用 HJZJ Workflow | 独立端点和资源 |
 | 零跑 ARC | `lp_arc.ini` / `lp_arc` | 四设备；APP、FT |

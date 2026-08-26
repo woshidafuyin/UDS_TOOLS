@@ -1,7 +1,7 @@
 UDS 通用刷写工具 Change List
 ========================================
 
-发布日期：2026-08-21
+发布日期：2026-08-25
 
 文档职责：
 - 本文件只记录当前发布包相对 8.19 正式包的变化。
@@ -20,8 +20,8 @@ UDS 通用刷写工具 Change List
 - SHA-256：4A7E87ECC57A041C9A188B95E0D1269A2D77367B82CC3E7C050CFBA23FBACECB
 
 本次正式主程序：UDS_Tool.exe
-- 文件大小：1,554,432 bytes
-- SHA-256：D223EDD8420C133D20B8DF342C66CABC2763F5451871D3B6971AD6A5CAEFE9F8
+- 文件大小：1,650,688 bytes
+- SHA-256：4FC7AF33F5B802267D082FFDCDD4D6006458CA6028CD612C7A82021144E19F74
 
 比较方法：
 - 使用相对路径和 SHA-256 比较文件，不用文件名、大小或时间戳代替内容判断。
@@ -103,12 +103,12 @@ UDS 通用刷写工具 Change List
 
 - UDS_Tool.exe 和 32 位 SeedKey 代理 keygen_broker.exe。
 - Qt、VC Runtime、OpenGL 软件回退等运行依赖。
-- 18 个正式 Profile。
+- 20 个 Profile 文件（19 个可执行项目 Profile、1 个北汽需求阻断占位）。
 - Profile 明确引用的 Driver、APP、CAL、CBF、VBF、校验文件和 SeedKey DLL。
 - Vector、ZLG、TOSUN、Kvaser 运行所需 DLL、配置及许可证。
 - 用户 README 和本 Change List。
 
-清理后的文件清单：
+8.21 清理版本的文件清单：
 - 上一正式包实际文件：369 个。
 - 本次正式包实际文件：310 个。
 - 与上一正式包内容完全相同：307 个。
@@ -119,8 +119,8 @@ UDS 通用刷写工具 Change List
 四、未变化的产品范围
 ----------------------------------------
 
-- 18 个项目 Profile 的配置内容未因交付清理而修改。
-- 15 个已注册 Workflow ID 未因交付清理而减少。
+- 当前 20 个 Profile 文件均已进入发布目录。
+- 当前 16 个已注册 Workflow ID 均保留在主程序中。
 - Profile 明确引用的正式刷写输入和 SeedKey DLL 均保留。
 - Vector、ZLG、TOSUN、Kvaser 四类硬件后端仍在主程序中启用。
 - 本次清理不删除源码仓库中的测试、validation、Reference 和来源记录，只是不交付给最终用户。
@@ -128,9 +128,10 @@ UDS 通用刷写工具 Change List
 五、验证状态和边界
 ----------------------------------------
 
-当前源码/构建离线 CTest：8/8 PASS
+当前源码/构建离线 CTest：9/9 PASS
 - core_tests
 - geely_p416_tests
+- geely_p146_tests
 - can_adapter_tests
 - vendor_api_boundaries
 - vendor_reference_manifest
@@ -149,3 +150,15 @@ UDS 通用刷写工具 Change List
 - 发布清理后的启动和离线测试不能替代所有硬件后端与 ECU 的实车验收。
 - 某项目或设备的 APP PASS 不自动证明 FT、CAL、另一设备或相似项目通过。
 - ARC331 Boot 恢复能力不在普通发布包 UI 中开放。
+
+六、2026-08-25 犀重 LSMR 独立接入收口
+----------------------------------------
+
+- `xizhong_lsmr` 使用独立 Workflow 工厂和 LSMR 目标契约，不再由 RSMR 工厂对象代替。
+- 固定 APP 诊断端点 `0x18DAB6F1/0x18DAF1B6`、功能地址 `0x18DBFFF1`、NM ID `0x18FFA0B6` 和 LSMR 身份 `LSMR_AA`。
+- 源 CANoe `RaderID == 1` 下载分支为空，因此 LSMR 不开放 FT；`0x714/0x71C` 只作为来源端点保存。
+- Profile 不再默认选择源工程中的 RSMR Driver；Driver、APP、Hash 必须从同一 LSMR 发布包手动选择。
+- 缺少文件、非法入口、端点/能力不匹配、APP/Hash 不匹配或 LSMR SeedKey 已知向量失败时，均在创建 CAN 通道之前拒绝。
+- LSMR 目标明确标记 `pending_validation=true`；本次没有连接 CAN/ECU，不声明 LSMR 实刷 PASS。
+- Release x86/x64 构建成功，CTest 9/9 PASS；RSMR/LSMR SeedKey 已知向量在构建目录和 dist 均 PASS。
+- 当前 dist：343 个文件、228,681,478 bytes；`keygen_broker.exe` SHA-256 `7C4071E35A7E4A1AFB5BC5DB92BC66E2E413A9D4984590CBC8994B0D9A396BF0`。

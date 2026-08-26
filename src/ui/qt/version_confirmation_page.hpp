@@ -63,7 +63,6 @@ private:
 
   QLabel* selection_value_{};
   QLabel* address_value_{};
-  QLabel* summary_{};
   QPushButton* check_button_{};
   QPushButton* stop_button_{};
   QPushButton* report_button_{};

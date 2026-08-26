@@ -936,6 +936,16 @@ void test_workflow_registry() {
         "Xizhong RSMR workflow is not registered");
   check(uds::is_flash_workflow_registered(L"xizhong_lsmr"),
         "Xizhong LSMR workflow is not registered");
+  const auto xizhong_rsmr = uds::create_flash_workflow(L"xizhong_rsmr");
+  const auto xizhong_lsmr = uds::create_flash_workflow(L"xizhong_lsmr");
+  check(xizhong_rsmr && xizhong_lsmr &&
+            xizhong_rsmr->id() == L"xizhong_rsmr" &&
+            xizhong_lsmr->id() == L"xizhong_lsmr" &&
+            xizhong_rsmr->report_title({}) ==
+                "Xizhong RSMR Download Report" &&
+            xizhong_lsmr->report_title({}) ==
+                "Xizhong LSMR Download Report",
+        "Xizhong RSMR/LSMR factories did not create target-specific workflows");
   check(uds::is_flash_workflow_registered(
             L"shidaixinan_hjzj_fmr"),
         "Shidaixinan HJZJ_FMR workflow is not registered");
@@ -1230,11 +1240,18 @@ void test_xizhong_lsmr_profile_and_resources() {
             !profile.placeholder && profile.vendor_name == L"犀重" &&
             profile.project_name == L"HQ001" && profile.device_name == L"LSMR" &&
             profile.tx_id == 0x18DAB6F1 && profile.rx_id == 0x18DAF1B6 &&
-            profile.functional_id == 0x18DBFFF1 && profile.ft_tx_id == 0x701 &&
-            profile.ft_rx_id == 0x761 && profile.security_level == 0x11 &&
+            profile.functional_id == 0x18DBFFF1 && profile.ft_tx_id == 0x714 &&
+            profile.ft_rx_id == 0x71C && !profile.supports_ft_entry &&
+            profile.security_level == 0x11 &&
             profile.security_dll.filename() == L"XZ_GenerateKeyEx_LSMR.dll" &&
-            profile.driver_file.filename() == L"ARC2.33C1_HQ001A_FlashDrv.s19" &&
-            profile.app_file.empty() && profile.app_verify_file.empty(),
+            profile.driver_file.empty() && profile.app_file.empty() &&
+            profile.app_verify_file.empty() && profile.targets.size() == 1 &&
+            profile.targets[0].id == L"lsmr" &&
+            profile.targets[0].tx_id == 0x18DAB6F1 &&
+            profile.targets[0].rx_id == 0x18DAF1B6 &&
+            profile.targets[0].ft_tx_id == 0x714 &&
+            profile.targets[0].ft_rx_id == 0x71C &&
+            profile.targets[0].pending_validation,
         "Xizhong LSMR profile mismatch");
   const auto root = source / "resources" / "xizhong_lsmr";
   check(std::filesystem::is_regular_file(root / "XZ_GenerateKeyEx_LSMR.dll") &&
@@ -1248,6 +1265,42 @@ void test_xizhong_lsmr_profile_and_resources() {
             tester_present[0].frame.extended && !tester_present[0].frame.fd &&
             tester_present[1].frame.fd && tester_present[1].frame.brs,
         "Xizhong LSMR CAN frame contract mismatch");
+
+  const auto workflow = uds::create_flash_workflow(L"xizhong_lsmr");
+  uds::FlashJob job;
+  job.profile = profile;
+  job.entry_mode = L"ft";
+  bool ft_rejected = false;
+  try {
+    workflow->run(job, {}, {});
+  } catch (const std::runtime_error& error) {
+    ft_rejected = std::string(error.what()).find("RaderID=1") !=
+                  std::string::npos;
+  }
+  check(ft_rejected,
+        "Xizhong LSMR unexpectedly accepted the empty CANoe FT branch");
+
+  job.entry_mode = L"auto";
+  bool invalid_mode_rejected = false;
+  try {
+    workflow->run(job, {}, {});
+  } catch (const std::runtime_error& error) {
+    invalid_mode_rejected = std::string(error.what()).find("只允许APP") !=
+                            std::string::npos;
+  }
+  check(invalid_mode_rejected,
+        "Xizhong LSMR unexpectedly accepted an undeclared entry mode");
+
+  job.entry_mode = L"app";
+  bool missing_images_rejected = false;
+  try {
+    workflow->run(job, {}, {});
+  } catch (const std::runtime_error& error) {
+    missing_images_rejected = std::string(error.what()).find("同一LSMR发布包") !=
+                              std::string::npos;
+  }
+  check(missing_images_rejected,
+        "Xizhong LSMR did not fail closed when Driver/APP/Hash were absent");
 }
 
 void test_xizhong_rsmr_protocol_baseline() {
