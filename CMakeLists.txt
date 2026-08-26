@@ -108,6 +108,8 @@ target_compile_definitions(uds_core PUBLIC
 )
 
 add_library(uds_flash STATIC
+  src/flash/baic_radar_flow.cpp
+  src/flash/baic_radar_workflows.cpp
   src/flash/chery_ars1_33_flow.cpp
   src/flash/chery_ars1_33_workflow.cpp
   src/flash/chery_ars1_31_app_flow.cpp
@@ -232,6 +234,8 @@ if(UDS_BUILD_QT_UI AND CMAKE_SIZEOF_VOID_P EQUAL 8)
     )
 
     add_library(uds_flash_qt STATIC
+      src/flash/baic_radar_flow.cpp
+      src/flash/baic_radar_workflows.cpp
       src/flash/chery_ars1_33_flow.cpp
       src/flash/chery_ars1_33_workflow.cpp
       src/flash/chery_ars1_31_app_flow.cpp
@@ -400,6 +404,16 @@ if(UDS_BUILD_QT_UI AND CMAKE_SIZEOF_VOID_P EQUAL 8)
       COMMAND ${CMAKE_COMMAND} -E copy_directory
               "${CMAKE_CURRENT_SOURCE_DIR}/resources/longma_ars1_31"
               "$<TARGET_FILE_DIR:uds_tool_qt>/resources/longma_ars1_31"
+      COMMAND ${CMAKE_COMMAND} -E remove_directory
+              "$<TARGET_FILE_DIR:uds_tool_qt>/resources/baic_n61ab"
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+              "${CMAKE_CURRENT_SOURCE_DIR}/resources/baic_n61ab"
+              "$<TARGET_FILE_DIR:uds_tool_qt>/resources/baic_n61ab"
+      COMMAND ${CMAKE_COMMAND} -E remove_directory
+              "$<TARGET_FILE_DIR:uds_tool_qt>/resources/baic_bqb41"
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+              "${CMAKE_CURRENT_SOURCE_DIR}/resources/baic_bqb41"
+              "$<TARGET_FILE_DIR:uds_tool_qt>/resources/baic_bqb41"
       COMMAND ${CMAKE_COMMAND} -E remove_directory
               "$<TARGET_FILE_DIR:uds_tool_qt>/resources/xizhong_rsmr"
       COMMAND ${CMAKE_COMMAND} -E copy_directory
@@ -633,6 +647,7 @@ install(CODE [[
   file(REMOVE "${CMAKE_INSTALL_PREFIX}/profiles/lp_arf_placeholder.ini")
   file(REMOVE "${CMAKE_INSTALL_PREFIX}/profiles/lp_arf_231_b01.ini")
   file(REMOVE "${CMAKE_INSTALL_PREFIX}/profiles/lp_arf_231_b01_placeholder.ini")
+  file(REMOVE "${CMAKE_INSTALL_PREFIX}/profiles/beiqi_requirement_blocked.ini")
   file(REMOVE_RECURSE "${CMAKE_INSTALL_PREFIX}/resources/c857_b216")
   file(REMOVE_RECURSE "${CMAKE_INSTALL_PREFIX}/resources/lp_arf_231_b01")
   file(REMOVE_RECURSE "${CMAKE_INSTALL_PREFIX}/resources/lp_a12ev")
@@ -660,6 +675,8 @@ install_runtime_resource(lp_arf231_b11)
 install_runtime_resource(changan_c857)
 install_runtime_resource(lingyao_b216)
 install_runtime_resource(longma_ars1_31)
+install_runtime_resource(baic_n61ab)
+install_runtime_resource(baic_bqb41)
 install_runtime_resource(xizhong_rsmr)
 install_runtime_resource(xizhong_lsmr)
 install_runtime_resource(shidaixinan_hjzj_fmr)

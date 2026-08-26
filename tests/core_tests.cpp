@@ -10,6 +10,7 @@
 #include "core/sha256.hpp"
 #include "core/uds_client.hpp"
 #include "core/uds_nrc.hpp"
+#include "flash/baic_radar_flow.hpp"
 #include "flash/chery_ars1_33_flow.hpp"
 #include "flash/chery_ars1_31_app_flow.hpp"
 #include "flash/chery_ars1_31_app_flow.hpp"
@@ -962,10 +963,14 @@ void test_workflow_registry() {
         "Geely P416 workflow is not registered");
   check(uds::is_flash_workflow_registered(L"geely_p146"),
         "Geely P146 workflow is not registered");
+  check(uds::is_flash_workflow_registered(L"baic_n61ab"),
+        "BAIC N61AB workflow is not registered");
+  check(uds::is_flash_workflow_registered(L"baic_bqb41"),
+        "BAIC BQB41 workflow is not registered");
   check(!uds::is_flash_workflow_registered(L"future_flow"),
         "unknown workflow was reported as registered");
   const auto registered = uds::registered_flash_workflows();
-  check(registered.size() == 16 &&
+  check(registered.size() == 18 &&
             std::find(registered.begin(), registered.end(), L"chuneng_331") == registered.end() &&
             std::find(registered.begin(), registered.end(), L"chuneng_arc331") != registered.end() &&
              std::find(registered.begin(), registered.end(), L"chery_ars1_33") != registered.end() &&
@@ -987,7 +992,11 @@ void test_workflow_registry() {
             std::find(registered.begin(), registered.end(),
                       L"geely_p416") != registered.end() &&
             std::find(registered.begin(), registered.end(),
-                      L"geely_p146") != registered.end(),
+                      L"geely_p146") != registered.end() &&
+            std::find(registered.begin(), registered.end(),
+                      L"baic_n61ab") != registered.end() &&
+            std::find(registered.begin(), registered.end(),
+                      L"baic_bqb41") != registered.end(),
         "workflow registry enumeration mismatch");
   bool rejected = false;
   try {
@@ -1832,12 +1841,72 @@ void test_lp_arf_tmp_packages() {
   std::filesystem::remove(corrupted_tmp, remove_error);
   check(corrupted_rejected,
         "Leapmotor TMP parser accepted an APP with invalid CRC32");
-  const auto blocked = uds::load_profile_ini(
-      source / "profiles" / "beiqi_requirement_blocked.ini");
-  check(blocked.placeholder && blocked.flow.empty() &&
-            blocked.description.find(L"BLOCKED_REQUIREMENT") != std::wstring::npos &&
-            !uds::is_flash_workflow_registered(blocked.id),
-        "empty Beiqi requirement must remain fail-closed");
+  const auto n61 = uds::load_profile_ini(
+      source / "profiles" / "baic_n61ab.ini");
+  const auto bqb41 = uds::load_profile_ini(
+      source / "profiles" / "baic_bqb41.ini");
+  check(!n61.placeholder && n61.flow == L"baic_n61ab" &&
+            n61.tx_id == 0x723 && n61.rx_id == 0x72B &&
+            !n61.can_fd && n61.driver_start == 0x08000000 &&
+            n61.app_start == 0xC0080000 &&
+            !bqb41.placeholder && bqb41.flow == L"baic_bqb41" &&
+            bqb41.can_fd && bqb41.uds_fd && bqb41.uds_brs &&
+            bqb41.targets.size() == 4 &&
+            bqb41.driver_start == 0x00000000 &&
+            bqb41.app_start == 0x00040000 &&
+            !bqb41.security_dll.empty(),
+        "BAIC N61AB/BQB41 profile contracts are not frozen correctly");
+  const auto n61_versions = uds::load_version_check_plan(
+      source / "profiles" / "baic_n61ab.ini", {});
+  const auto bqb41_versions = uds::load_version_check_plan(
+      source / "profiles" / "baic_bqb41.ini", L"bqb41_0");
+  check(n61_versions.session == 0x01 && n61_versions.items.size() == 9 &&
+            n61_versions.items[0].request ==
+                std::vector<std::uint8_t>({0x22, 0xF1, 0x87}) &&
+            n61_versions.items[1].decoder == L"hex" &&
+            n61_versions.items[4].request ==
+                std::vector<std::uint8_t>({0x22, 0xF1, 0x95}) &&
+            !n61_versions.items[8].required &&
+            n61_versions.items[8].request ==
+                std::vector<std::uint8_t>({0x22, 0xF1, 0xA1}) &&
+            bqb41_versions.session == 0x01 &&
+            bqb41_versions.items.size() == 10 &&
+            bqb41_versions.items[0].required &&
+            bqb41_versions.items[1].request ==
+                std::vector<std::uint8_t>({0x22, 0xF1, 0x83}) &&
+            !bqb41_versions.items[9].required &&
+            bqb41_versions.items[9].request ==
+                std::vector<std::uint8_t>({0x22, 0xF1, 0x99}),
+        "BAIC N61AB/BQB41 version-read DID plans are not frozen correctly");
+  const auto n61_driver = uds::load_srecord_window(
+      source / n61.driver_file, n61.driver_start, n61.driver_length);
+  const auto n61_app = uds::load_srecord_window(
+      source / n61.app_file, n61.app_start, n61.app_length);
+  check(n61_driver.size() == 0x400 && n61_app.size() == 0xF5000 &&
+            std::filesystem::file_size(source / n61.security_dll) == 834048 &&
+            std::filesystem::file_size(source / bqb41.security_dll) == 909312,
+        "BAIC runtime S19/SeedKey resources are incomplete");
+}
+
+void test_baic_radar_protocol() {
+  check(uds::baic_radar_request_download(0x08000000, 0x400) ==
+            std::vector<std::uint8_t>(
+                {0x34, 0x00, 0x44, 0x08, 0x00, 0x00, 0x00,
+                 0x00, 0x00, 0x04, 0x00}),
+        "BAIC N61AB Driver RequestDownload encoding mismatch");
+  check(uds::baic_radar_erase_memory(0x00040000, 0x80000) ==
+            std::vector<std::uint8_t>(
+                {0x31, 0x01, 0xFF, 0x00, 0x44,
+                 0x00, 0x04, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00}),
+        "BAIC BQB41 APP erase encoding mismatch");
+  check(uds::baic_radar_max_block_length(
+            std::array<std::uint8_t, 4>{0x74, 0x20, 0x03, 0xEF}) ==
+            0x3EF,
+        "BAIC BQB41 max block length decoding mismatch");
+  constexpr std::array<std::uint8_t, 9> test_vector{
+      '1', '2', '3', '4', '5', '6', '7', '8', '9'};
+  check(uds::baic_radar_crc32(test_vector) == 0x340BC6D9U,
+        "BAIC CRC32 does not match the archived CAPL no-final-XOR algorithm");
 }
 
 void test_longma_ars131_protocol_and_resources() {
@@ -2578,7 +2647,7 @@ void test_shidaixinan_arf232_project_profiles_and_resources() {
   }
 
   const auto catalog = uds::discover_flash_profiles(source / "profiles");
-  check(catalog.errors.empty() && catalog.profiles.size() == 20,
+  check(catalog.errors.empty() && catalog.profiles.size() == 21,
         "Shidaixinan project profiles were not discovered cleanly");
   for (const auto& project : projects) {
     check(std::any_of(
@@ -3022,6 +3091,7 @@ int main() {
     run("profile_round_trip", test_profile_round_trip);
     run("profile_discovery", test_profile_discovery);
     run("workflow_registry", test_workflow_registry);
+    run("baic_radar_protocol", test_baic_radar_protocol);
     run("chuneng_331_updated_protocol_contract",
         test_chuneng_331_updated_protocol_contract);
     run("xizhong_rsmr_profile_and_resources", test_xizhong_rsmr_profile_and_resources);

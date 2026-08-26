@@ -1,5 +1,6 @@
 #include "flash/flash_workflow.hpp"
 
+#include "flash/baic_radar_workflows.hpp"
 #include "flash/chery_ars1_33_workflow.hpp"
 #include "flash/chery_ars1_31_project_workflows.hpp"
 #include "flash/chery_kp31_workflow.hpp"
@@ -91,6 +92,14 @@ std::unique_ptr<FlashWorkflow> create_geely_p146() {
   return std::make_unique<GeelyP146Workflow>();
 }
 
+std::unique_ptr<FlashWorkflow> create_baic_n61ab() {
+  return std::make_unique<BaicRadarWorkflow>(BaicRadarProject::n61ab);
+}
+
+std::unique_ptr<FlashWorkflow> create_baic_bqb41() {
+  return std::make_unique<BaicRadarWorkflow>(BaicRadarProject::bqb41);
+}
+
 // 新增项目专用刷写流程时，只需在这里增加一条注册记录。
 constexpr std::array kWorkflowRegistrations{
   WorkflowRegistration{L"chuneng_arc331", &create_chuneng_arc331},
@@ -110,6 +119,8 @@ constexpr std::array kWorkflowRegistrations{
   WorkflowRegistration{L"lp_arf", &create_lp_arf},
   WorkflowRegistration{L"geely_p416", &create_geely_p416},
   WorkflowRegistration{L"geely_p146", &create_geely_p146},
+  WorkflowRegistration{L"baic_n61ab", &create_baic_n61ab},
+  WorkflowRegistration{L"baic_bqb41", &create_baic_bqb41},
 };
 
 const WorkflowRegistration* find_registration(std::wstring_view flow_id) noexcept {

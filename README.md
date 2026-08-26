@@ -1,6 +1,6 @@
 # UDS 通用刷写工具
 
-更新日期：2026-08-25
+更新日期：2026-08-26
 当前正式程序：`UDS_Tool.exe`
 
 ## 1. 文档定位
@@ -11,8 +11,8 @@
 
 ## 2. 当前交付组成
 
-- 20 个 Profile 文件（19 个可执行项目 Profile、1 个北汽需求阻断占位）；
-- 16 个已注册 Workflow ID；
+- 21 个可执行项目 Profile；
+- 18 个已注册 Workflow ID；
 - 4 类 CAN 硬件后端：Vector XL、ZLG/ZCAN、TOSUN/TSMaster、Kvaser；
 - 4 个用户功能页：刷写作业、版本读取、诊断报文、总线监听；
 - 统一主程序 `UDS_Tool.exe`；
@@ -83,7 +83,7 @@
 ## 6. 一键版本读取
 
 - 版本读取页自动跟随刷写页的厂商、项目、设备、后端、通道和当前 Tx/Rx ID；
-- 19 个可执行 Profile 均配置 `[version_check]`，当前合计 123 个读取项；
+- 21 个可执行 Profile 均配置 `[version_check]`，当前合计 142 个读取项；
 - 每项由 Profile 配置请求、正响应前缀、解码器、期望值和必读属性，不在界面中按项目复制 DID 逻辑；
 - 读取前显示 DID、请求、含义和必读属性，读取后显示成功/错误、ASCII 或解析值及原始 UDS 通信；
 - 支持 ASCII、十六进制、犀重结构化版本、计数 ASCII、BCD+ASCII 零件号和计数零件号列表解码；
@@ -107,6 +107,8 @@
 | 零跑 ARF（A12/B11 ARF2.31、ARF6.31统一入口） | 8 |
 | 吉利 P416 | 13 |
 | 吉利 P146 | 0（公盘通用框架未冻结项目版本 DID，待配置） |
+| 北汽 N61AB | 9（5 个必读、4 个可选） |
+| 北汽 BQB41 / B41V | 10（5 个必读、5 个可选） |
 
 ## 7. 单次诊断报文
 
@@ -176,6 +178,8 @@
 | 零跑 ARF | `lp_arf.ini` / `lp_arf` | APP、FT（PLS→APP）；TMP单包或S19/SREC/BIN配套ASC/TMP |
 | 吉利 P416 | `geely_p416.ini` / `geely_p416` | SBL、APP、ESS VBF；项目 NM 和专用传输 |
 | 吉利 P146 | `geely_p146.ini` / `geely_p146` | 通用 GEEA2.0 正常 Download；VBF 元数据驱动；SBL 可选；APP、CAL/DATA、APP+CAL；端点与 SeedKey 待目标配置 |
+| 北汽 N61AB | `baic_n61ab.ini` / `baic_n61ab` | Classic CAN；归档 CAPL、Driver/APP S19 与 SeedKey 已接入；正常 APP Download |
+| 北汽 BQB41 | `baic_bqb41.ini` / `baic_bqb41` | CAN FD；四设备；成功 BLF 流程与已知答案验证的 SeedKey 已接入；Driver/APP需手动选择 |
 
 ## 11. 楚能 ARC331 专项说明
 
