@@ -1318,19 +1318,9 @@ void MainWindow::applySelectedProfile(int device_index) {
         QStringLiteral("ft"));
   }
   if (profile.supports_cal_download) {
-    const auto concise_chery_labels =
-        profile.profile_id == QStringLiteral("chery_ars1_33") ||
-        profile.profile_id == QStringLiteral("chery_kp31") ||
-        profile.profile_id == QStringLiteral("chery_t1ej") ||
-        profile.profile_id == QStringLiteral("chery_e0y") ||
-        profile.profile_id == QStringLiteral("chery_t22");
-    ui_->entryModeComboBox->addItem(concise_chery_labels
-                                        ? QStringLiteral("CAL")
-                                        : QStringLiteral("CAL标定刷写"),
+    ui_->entryModeComboBox->addItem(QStringLiteral("CAL"),
                                     QStringLiteral("cal"));
-    ui_->entryModeComboBox->addItem(concise_chery_labels
-                                        ? QStringLiteral("APP+CAL")
-                                        : QStringLiteral("APP+CAL完整刷写"),
+    ui_->entryModeComboBox->addItem(QStringLiteral("APP+CAL"),
                                     QStringLiteral("app_cal"));
   }
   const auto entry_index =

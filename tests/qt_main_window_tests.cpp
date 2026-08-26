@@ -1114,11 +1114,19 @@ int main(int argc, char* argv[]) {
             "Version page did not follow P416 or show its DID meanings");
       devices->setCurrentIndex(find_text(devices, QStringLiteral("P146")));
       application.processEvents();
+      const auto p146_app = entries->findData(QStringLiteral("app"));
+      const auto p146_cal = entries->findData(QStringLiteral("cal"));
+      const auto p146_app_cal = entries->findData(QStringLiteral("app_cal"));
       check(radar->count() == 1 &&
                 radar->currentText() == QStringLiteral("GEEA2.0 SWDL") &&
                 tx_id->text() == QStringLiteral("0x0") &&
                 rx_id->text() == QStringLiteral("0x0") &&
                 !tx_id->isReadOnly() && !rx_id->isReadOnly() &&
+                p146_app >= 0 && p146_cal >= 0 && p146_app_cal >= 0 &&
+                entries->itemText(p146_app) == QStringLiteral("APP") &&
+                entries->itemText(p146_cal) == QStringLiteral("CAL") &&
+                entries->itemText(p146_app_cal) ==
+                    QStringLiteral("APP+CAL") &&
                 version_table->rowCount() == 0,
             "Geely P146 safe configurable UI mapping mismatch");
       const auto chery_log_project =
