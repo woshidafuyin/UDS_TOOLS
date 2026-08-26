@@ -261,18 +261,18 @@ MainWindow::MainWindow(QWidget* parent)
         return action;
       };
   auto* vector_backend =
-      add_can_backend(QStringLiteral("Vector XL"), QStringLiteral("vectorCanBackendAction"),
+      add_can_backend(QStringLiteral("Vector"), QStringLiteral("vectorCanBackendAction"),
                       CanVendor::Vector, UDS_ENABLE_VECTOR != 0);
   auto* zlg_backend = add_can_backend(
-      QStringLiteral("ZLG / ZCANPRO（ZCAN API）"),
+      QStringLiteral("ZLG"),
       QStringLiteral("zlgCanBackendAction"), CanVendor::Zlg,
       UDS_ENABLE_ZLG != 0);
   auto* tosun_backend = add_can_backend(
-      QStringLiteral("TOSUN / TSMaster（TSCAN API）"),
+      QStringLiteral("TOSUN"),
       QStringLiteral("tosunCanBackendAction"), CanVendor::Tosun,
       UDS_ENABLE_TOSUN != 0);
   auto* kvaser_backend = add_can_backend(
-      QStringLiteral("Kvaser（CANlib API）"),
+      QStringLiteral("Kvaser"),
       QStringLiteral("kvaserCanBackendAction"), CanVendor::Kvaser,
       UDS_ENABLE_KVASER != 0);
   QSettings hardware_settings;

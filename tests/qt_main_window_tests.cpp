@@ -401,9 +401,10 @@ int main(int argc, char* argv[]) {
       check(backend_group && backend_group->isExclusive() && vector_backend &&
                 tosun_backend && zlg_backend && kvaser_backend &&
                 vector_backend->isChecked() &&
-                tosun_backend->text().contains(QStringLiteral("TSMaster")) &&
-                zlg_backend->text().contains(QStringLiteral("ZCANPRO")) &&
-                kvaser_backend->text().contains(QStringLiteral("Kvaser")) &&
+                vector_backend->text() == QStringLiteral("Vector") &&
+                zlg_backend->text() == QStringLiteral("ZLG") &&
+                tosun_backend->text() == QStringLiteral("TOSUN") &&
+                kvaser_backend->text() == QStringLiteral("Kvaser") &&
                 backend_actions.size() == 4 &&
                 backend_actions[0] == vector_backend &&
                 backend_actions[1] == zlg_backend &&
