@@ -143,12 +143,6 @@ Chuneng331InputMode resolve_chuneng_331_input_mode(
   return Chuneng331InputMode::srecord_pair;
 }
 
-std::wstring_view Chuneng331Workflow::id() const noexcept { return L"chuneng_331"; }
-
-std::string Chuneng331Workflow::report_title(const FlashProfile&) const {
-  return "ChuNeng 331 Download Report";
-}
-
 std::wstring_view ChunengArc331Workflow::id() const noexcept {
   return L"chuneng_arc331";
 }
@@ -157,9 +151,9 @@ std::string ChunengArc331Workflow::report_title(const FlashProfile&) const {
   return "ChuNeng ARC331 Radar Download Report";
 }
 
-void ChunengArc331Workflow::run(
-    const FlashJob& job, const FlashWorkflowCallbacks& callbacks,
-    std::stop_token stop) {
+void ChunengArc331Workflow::run(const FlashJob& job,
+                                const FlashWorkflowCallbacks& callbacks,
+                                std::stop_token stop) {
   if (callbacks.log) {
     callbacks.log(
         "ChuNeng ARC331 dedicated flow selected: input is an atomic "
@@ -167,12 +161,6 @@ void ChunengArc331Workflow::run(
         "256-byte 0202 "
         "verification, and LP 6000/6001 certificate routines are not used");
   }
-  Chuneng331Workflow implementation;
-  implementation.run(job, callbacks, stop);
-}
-
-void Chuneng331Workflow::run(const FlashJob& job, const FlashWorkflowCallbacks& callbacks,
-                             std::stop_token stop) {
   record(callbacks, 0, "Preflight", "INFO", "Loading and validating Driver/APP/verification files");
   log(callbacks, "预检查：加载并校验刷写文件……");
 
@@ -314,7 +302,8 @@ void Chuneng331Workflow::run(const FlashJob& job, const FlashWorkflowCallbacks& 
   functional_config.tx_id = job.profile.functional_id;
   IsoTpSession functional_transport(*bus, functional_config);
   if (job.profile.ft_tx_id == 0 || job.profile.ft_rx_id == 0) {
-    throw std::runtime_error("Chuneng 331 FT endpoint 0x701/0x761 is not configured");
+    throw std::runtime_error(
+        "Chuneng ARC331 FT endpoint 0x701/0x761 is not configured");
   }
   IsoTpSession ft_transport(
       *bus, {job.profile.ft_tx_id, job.profile.ft_rx_id,
@@ -348,7 +337,7 @@ void Chuneng331Workflow::run(const FlashJob& job, const FlashWorkflowCallbacks& 
     }, keygen);
   flow.run(images, job.entry_mode, stop);
   record(callbacks, 100, "Download", "PASS",
-         "Q/CN A201-2025 compliant ChuNeng 331 sequence completed");
+         "Q/CN A201-2025 compliant ChuNeng ARC331 sequence completed");
 }
 
 } // namespace uds

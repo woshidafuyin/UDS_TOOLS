@@ -50,8 +50,6 @@ signals:
                       const QString& app_verify_path,
                       const QString& cal_verify_path,
                       const QString& seed_key_dll_path);
-  void powerRequested(int profile_index, bool enabled);
-
 protected:
   void closeEvent(QCloseEvent* event) override;
   bool eventFilter(QObject* watched, QEvent* event) override;
@@ -118,7 +116,6 @@ private:
   bool probe_running_{};
   bool flash_running_{};
   bool flash_stop_requested_{};
-  bool power_running_{};
   bool version_check_running_{};
   bool diagnostic_request_running_{};
   bool bus_monitor_running_{};

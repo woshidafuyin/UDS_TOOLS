@@ -48,18 +48,10 @@ Chuneng331InputMode resolve_chuneng_331_input_mode(
     const std::filesystem::path& driver,
     const std::filesystem::path& app);
 
-class Chuneng331Workflow final : public FlashWorkflow {
-public:
-  std::wstring_view id() const noexcept override;
-  std::string report_title(const FlashProfile& profile) const override;
-  void run(const FlashJob& job, const FlashWorkflowCallbacks& callbacks,
-           std::stop_token stop) override;
-};
-
 // The current ARC331 profile is the only selectable ChuNeng workflow. It
 // accepts either a Driver+APP CBF pair or a Driver+APP S-record/ASC pair, then
-// delegates both roles to the dedicated 331 state machine; it never enters the
-// LP radar certificate flow.
+// runs both roles through the dedicated ARC331 state machine; it never enters
+// the LP radar certificate flow.
 class ChunengArc331Workflow final : public FlashWorkflow {
 public:
   std::wstring_view id() const noexcept override;

@@ -1268,42 +1268,6 @@ void test_probe_service_chery_preconditions() {
         "vehicle-state frames before UDS 10 01");
 }
 
-void test_probe_service_chuneng_standard_precondition_sequence() {
-  auto capture = std::make_shared<ProbeBusCapture>();
-  uds::app::ProbeService service(
-      [capture](const uds::app::ProbeRequest& request) {
-        return std::make_unique<FakeChunengProbeBus>(capture, request.rx_id);
-      });
-  auto request = make_probe_request();
-  request.profile.flow = L"chuneng_331";
-  request.profile.tx_id = request.tx_id = 0x772;
-  request.profile.rx_id = request.rx_id = 0x77A;
-  request.profile.functional_id = 0x7DF;
-  request.padding = 0x55;
-
-  const auto result = service.run(request, {}, {});
-  check(result.success, "Chuneng standard probe sequence failed");
-  const auto wakeup_count = std::count_if(
-      capture->sent.cbegin(), capture->sent.cend(),
-      [](const uds::CanFrame& frame) {
-        return frame.id == 0x520 && !frame.extended && !frame.fd &&
-               frame.data == std::vector<std::uint8_t>(8, 0x00);
-      });
-  std::vector<uds::CanFrame> diagnostic_requests;
-  std::copy_if(capture->sent.cbegin(), capture->sent.cend(),
-               std::back_inserter(diagnostic_requests),
-               [](const uds::CanFrame& frame) { return frame.id == 0x772; });
-  check(wakeup_count >= 2 && diagnostic_requests.size() == 2 &&
-            diagnostic_requests[0].data[1] == 0x10 &&
-            diagnostic_requests[0].data[2] == 0x03 &&
-            diagnostic_requests[1].data[1] == 0x31 &&
-            diagnostic_requests[1].data[2] == 0x01 &&
-            diagnostic_requests[1].data[3] == 0x02 &&
-            diagnostic_requests[1].data[4] == 0x03,
-        "Chuneng probe did not maintain 0x520 wake-up while sending "
-        "physical 10 03 then 31 01 02 03");
-}
-
 void test_probe_service_chuneng_arc331_selected_endpoint_online() {
   struct Endpoint {
     std::uint32_t tx_id;
@@ -1435,52 +1399,6 @@ void test_probe_service_chuneng_arc331_other_nrc_still_fails() {
   const auto result = service.run(request, {}, {});
   check(!result.success,
         "ARC331 incorrectly tolerated a precondition NRC other than 0x31");
-}
-
-void test_probe_service_chuneng_rejects_failed_precondition() {
-  auto capture = std::make_shared<ProbeBusCapture>();
-  uds::app::ProbeService service(
-      [capture](const uds::app::ProbeRequest& request) {
-        return std::make_unique<FakeChunengProbeBus>(capture, request.rx_id,
-                                                     std::uint8_t{0x05});
-      });
-  auto request = make_probe_request();
-  request.profile.flow = L"chuneng_331";
-  request.profile.tx_id = request.tx_id = 0x772;
-  request.profile.rx_id = request.rx_id = 0x77A;
-  request.profile.functional_id = 0x7DF;
-  request.padding = 0x55;
-
-  const auto result = service.run(request, {}, {});
-  check(!result.success,
-        "Chuneng probe accepted routine status 0x05 as flashable");
-}
-
-void test_probe_service_chuneng_custom_app_endpoint() {
-  auto capture = std::make_shared<ProbeBusCapture>();
-  uds::app::ProbeService service(
-      [capture](const uds::app::ProbeRequest& request) {
-        return std::make_unique<FakeChunengProbeBus>(capture, request.rx_id);
-      });
-  auto request = make_probe_request();
-  request.profile.flow = L"chuneng_331";
-  request.profile.lock_diagnostic_ids = true;
-  request.profile.tx_id = 0x772;
-  request.profile.rx_id = 0x77A;
-  request.profile.functional_id = 0x7DF;
-  request.tx_id = 0x712;
-  request.rx_id = 0x71A;
-  request.padding = 0x55;
-
-  const auto result = service.run(request, {}, {});
-  check(result.success &&
-            result.message.find("自定义端点在线") != std::string::npos,
-        "Chuneng editable-ID probe did not accept the custom APP endpoint");
-  const auto custom_request_count = std::count_if(
-      capture->sent.cbegin(), capture->sent.cend(),
-      [](const uds::CanFrame& frame) { return frame.id == 0x712; });
-  check(custom_request_count == 2,
-        "Chuneng editable-ID probe did not use the selected physical endpoint");
 }
 
 void test_probe_service_lingpao_radar_entry_sequences() {
@@ -1681,13 +1599,10 @@ int main() {
     test_probe_service_shidaixinan_ft_endpoint_and_wakeup();
     test_probe_service_xizhong_nm_wakeup_and_retry();
     test_probe_service_chery_preconditions();
-    test_probe_service_chuneng_standard_precondition_sequence();
     test_probe_service_chuneng_arc331_selected_endpoint_online();
     test_probe_service_chuneng_arc331_boot_probe_is_non_intrusive();
     test_probe_service_chuneng_arc331_nrc31_warns_and_continues();
     test_probe_service_chuneng_arc331_other_nrc_still_fails();
-    test_probe_service_chuneng_rejects_failed_precondition();
-    test_probe_service_chuneng_custom_app_endpoint();
     test_probe_service_lingpao_radar_entry_sequences();
     test_probe_service_geely_p416_entry_wakeup();
     test_probe_service_unexpected_response();

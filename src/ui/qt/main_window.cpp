@@ -905,8 +905,6 @@ void MainWindow::connectControllerActions() {
           &ControllerBridge::startProbe);
   connect(this, &MainWindow::flashRequested, controller_bridge_.get(),
           &ControllerBridge::startFlash);
-  connect(this, &MainWindow::powerRequested, controller_bridge_.get(),
-           &ControllerBridge::setPower);
   connect(version_page_, &VersionConfirmationPage::checkRequested, this,
           [this](int profile_index, const QString& target_id, unsigned channel,
                  quint32 tx_id, quint32 rx_id) {
@@ -1043,21 +1041,6 @@ void MainWindow::connectControllerActions() {
                         success ? UiLogTone::Success : UiLogTone::Failure);
             updateEnabledState();
             updateStatusBar();
-          });
-  connect(controller_bridge_.get(), &ControllerBridge::powerRunningChanged,
-          this, [this](bool running) {
-            power_running_ = running;
-            updateEnabledState();
-          });
-  connect(controller_bridge_.get(), &ControllerBridge::powerFinished, this,
-          [this](bool success, const QString& message) {
-            power_running_ = false;
-            updateEnabledState();
-            ui_->progressStatusLabel->setText(message);
-            appendUiLog(message);
-            if (!success) {
-              QMessageBox::warning(this, QStringLiteral("电源操作"), message);
-            }
           });
 }
 
@@ -1983,7 +1966,7 @@ void MainWindow::startFlashFromUi() {
 }
 
 void MainWindow::updateEnabledState() {
-  const auto busy = probe_running_ || flash_running_ || power_running_ ||
+  const auto busy = probe_running_ || flash_running_ ||
                     version_check_running_ || diagnostic_request_running_;
   const auto& profiles = controller_bridge_->profileOptions();
   bool profile_valid{};
@@ -2343,22 +2326,13 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
-  if (!probe_running_ && !flash_running_ && !power_running_ &&
-      !bus_monitor_running_) {
+  if (!probe_running_ && !flash_running_ && !bus_monitor_running_) {
     event->accept();
     return;
   }
-  if (bus_monitor_running_ && !probe_running_ && !flash_running_ &&
-      !power_running_) {
+  if (bus_monitor_running_ && !probe_running_ && !flash_running_) {
     bus_monitor_page_->stop();
     event->accept();
-    return;
-  }
-  if (power_running_ && !probe_running_ && !flash_running_) {
-    QMessageBox::information(
-        this, QStringLiteral("电源控制仍在运行"),
-        QStringLiteral("当前电源控制命令必须先完成，窗口暂不关闭。"));
-    event->ignore();
     return;
   }
   if (QMessageBox::question(

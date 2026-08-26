@@ -14,8 +14,6 @@
 #include <QStringList>
 
 #include <atomic>
-#include <mutex>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -120,8 +118,6 @@ public slots:
                               unsigned channel, quint32 tx_id, quint32 rx_id,
                               const QString& payload, unsigned timeout_ms);
   void requestDiagnosticStop();
-  void setPower(int profile_index, bool enabled);
-
 signals:
   void logMessage(const QString& message);
   void progressChanged(int percent, const QString& message);
@@ -141,9 +137,6 @@ signals:
                           const QString& request, const QString& response,
                           const QString& detail, unsigned elapsed_ms,
                           quint8 nrc);
-  void powerRunningChanged(bool running);
-  void powerFinished(bool success, const QString& message);
-
 private:
   struct ProbeAuditRecord {
     QString backend;
@@ -174,9 +167,6 @@ private:
   app::FlashController flash_controller_;
   app::VersionCheckController version_check_controller_;
   app::DiagnosticRequestController diagnostic_request_controller_;
-  std::mutex power_mutex_;
-  std::jthread power_worker_;
-  std::atomic_bool power_running_{};
   std::atomic_bool shutting_down_{};
   QHash<QString, ProbeAuditRecord> probe_audit_records_;
 };

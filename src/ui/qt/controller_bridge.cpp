@@ -1,6 +1,5 @@
 #include "ui/qt/controller_bridge.hpp"
 
-#include "core/canoe_power.hpp"
 #include "core/asc_trace.hpp"
 #include "core/version_check_plan.hpp"
 #include "core/hex.hpp"
@@ -157,11 +156,6 @@ ControllerBridge::~ControllerBridge() {
   probe_controller_.wait();
   version_check_controller_.wait();
   diagnostic_request_controller_.wait();
-  std::scoped_lock lock(power_mutex_);
-  if (power_worker_.joinable()) {
-    power_worker_.request_stop();
-    power_worker_.join();
-  }
 }
 
 const std::vector<ControllerProfileOption>&
@@ -625,58 +619,6 @@ void ControllerBridge::startDiagnosticRequest(
 
 void ControllerBridge::requestDiagnosticStop() {
   diagnostic_request_controller_.request_stop();
-}
-
-void ControllerBridge::setPower(int profile_index, bool enabled) {
-  if (shutting_down_.load()) return;
-  if (profile_index < 0 ||
-      static_cast<std::size_t>(profile_index) >= profiles_.size()) {
-    emit powerFinished(false, QStringLiteral("电源配置无效：未选择设备。"));
-    return;
-  }
-  const auto& profile =
-      profiles_[static_cast<std::size_t>(profile_index)].profile;
-  if (!profile.power_control) {
-    emit powerFinished(
-        false, QStringLiteral("该项目使用外部供电，不允许工具修改CANoe DOUT。"));
-    return;
-  }
-  if (operation_state_.is_active() || power_running_.exchange(true)) {
-    emit powerFinished(false,
-                       QStringLiteral("已有操作正在运行，不能修改电源。"));
-    return;
-  }
-
-  std::scoped_lock lock(power_mutex_);
-  if (power_worker_.joinable()) power_worker_.join();
-  emit powerRunningChanged(true);
-  power_worker_ = std::jthread([this, enabled](std::stop_token) {
-    bool success{};
-    QString message;
-    try {
-      const auto result = set_canoe_dout(enabled ? 1 : 0);
-      success = result.value == (enabled ? 1 : 0);
-      message = QStringLiteral("CANoe DOUT=%1%2")
-                    .arg(result.value)
-                    .arg(result.measurement_started
-                             ? QStringLiteral("；测量已由工具启动")
-                             : QString());
-    } catch (const std::exception& error) {
-      message = QStringLiteral("电源操作失败：%1").arg(fromUtf8(error.what()));
-    } catch (...) {
-      message = QStringLiteral("电源操作失败：unknown exception");
-    }
-    power_running_.store(false);
-    if (shutting_down_.load()) return;
-    QMetaObject::invokeMethod(
-        this,
-        [this, success, message] {
-          if (shutting_down_.load()) return;
-          emit powerRunningChanged(false);
-          emit powerFinished(success, message);
-        },
-        Qt::QueuedConnection);
-  });
 }
 
 void ControllerBridge::loadProfiles() {

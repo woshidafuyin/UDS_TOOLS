@@ -126,9 +126,8 @@ ProbeResult ProbeService::run(const ProbeRequest& requested,
     }
   }
   const bool power_managed = request.profile.power_control;
-  const bool chuneng_331 = request.profile.flow == L"chuneng_331";
   const bool chuneng_arc331 = request.profile.flow == L"chuneng_arc331";
-  const bool chuneng_wakeup_probe = chuneng_331 || chuneng_arc331;
+  const bool chuneng_wakeup_probe = chuneng_arc331;
   const bool shidaixinan_hjzj =
       request.profile.flow == L"shidaixinan_hjzj_fmr";
   const bool lp_arc = request.profile.flow == L"lp_arc";
@@ -226,15 +225,14 @@ ProbeResult ProbeService::run(const ProbeRequest& requested,
     };
 
     if (chuneng_wakeup_probe && !ft_probe) {
-      const auto wakeup_period =
-          chuneng_arc331 ? kChunengArc331WakeupPeriod : 500ms;
+      const auto wakeup_period = kChunengArc331WakeupPeriod;
       const CanFrame wakeup{
           kChunengArc331WakeupId,
           {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
           false, false, false};
       bus->send(wakeup);
       log(callbacks,
-          "在线探测：楚能331持续发送0x520全零标准CAN唤醒报文，周期" +
+          "在线探测：楚能ARC331持续发送0x520全零标准CAN唤醒报文，周期" +
               std::to_string(wakeup_period.count()) +
               "ms；保持到在线检查结束。");
       precondition_sender = std::jthread(
@@ -553,11 +551,6 @@ ProbeResult ProbeService::run(const ProbeRequest& requested,
           boot_probe
               ? "在线探测：楚能ARC331 BOOT→APP入口持续发送0x520唤醒，向所选雷达物理端点发送10 03；收到50 03即确认诊断在线，不发送仅APP入口适用的31 01 02 03，也不进入编程会话或刷写。"
               : "在线探测：楚能ARC331 APP入口持续发送0x520唤醒，向所选雷达物理端点发送10 03；收到50 03后检查31 01 02 03。该检查不发送10 02或刷写数据。";
-    } else if (chuneng_331 && !ft_probe) {
-      probe_description =
-          boot_probe
-              ? "在线探测：楚能331 BOOT→APP入口按正式规范向所选物理端点发送10 03；收到50 03即确认诊断在线，不发送仅APP入口适用的31 01 02 03，也不进入编程会话或刷写。"
-              : "在线探测：楚能331 APP入口按正式规范向所选物理端点发送10 03；收到50 03后继续检查31 01 02 03，不进入编程会话或刷写。";
     } else if (ft_probe) {
       probe_description =
           "在线探测：向FT端点发送扩展会话请求10 03；收到并核验50 03后判定在线，不执行10 02或刷写。";
@@ -570,7 +563,6 @@ ProbeResult ProbeService::run(const ProbeRequest& requested,
     }
     log(callbacks, probe_description);
     std::optional<UdsResponse> response;
-    bool chuneng_functional_fallback = false;
     std::string last_request_error;
     const auto attempt_count =
         !ft_probe &&
@@ -623,47 +615,7 @@ ProbeResult ProbeService::run(const ProbeRequest& requested,
         }
       }
     }
-    if (!response && chuneng_331 && !ft_probe) {
-      log(callbacks,
-          "楚能331物理10 03无响应；按已验证的Boot兼容入口尝试功能寻址"
-          "10 01→10 03，仍只接收当前配置Rx ID的响应。");
-      try {
-        IsoTpConfig functional_config = probe_config;
-        functional_config.tx_id = request.profile.functional_id;
-        IsoTpSession functional_transport(*bus, functional_config);
-        UdsClient functional_client(functional_transport,
-                                    [&](const std::string& line) {
-                                      log(callbacks, line);
-                                    },
-                                    stop);
-        const auto default_session = functional_client.request(
-            std::array<std::uint8_t, 2>{0x10, 0x01}, 1000ms);
-        if (!default_session.success || default_session.response.size() < 2 ||
-            default_session.response[0] != 0x50 ||
-            default_session.response[1] != 0x01) {
-          throw std::runtime_error(
-              "functional 10 01 did not receive expected 50 01");
-        }
-        auto extended_session = functional_client.request(
-            std::array<std::uint8_t, 2>{0x10, 0x03}, 1000ms);
-        if (!extended_session.success || extended_session.response.size() < 2 ||
-            extended_session.response[0] != 0x50 ||
-            extended_session.response[1] != 0x03) {
-          throw std::runtime_error(
-              "functional 10 03 did not receive expected 50 03");
-        }
-        response = std::move(extended_session);
-        chuneng_functional_fallback = true;
-        log(callbacks,
-            "PASS：楚能331功能寻址兼容入口收到当前Rx ID的50 01/50 03；"
-            "目标诊断在线。");
-      } catch (const std::exception& error) {
-        last_request_error =
-            "physical 10 03 and functional 10 01/10 03 both failed: " +
-            std::string(error.what());
-      }
-    }
-    if (precondition_sender.joinable() && !chuneng_331) {
+    if (precondition_sender.joinable()) {
       precondition_sender.request_stop();
       precondition_sender.join();
     }
@@ -676,9 +628,6 @@ ProbeResult ProbeService::run(const ProbeRequest& requested,
     }
 
     std::string response_summary = to_hex(response->response);
-    if (chuneng_functional_fallback) {
-      response_summary += "（功能寻址Boot兼容入口）";
-    }
     if (chuneng_arc331 && !ft_probe && boot_probe) {
       log(callbacks,
           "PASS：楚能ARC331 BOOT→APP入口已收到所选物理响应ID的50 03；"
@@ -727,28 +676,6 @@ ProbeResult ProbeService::run(const ProbeRequest& requested,
         response_summary +=
             "；ProgrammingPrecondition=" + to_hex(precondition.response);
       }
-    } else if (chuneng_331 && !ft_probe && !boot_probe) {
-      log(callbacks,
-          "楚能331 APP入口：物理10 03已响应；发送31 01 02 03检查刷新条件。"
-          "仅状态0x04判定可刷写。");
-      const auto precondition = client.request(
-          kChuneng331ProgrammingPrecondition, 1000ms);
-      check_stop(stop);
-      const auto expected = chuneng_331_routine_success_prefix(0x0203);
-      if (!precondition.success ||
-          precondition.response.size() < expected.size() ||
-          !std::equal(expected.begin(), expected.end(),
-                      precondition.response.begin())) {
-        throw std::runtime_error(
-            "Chuneng programming precondition failed: " +
-            to_hex(precondition.response));
-      }
-      response_summary +=
-          "；ProgrammingPrecondition=" + to_hex(precondition.response);
-    } else if (chuneng_331 && boot_probe) {
-      log(callbacks,
-          "楚能331 BOOT→APP：10 03已响应；仅Boot入口不发送31 01 02 03。"
-          "该结果只证明诊断在线，完整可刷性由正式10 02及后续流程确认。");
     }
     if (precondition_sender.joinable()) {
       precondition_sender.request_stop();
