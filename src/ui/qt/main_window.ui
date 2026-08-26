@@ -538,16 +538,11 @@
          <property name="title">
           <string>操作</string>
          </property>
-         <layout class="QVBoxLayout" name="operationsLayout">
+         <layout class="QGridLayout" name="operationsLayout">
           <property name="spacing">
            <number>9</number>
           </property>
-          <item>
-           <layout class="QHBoxLayout" name="secondaryActionsLayout">
-            <property name="spacing">
-             <number>8</number>
-            </property>
-            <item>
+          <item row="0" column="0">
             <widget class="QPushButton" name="probeButton">
               <property name="toolTip">
                <string>通过ProbeController执行UDS在线探测</string>
@@ -556,12 +551,14 @@
                 <string>能否刷写</string>
                </property>
              </widget>
-            </item>
-           </layout>
           </item>
-          <item>
-           <layout class="QHBoxLayout" name="primaryActionsLayout">
-            <item>
+          <item row="0" column="1">
+           <widget class="QPushButton" name="openReportButton">
+            <property name="enabled"><bool>false</bool></property>
+            <property name="text"><string>打开最新报告</string></property>
+           </widget>
+          </item>
+          <item row="1" column="0">
              <widget class="QPushButton" name="startFlashButton">
               <property name="toolTip">
                <string>通过FlashController执行完整刷写流程</string>
@@ -569,20 +566,12 @@
                <property name="text"><string>开始刷写</string></property>
               <property name="default"><bool>true</bool></property>
              </widget>
-            </item>
-            <item>
+          </item>
+          <item row="1" column="1">
              <widget class="QPushButton" name="stopButton">
               <property name="enabled"><bool>false</bool></property>
               <property name="text"><string>停止</string></property>
              </widget>
-            </item>
-            <item>
-             <widget class="QPushButton" name="openReportButton">
-              <property name="enabled"><bool>false</bool></property>
-              <property name="text"><string>打开最新报告</string></property>
-             </widget>
-            </item>
-           </layout>
           </item>
          </layout>
         </widget>
@@ -689,7 +678,9 @@
   <tabstop>calBrowseButton</tabstop>
   <tabstop>seedKeyDllBrowseButton</tabstop>
   <tabstop>probeButton</tabstop>
+  <tabstop>openReportButton</tabstop>
   <tabstop>startFlashButton</tabstop>
+  <tabstop>stopButton</tabstop>
  </tabstops>
  <resources/>
  <connections/>
