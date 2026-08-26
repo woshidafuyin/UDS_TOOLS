@@ -805,10 +805,6 @@ void MainWindow::connectActions() {
       appendUiLog(QStringLiteral("已请求停止在线探测。"));
     }
   });
-  connect(ui_->powerOnButton, &QPushButton::clicked, this,
-          [this] { requestPowerFromUi(true); });
-  connect(ui_->powerOffButton, &QPushButton::clicked, this,
-          [this] { requestPowerFromUi(false); });
   connect(ui_->openReportButton, &QPushButton::clicked, this, [this] {
     refreshLatestReportPath();
     if (latest_report_path_.isEmpty()) {
@@ -1936,22 +1932,6 @@ void MainWindow::startFlashFromUi() {
        fullPath(ui_->seedKeyDllPathLineEdit));
 }
 
-void MainWindow::requestPowerFromUi(bool enabled) {
-  bool valid{};
-  const auto profile_index = selectedProfileIndex(&valid);
-  if (!valid) return;
-  if (QMessageBox::question(
-          this, enabled ? QStringLiteral("上电确认")
-                        : QStringLiteral("下电确认"),
-          enabled ? QStringLiteral("确认通过CANoe DOUT给当前台架上电？")
-                  : QStringLiteral("确认通过CANoe DOUT给当前台架下电？"),
-          QMessageBox::Yes | QMessageBox::No,
-          QMessageBox::No) != QMessageBox::Yes) {
-    return;
-  }
-  emit powerRequested(profile_index, enabled);
-}
-
 void MainWindow::updateEnabledState() {
   const auto busy = probe_running_ || flash_running_ || power_running_ ||
                     version_check_running_ || diagnostic_request_running_;
@@ -1965,7 +1945,6 @@ void MainWindow::updateEnabledState() {
       profile_valid && profile_index >= 0 &&
       static_cast<std::size_t>(profile_index) < profiles.size() &&
       ui_->radarComboBox->count() > 1;
-  const auto controls_power = usable && profiles[profile_index].power_control;
   const auto diagnostic_ids_locked =
       usable && profiles[profile_index].lock_diagnostic_ids;
   const auto has_profiles = !profiles.empty();
@@ -1997,8 +1976,6 @@ void MainWindow::updateEnabledState() {
   ui_->startFlashButton->setText(flash_running_
                                      ? QStringLiteral("刷写中…")
                                      : QStringLiteral("开始刷写"));
-  ui_->powerOnButton->setEnabled(!busy && controls_power);
-  ui_->powerOffButton->setEnabled(!busy && controls_power);
   ui_->stopButton->setText(flash_stop_requested_
                                ? QStringLiteral("正在停止…")
                                : QStringLiteral("停止"));

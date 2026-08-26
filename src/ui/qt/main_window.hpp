@@ -89,7 +89,6 @@ private:
   void saveComboSelections() const;
   void startProbeFromUi();
   void startFlashFromUi();
-  void requestPowerFromUi(bool enabled);
   void syncVersionContext(bool recent_flash = false);
   void syncBusMonitorContext();
   void syncDiagnosticRequestContext();

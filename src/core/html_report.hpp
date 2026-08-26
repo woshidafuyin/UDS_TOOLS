@@ -15,9 +15,12 @@ struct ReportRow {
 class HtmlReport {
 public:
   void add(ReportRow row);
+  void add_transcript(ReportRow row);
   std::filesystem::path write(const std::filesystem::path& directory,
                               const std::string& title) const;
 private:
+  static void append_row(std::vector<ReportRow>& rows, ReportRow row);
   std::vector<ReportRow> rows_;
+  std::vector<ReportRow> transcript_rows_;
 };
 } // namespace uds

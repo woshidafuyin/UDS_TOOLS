@@ -557,26 +557,6 @@
                </property>
              </widget>
             </item>
-            <item>
-             <widget class="QPushButton" name="powerOnButton">
-              <property name="toolTip">
-               <string>仅对启用CANoe DOUT电源控制的Profile生效</string>
-              </property>
-              <property name="text">
-               <string>上电</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QPushButton" name="powerOffButton">
-              <property name="toolTip">
-               <string>仅对启用CANoe DOUT电源控制的Profile生效</string>
-              </property>
-              <property name="text">
-               <string>下电</string>
-              </property>
-             </widget>
-            </item>
            </layout>
           </item>
           <item>
@@ -709,8 +689,6 @@
   <tabstop>calBrowseButton</tabstop>
   <tabstop>seedKeyDllBrowseButton</tabstop>
   <tabstop>probeButton</tabstop>
-  <tabstop>powerOnButton</tabstop>
-  <tabstop>powerOffButton</tabstop>
   <tabstop>startFlashButton</tabstop>
  </tabstops>
  <resources/>

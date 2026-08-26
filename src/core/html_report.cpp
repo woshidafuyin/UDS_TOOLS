@@ -29,14 +29,22 @@ std::string row_time(std::chrono::system_clock::time_point timestamp) {
   return value.str();
 }
 }
-void HtmlReport::add(ReportRow row) {
+void HtmlReport::append_row(std::vector<ReportRow>& rows, ReportRow row) {
   if (row.timestamp == std::chrono::system_clock::time_point{}) {
     row.timestamp = std::chrono::system_clock::now();
   }
-  if (!rows_.empty() && row.timestamp < rows_.back().timestamp) {
-    row.timestamp = rows_.back().timestamp;
+  if (!rows.empty() && row.timestamp < rows.back().timestamp) {
+    row.timestamp = rows.back().timestamp;
   }
-  rows_.push_back(std::move(row));
+  rows.push_back(std::move(row));
+}
+
+void HtmlReport::add(ReportRow row) {
+  append_row(rows_, std::move(row));
+}
+
+void HtmlReport::add_transcript(ReportRow row) {
+  append_row(transcript_rows_, std::move(row));
 }
 
 std::filesystem::path HtmlReport::write(const std::filesystem::path& directory,
@@ -71,11 +79,17 @@ std::filesystem::path HtmlReport::write(const std::filesystem::path& directory,
           ".result.PASS{background:#edf8f0;border-left:5px solid #087f23}"
           ".result.FAIL{background:#fff0f0;border-left:5px solid #c62828}"
           ".time{font-size:14px;color:#444;margin-top:6px;font-weight:400}"
+          ".section-note{color:#555;margin:6px 0 12px}"
+          "details{margin-top:20px;border:1px solid #d9dee3;border-radius:4px;padding:10px 12px}"
+          "summary{cursor:pointer;font-size:17px;font-weight:600}"
+          "details table{margin-top:12px}"
           "</style></head><body><h2>"
        << escape(title) << "</h2><div class='result " << result_class
        << "'>本次流程结果：" << result_text << "<div class='time'>完成时间："
        << std::put_time(&local, "%Y-%m-%d %H:%M:%S")
-       << "</div></div><table><tr><th>Time</th><th>Step</th><th>Verdict</th><th>Detail</th></tr>";
+       << "</div></div><h3>执行摘要与证据索引</h3>"
+          "<div class='section-note'>用于快速定位配置、每轮原始 ASC、关键步骤及最终判定；原始总线证据以报告列出的 ASC 文件为准。</div>"
+          "<table><tr><th>Time</th><th>Step</th><th>Verdict</th><th>Detail</th></tr>";
   for (const auto& row : rows_) {
     html << "<tr><td>" << row_time(row.timestamp) << "</td><td>"
          << escape(row.step)
@@ -83,7 +97,17 @@ std::filesystem::path HtmlReport::write(const std::filesystem::path& directory,
          << escape(row.verdict) << "</td><td><pre>" << escape(row.detail)
          << "</pre></td></tr>";
   }
-  html << "</table></body></html>";
+  html << "</table><details open><summary>完整诊断与流程记录（"
+       << transcript_rows_.size()
+       << " 条）</summary><div class='section-note'>保留工作流产生的服务步骤、诊断请求、诊断响应、等待响应及异常信息；大块 TransferData 的逐帧原始字节仍保存在对应 ASC 中。</div>"
+          "<table><tr><th>Time</th><th>Type</th><th>Verdict</th><th>Message</th></tr>";
+  for (const auto& row : transcript_rows_) {
+    html << "<tr><td>" << row_time(row.timestamp) << "</td><td>"
+         << escape(row.step) << "</td><td class='" << escape(row.verdict)
+         << "'>" << escape(row.verdict) << "</td><td><pre>"
+         << escape(row.detail) << "</pre></td></tr>";
+  }
+  html << "</table></details></body></html>";
 
   const auto write_file = [&](const std::filesystem::path& path) {
     std::ofstream file(path, std::ios::binary | std::ios::trunc);

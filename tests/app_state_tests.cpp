@@ -384,16 +384,16 @@ void test_flash_controller_repeat_count() {
       });
   auto request = make_flash_request(directory);
   request.repeat_count = 3;
-  request.trace_file = directory / "must_not_grow_unbounded.asc";
+  request.trace_file = directory / "complete_cycle_trace.asc";
   std::promise<uds::app::OperationResult> completion;
   auto completed = completion.get_future();
   int progress = -1;
-  bool repeated_trace_disabled{};
+  unsigned trace_log_count{};
   uds::app::OperationCallbacks callbacks;
   callbacks.onLog = [&](const std::string& line) {
-    if (line.find("ASC raw CAN trace disabled for repeated flashing") !=
+    if (line.find("raw ASC:") !=
         std::string::npos) {
-      repeated_trace_disabled = true;
+      ++trace_log_count;
     }
   };
   callbacks.onProgress =
@@ -405,19 +405,30 @@ void test_flash_controller_repeat_count() {
         "flash controller rejected repeated flash start");
   const auto result = completed.get();
   controller.wait();
+  const auto trace1 = directory / "complete_cycle_trace_cycle_0001_of_0003.asc";
+  const auto trace2 = directory / "complete_cycle_trace_cycle_0002_of_0003.asc";
+  const auto trace3 = directory / "complete_cycle_trace_cycle_0003_of_0003.asc";
   check(result.success && capture->run_count == 3 && progress == 100 &&
-            repeated_trace_disabled &&
-            !std::filesystem::exists(directory /
-                                     "must_not_grow_unbounded.asc") &&
+            trace_log_count == 3 && std::filesystem::is_regular_file(trace1) &&
+            std::filesystem::is_regular_file(trace2) &&
+            std::filesystem::is_regular_file(trace3) &&
             result.message.find(L"3/3次") != std::wstring::npos,
-        "generic repeated flash count or bounded-trace policy failed");
+        "repeated flashing did not retain one raw ASC per complete cycle");
   std::ifstream report_file(result.report_path, std::ios::binary);
   const std::string report_text{std::istreambuf_iterator<char>(report_file),
                                 std::istreambuf_iterator<char>()};
   check(report_text.find("Configured repetitions=3") != std::string::npos &&
-            report_text.find("Flash cycle 3/3") != std::string::npos,
-        "repeated flash report did not identify cycle count");
+            report_text.find("Flash cycle 3/3") != std::string::npos &&
+            report_text.find("complete_cycle_trace_cycle_0001_of_0003.asc") !=
+                std::string::npos &&
+            report_text.find("complete_cycle_trace_cycle_0002_of_0003.asc") !=
+                std::string::npos &&
+            report_text.find("complete_cycle_trace_cycle_0003_of_0003.asc") !=
+                std::string::npos &&
+            report_text.find("完整诊断与流程记录") != std::string::npos,
+        "repeated flash report did not index every cycle trace or transcript");
   report_file.close();
+  capture->job.can_bus_provider.reset();
   std::filesystem::remove_all(directory);
 }
 

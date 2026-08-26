@@ -25,6 +25,44 @@ std::string utf8_path(const std::filesystem::path& path) {
   return {reinterpret_cast<const char*>(encoded.data()), encoded.size()};
 }
 
+std::filesystem::path cycle_trace_path(const std::filesystem::path& base,
+                                       unsigned cycle,
+                                       unsigned repeat_count) {
+  if (repeat_count <= 1) return base;
+  const auto width = static_cast<int>(
+      std::max<std::size_t>(4, std::to_string(repeat_count).size()));
+  std::ostringstream suffix;
+  suffix << "_cycle_" << std::setfill('0') << std::setw(width) << cycle
+         << "_of_" << std::setw(width) << repeat_count;
+  const auto suffix_text = suffix.str();
+  return base.parent_path() /
+         (base.stem().wstring() +
+          std::wstring(suffix_text.begin(), suffix_text.end()) +
+          base.extension().wstring());
+}
+
+std::string transcript_type(const std::string& line) {
+  if (line.starts_with("TX [")) return "TX request";
+  if (line.starts_with("RX [")) return "RX response";
+  if (line.find("timeout") != std::string::npos ||
+      line.find("no response") != std::string::npos) {
+    return "Response / timeout";
+  }
+  return "Workflow";
+}
+
+std::string transcript_verdict(const std::string& line) {
+  if (line.starts_with("ERROR:") || line.find(" FAIL") != std::string::npos ||
+      line.ends_with("FAIL")) {
+    return "FAIL";
+  }
+  if (line.starts_with("WARN:")) return "WARN";
+  if (line.find(" PASS") != std::string::npos || line.ends_with("PASS")) {
+    return "PASS";
+  }
+  return "INFO";
+}
+
 std::string diagnostic_endpoint_detail(const FlashRequest& request) {
   std::ostringstream detail;
   const auto append_id = [&](std::uint32_t id) {
@@ -311,32 +349,7 @@ void FlashController::execute(FlashRequest request,
     job.app_verify_file = request.app_verify_file;
     job.cal_verify_file = request.cal_verify_file;
     job.security_dll = request.security_dll;
-    if (!request.trace_file.empty() && repeat_count == 1) {
-      auto tracing_provider = std::make_shared<TracingCanBusProvider>(
-          bus_provider_, request.trace_file, request.channel);
-      job.can_bus_provider = tracing_provider;
-      const auto trace_detail =
-          tracing_provider->trace_is_open()
-              ? "ASC raw CAN trace: " + utf8_path(request.trace_file)
-              : "WARN: failed to create ASC trace; flashing continues: " +
-                    utf8_path(request.trace_file);
-      if (callbacks.onLog) callbacks.onLog(trace_detail);
-      add_report(0, "ASC Trace",
-                 tracing_provider->trace_is_open() ? "INFO" : "WARN",
-                 trace_detail);
-    } else if (!request.trace_file.empty()) {
-      job.can_bus_provider = bus_provider_;
-      const auto trace_detail =
-          "ASC raw CAN trace disabled for repeated flashing "
-          "(repetitions=" +
-          std::to_string(repeat_count) +
-          "); execution log and HTML report remain enabled to prevent "
-          "unbounded disk usage";
-      if (callbacks.onLog) callbacks.onLog(trace_detail);
-      add_report(0, "ASC Trace", "INFO", trace_detail);
-    } else {
-      job.can_bus_provider = bus_provider_;
-    }
+    job.can_bus_provider = bus_provider_;
 
     for (active_cycle = 1; active_cycle <= repeat_count; ++active_cycle) {
       if (stop.stop_requested()) {
@@ -349,6 +362,29 @@ void FlashController::execute(FlashRequest request,
       }
       const auto cycle_tag = "第" + std::to_string(active_cycle) + "/" +
                              std::to_string(repeat_count) + "次";
+      std::shared_ptr<TracingCanBusProvider> tracing_provider;
+      if (!request.trace_file.empty()) {
+        const auto trace_path =
+            cycle_trace_path(request.trace_file, active_cycle, repeat_count);
+        tracing_provider = std::make_shared<TracingCanBusProvider>(
+            bus_provider_, trace_path, request.channel);
+        job.can_bus_provider = tracing_provider;
+        const auto trace_detail =
+            tracing_provider->trace_is_open()
+                ? "Cycle " + std::to_string(active_cycle) + "/" +
+                      std::to_string(repeat_count) + " raw ASC: " +
+                      utf8_path(trace_path)
+                : "WARN: failed to create cycle " +
+                      std::to_string(active_cycle) + "/" +
+                      std::to_string(repeat_count) + " raw ASC: " +
+                      utf8_path(trace_path);
+        if (callbacks.onLog) callbacks.onLog(trace_detail);
+        add_report(0,
+                   "ASC Trace cycle " + std::to_string(active_cycle) + "/" +
+                       std::to_string(repeat_count),
+                   tracing_provider->trace_is_open() ? "INFO" : "WARN",
+                   trace_detail);
+      }
       if (callbacks.onLog) callbacks.onLog(cycle_tag + "完整刷写开始");
       add_report(repeat_count == 1 ? 0 :
                      static_cast<int>((active_cycle - 1U) * 100U /
@@ -359,9 +395,12 @@ void FlashController::execute(FlashRequest request,
 
       FlashWorkflowCallbacks workflow_callbacks;
       workflow_callbacks.log = [&](const std::string& line) {
-        if (!callbacks.onLog) return;
-        callbacks.onLog(repeat_count == 1 ? line
-                                          : "[" + cycle_tag + "] " + line);
+        const auto decorated = repeat_count == 1
+                                   ? line
+                                   : "[" + cycle_tag + "] " + line;
+        if (callbacks.onLog) callbacks.onLog(decorated);
+        report.add_transcript(
+            {{}, transcript_type(line), transcript_verdict(line), decorated});
       };
       workflow_callbacks.progress = [&](int percent,
                                         const std::string& line) {
@@ -388,7 +427,15 @@ void FlashController::execute(FlashRequest request,
                        std::move(detail));
           };
 
-      workflow->run(job, workflow_callbacks, stop);
+      try {
+        workflow->run(job, workflow_callbacks, stop);
+      } catch (...) {
+        job.can_bus_provider = bus_provider_;
+        tracing_provider.reset();
+        throw;
+      }
+      job.can_bus_provider = bus_provider_;
+      tracing_provider.reset();
       if (callbacks.onLog) callbacks.onLog(cycle_tag + "完整刷写完成");
       add_report(static_cast<int>(active_cycle * 100U / repeat_count),
                  "Flash cycle " + std::to_string(active_cycle) + "/" +
@@ -414,15 +461,21 @@ void FlashController::execute(FlashRequest request,
     if (result.cancelled) {
       add_report(0, "Download", "FAIL",
                  cycle_prefix + "User requested abort: " + error.what());
+      report.add_transcript(
+          {{}, "Controller", "FAIL",
+           cycle_prefix + "User requested abort: " + error.what()});
       result.message = request.profile.name + L" 刷写已中断：" +
                        widen_utf8(cycle_prefix + error.what());
     } else {
       add_report(0, "Download", "FAIL", cycle_prefix + error.what());
+      report.add_transcript(
+          {{}, "Controller", "FAIL", cycle_prefix + error.what()});
       result.message = request.profile.name + L" 刷写失败：" +
                        widen_utf8(cycle_prefix + error.what());
     }
   } catch (...) {
     add_report(0, "Download", "FAIL", "unknown exception");
+    report.add_transcript({{}, "Controller", "FAIL", "unknown exception"});
     result.cancelled = stop.stop_requested();
     result.message = request.profile.name +
                      (result.cancelled ? L" 刷写已中断：unknown exception"
