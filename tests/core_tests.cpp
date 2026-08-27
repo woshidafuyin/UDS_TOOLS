@@ -146,8 +146,24 @@ void test_asc_trace_can_bus() {
   check(file_name.starts_with(L"trace_") &&
             file_name.find(L"_changan_c857_main_app_cal") !=
                 std::wstring::npos &&
-            named.extension() == L".asc",
+            named.extension() == L".asc" &&
+            named.parent_path().filename() == L"flash" &&
+            named.parent_path().parent_path().filename() == L"traces",
         "ASC trace filename does not follow the operation naming contract");
+  check(uds::make_asc_trace_path(std::filesystem::temp_directory_path(),
+                                 L"geely_p416", L"default", L"probe")
+                .parent_path()
+                .filename() == L"probe" &&
+            uds::make_asc_trace_path(std::filesystem::temp_directory_path(),
+                                     L"geely_p416", L"default", L"version")
+                    .parent_path()
+                    .filename() == L"version" &&
+            uds::make_asc_trace_path(std::filesystem::temp_directory_path(),
+                                     L"geely_p416", L"default",
+                                     L"diagnostic")
+                    .parent_path()
+                    .filename() == L"diagnostic",
+        "ASC trace operation directories are not classified");
   std::filesystem::remove(trace_path, ignored);
 }
 
@@ -788,6 +804,8 @@ void test_profile_round_trip() {
     expected.tx_id = 0x772;
     expected.rx_id = 0x77A;
     expected.functional_id = 0x7DF;
+    expected.programming_tx_id = 0x716;
+    expected.programming_rx_id = 0x617;
     expected.channel = 2;
     expected.nominal_bitrate = 500000;
     expected.data_bitrate = 2000000;
@@ -831,7 +849,10 @@ void test_profile_round_trip() {
                actual.app_entry_label == expected.app_entry_label &&
                actual.ft_entry_label == expected.ft_entry_label &&
               actual.tx_id == expected.tx_id &&
-              actual.rx_id == expected.rx_id && actual.functional_id == expected.functional_id &&
+              actual.rx_id == expected.rx_id &&
+              actual.functional_id == expected.functional_id &&
+              actual.programming_tx_id == expected.programming_tx_id &&
+              actual.programming_rx_id == expected.programming_rx_id &&
               actual.channel == expected.channel &&
               actual.nominal_bitrate == expected.nominal_bitrate &&
               actual.data_bitrate == expected.data_bitrate && actual.padding == expected.padding &&
@@ -961,8 +982,8 @@ void test_workflow_registry() {
         "retired A12/B11 duplicate ARF workflows are still registered");
   check(uds::is_flash_workflow_registered(L"geely_p416"),
         "Geely P416 workflow is not registered");
-  check(uds::is_flash_workflow_registered(L"geely_p146"),
-        "Geely P146 workflow is not registered");
+  check(!uds::is_flash_workflow_registered(L"geely_p146"),
+        "Removed Geely P146 workflow is still registered");
   check(uds::is_flash_workflow_registered(L"baic_n61ab"),
         "BAIC N61AB workflow is not registered");
   check(uds::is_flash_workflow_registered(L"baic_bqb41"),
@@ -970,7 +991,7 @@ void test_workflow_registry() {
   check(!uds::is_flash_workflow_registered(L"future_flow"),
         "unknown workflow was reported as registered");
   const auto registered = uds::registered_flash_workflows();
-  check(registered.size() == 18 &&
+  check(registered.size() == 17 &&
             std::find(registered.begin(), registered.end(), L"chuneng_331") == registered.end() &&
             std::find(registered.begin(), registered.end(), L"chuneng_arc331") != registered.end() &&
              std::find(registered.begin(), registered.end(), L"chery_ars1_33") != registered.end() &&
@@ -992,7 +1013,7 @@ void test_workflow_registry() {
             std::find(registered.begin(), registered.end(),
                       L"geely_p416") != registered.end() &&
             std::find(registered.begin(), registered.end(),
-                      L"geely_p146") != registered.end() &&
+                      L"geely_p146") == registered.end() &&
             std::find(registered.begin(), registered.end(),
                       L"baic_n61ab") != registered.end() &&
             std::find(registered.begin(), registered.end(),
@@ -1210,6 +1231,10 @@ void test_xizhong_rsmr_profile_and_resources() {
                          {0xF193, 0xF195, 0xF189, 0xF191, 0xF180, 0xF183});
   check_version_requests(
       "geely_p416",
+      {0xF180, 0xF120, 0xF121, 0xF125, 0xF12A, 0xF12B, 0xF12E,
+       0xF1A0, 0xF1A1, 0xF1A5, 0xF1AA, 0xF1AB, 0xF1AE});
+  check_version_requests(
+      "geely_p611",
       {0xF180, 0xF120, 0xF121, 0xF125, 0xF12A, 0xF12B, 0xF12E,
        0xF1A0, 0xF1A1, 0xF1A5, 0xF1AA, 0xF1AB, 0xF1AE});
   for (const auto* id : {"shidaixinan_muxing2_fmr",
@@ -2647,7 +2672,7 @@ void test_shidaixinan_arf232_project_profiles_and_resources() {
   }
 
   const auto catalog = uds::discover_flash_profiles(source / "profiles");
-  check(catalog.errors.empty() && catalog.profiles.size() == 21,
+  check(catalog.errors.empty() && catalog.profiles.size() == 22,
         "Shidaixinan project profiles were not discovered cleanly");
   for (const auto& project : projects) {
     check(std::any_of(

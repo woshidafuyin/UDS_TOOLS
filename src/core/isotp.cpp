@@ -70,8 +70,12 @@ CanFrame IsoTpSession::wait_for_id(std::chrono::milliseconds timeout,
     const auto receive_slice =
         std::min(std::max(remaining, 1ms), 20ms);
     auto frame = bus_.receive(receive_slice);
-    if (frame && frame->id == config_.rx_id &&
+    if (frame &&
+        (frame->id == config_.rx_id ||
+         (config_.alternate_rx_id != 0 &&
+          frame->id == config_.alternate_rx_id)) &&
         frame->extended == config_.rx_extended) {
+      last_rx_id_ = frame->id;
       return *frame;
     }
   }

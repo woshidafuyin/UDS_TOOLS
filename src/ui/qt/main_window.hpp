@@ -10,6 +10,7 @@ class QCloseEvent;
 class QEvent;
 class QFile;
 class QActionGroup;
+class QLineEdit;
 class QString;
 
 namespace Ui {
@@ -55,6 +56,16 @@ protected:
   bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
+  enum class FlashFileField {
+    Driver,
+    DriverVerify,
+    App,
+    AppVerify,
+    Cal,
+    CalVerify,
+    SeedKeyDll,
+  };
+
   enum class UiLogTone {
     Normal,
     Success,
@@ -62,9 +73,26 @@ private:
     Failure,
   };
 
+  enum class UiLogDirection {
+    None,
+    Tx,
+    Rx,
+  };
+
   struct UiLogEntry {
     QString text;
     UiLogTone tone{UiLogTone::Normal};
+    UiLogDirection direction{UiLogDirection::None};
+  };
+
+  struct RuntimeFileSelection {
+    QString driver_path;
+    QString app_path;
+    QString cal_path;
+    QString driver_verify_path;
+    QString app_verify_path;
+    QString cal_verify_path;
+    QString seed_key_dll_path;
   };
 
   void configureVisualDesign();
@@ -76,6 +104,12 @@ private:
   void populateTargetOptions(int device_index);
   void applySelectedProfile(int device_index);
   void applySelectedRadar(bool log_change);
+  void saveRuntimeFileSelection();
+  void restoreRuntimeFileSelection();
+  [[nodiscard]] QString configuredDefaultFlashFile(FlashFileField field) const;
+  bool storeSelectedFlashFile(FlashFileField field, const QString& selected,
+                              QLineEdit* editor, const QString& log_name);
+  void restoreDefaultFlashFile(FlashFileField field);
   void restoreDefaultDiagnosticId(bool restore_tx);
   void updateAppPackagePresentation(bool report_error = false);
   [[nodiscard]] bool selectedProfileSupportsAppTmpPackage() const;
@@ -107,6 +141,10 @@ private:
                                        const QString& report_path);
   Q_INVOKABLE void handleProbeFinished(bool success, bool cancelled,
                                        const QString& message);
+  Q_INVOKABLE void handleProgressChanged(int percent, const QString& message);
+  Q_INVOKABLE void handleVersionCheckRunningChanged(bool running);
+  Q_INVOKABLE void handleVersionCheckFinished(bool success, bool cancelled,
+                                              const QString& message);
   [[nodiscard]] QString selectedLogTargetKey() const;
   void activateSelectedLogTarget();
   void clearActiveUiLog();
@@ -126,6 +164,8 @@ private:
   std::unique_ptr<QFile> execution_log_file_;
   QActionGroup* can_backend_group_{};
   QHash<QString, QList<UiLogEntry>> target_log_entries_;
+  QHash<QString, RuntimeFileSelection> runtime_file_selections_;
+  QString active_file_selection_key_;
   QString active_log_target_key_;
   bool execution_log_follow_tail_{true};
   VersionConfirmationPage* version_page_{};

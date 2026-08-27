@@ -6,7 +6,6 @@
 #include "flash/chery_kp31_workflow.hpp"
 #include "flash/chuneng_331_workflow.hpp"
 #include "flash/geely_p416_workflow.hpp"
-#include "flash/geely_p146_workflow.hpp"
 #include "flash/c857_project_workflows.hpp"
 #include "flash/longma_ars1_31_workflow.hpp"
 #include "flash/lp_arc_workflow.hpp"
@@ -88,10 +87,6 @@ std::unique_ptr<FlashWorkflow> create_geely_p416() {
   return std::make_unique<GeelyP416Workflow>();
 }
 
-std::unique_ptr<FlashWorkflow> create_geely_p146() {
-  return std::make_unique<GeelyP146Workflow>();
-}
-
 std::unique_ptr<FlashWorkflow> create_baic_n61ab() {
   return std::make_unique<BaicRadarWorkflow>(BaicRadarProject::n61ab);
 }
@@ -118,7 +113,6 @@ constexpr std::array kWorkflowRegistrations{
   WorkflowRegistration{L"lp_arc", &create_lp_arc},
   WorkflowRegistration{L"lp_arf", &create_lp_arf},
   WorkflowRegistration{L"geely_p416", &create_geely_p416},
-  WorkflowRegistration{L"geely_p146", &create_geely_p146},
   WorkflowRegistration{L"baic_n61ab", &create_baic_n61ab},
   WorkflowRegistration{L"baic_bqb41", &create_baic_bqb41},
 };

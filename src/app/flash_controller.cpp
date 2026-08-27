@@ -483,8 +483,9 @@ void FlashController::execute(FlashRequest request,
   }
 
   try {
-    result.report_path = report.write(request.executable_directory / L"logs",
-                                      report_title);
+    result.report_path =
+        report.write(request.executable_directory / L"logs" / L"reports",
+                     report_title);
   } catch (const std::exception& error) {
     result.message += L"；报告写入失败：" +
                       widen_utf8(error.what());

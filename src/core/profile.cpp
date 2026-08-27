@@ -143,6 +143,10 @@ FlashProfile load_profile_ini(const std::filesystem::path& path) {
   p.tx_id = read_uint(values, L"tx_id", p.tx_id);
   p.rx_id = read_uint(values, L"rx_id", p.rx_id);
   p.functional_id = read_uint(values, L"functional_id", p.functional_id);
+  p.programming_tx_id =
+      read_uint(values, L"programming_tx_id", p.programming_tx_id);
+  p.programming_rx_id =
+      read_uint(values, L"programming_rx_id", p.programming_rx_id);
   p.ft_tx_id = read_uint(values, L"ft_tx_id", p.ft_tx_id);
   p.ft_rx_id = read_uint(values, L"ft_rx_id", p.ft_rx_id);
   p.ft_extended_id =
@@ -247,6 +251,10 @@ void save_profile_ini(const FlashProfile& p, const std::filesystem::path& path) 
   append_value(contents, L"tx_id", std::to_wstring(p.tx_id));
   append_value(contents, L"rx_id", std::to_wstring(p.rx_id));
   append_value(contents, L"functional_id", std::to_wstring(p.functional_id));
+  append_value(contents, L"programming_tx_id",
+               std::to_wstring(p.programming_tx_id));
+  append_value(contents, L"programming_rx_id",
+               std::to_wstring(p.programming_rx_id));
   append_value(contents, L"ft_tx_id", std::to_wstring(p.ft_tx_id));
   append_value(contents, L"ft_rx_id", std::to_wstring(p.ft_rx_id));
   append_value(contents, L"ft_extended_id", p.ft_extended_id ? L"true" : L"false");

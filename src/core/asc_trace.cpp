@@ -69,6 +69,18 @@ std::wstring timestamp() {
   return output.str();
 }
 
+std::wstring_view trace_category(std::wstring_view operation) {
+  if (operation == L"probe") return L"probe";
+  if (operation == L"version") return L"version";
+  if (operation == L"diagnostic") return L"diagnostic";
+  if (operation == L"app" || operation == L"ft" ||
+      operation == L"cal" || operation == L"app_cal" ||
+      operation == L"boot") {
+    return L"flash";
+  }
+  return L"other";
+}
+
 } // namespace
 
 std::string format_asc_header(std::time_t wall_time) {
@@ -269,7 +281,9 @@ std::filesystem::path make_asc_trace_path(
                    slug(profile_id, L"unknown") + L"_" +
                    slug(target_id, L"default") + L"_" +
                    slug(operation, L"operation") + L".asc";
-  auto path = executable_directory / L"logs" / file_name;
+  const auto directory = executable_directory / L"logs" / L"traces" /
+                         trace_category(operation);
+  auto path = directory / file_name;
   unsigned suffix = 2;
   while (std::filesystem::exists(path)) {
     file_name = std::wstring(L"trace_") + timestamp() + L"_" +
@@ -277,7 +291,7 @@ std::filesystem::path make_asc_trace_path(
                 slug(target_id, L"default") + L"_" +
                 slug(operation, L"operation") + L"_" +
                 std::to_wstring(suffix++) + L".asc";
-    path = executable_directory / L"logs" / file_name;
+    path = directory / file_name;
   }
   return path;
 }

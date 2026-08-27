@@ -22,7 +22,6 @@ $forbidden=Get-ChildItem -LiteralPath $dist -Recurse -Force | Where-Object {
   $relative -match '\.partial$' -or
   $relative -match '\.(h|lib|pdb|ilk|exp|obj|py|ps1|bat)$' -or
   $relative -match '(^|\\)Reference(\\|$)' -or
-  $relative -match '_reconstructed\.vbf$' -or
   $relative -match '(^|\\)(SOURCE_MANIFEST|RESOURCE_MANIFEST|PROVENANCE|BASELINE)' -or
   $relative -match 'README_CHUNENG_.*_EDITION\.md$'
 }

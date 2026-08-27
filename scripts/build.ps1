@@ -15,7 +15,7 @@ $x86Build=Join-Path $root 'build\nmake-x86'
 $x64Build=Join-Path $root 'build\nmake-x64'
 $x86Output=Join-Path $x86Build $Config
 $x64Output=Join-Path $x64Build $Config
-$qtExecutableName='UDS_Tool.exe'
+$qtExecutableName='CH_FLASH_tools.exe'
 $dist=if([string]::IsNullOrWhiteSpace($DistPath)){
   Join-Path $root 'dist'
 } else {

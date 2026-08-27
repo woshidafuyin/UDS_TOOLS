@@ -1,7 +1,7 @@
 # UDS 通用刷写工具
 
 更新日期：2026-08-26
-当前正式程序：`UDS_Tool.exe`
+当前正式程序：`CH_FLASH_tools.exe`
 
 ## 1. 文档定位
 
@@ -15,7 +15,7 @@
 - 18 个已注册 Workflow ID；
 - 4 类 CAN 硬件后端：Vector XL、ZLG/ZCAN、TOSUN/TSMaster、Kvaser；
 - 4 个用户功能页：刷写作业、版本读取、诊断报文、总线监听；
-- 统一主程序 `UDS_Tool.exe`；
+- 统一主程序 `CH_FLASH_tools.exe`；
 - Profile、项目运行资源、硬件运行驱动和用户说明文档；
 - 当前交付目录为 `dist`，运行产生的 `logs` 和 `Configuration` 不预置在干净发布包中。
 
@@ -106,7 +106,8 @@
 | 零跑 ARC | 10 |
 | 零跑 ARF（A12/B11 ARF2.31、ARF6.31统一入口） | 8 |
 | 吉利 P416 | 13 |
-| 吉利 P146 | 0（公盘通用框架未冻结项目版本 DID，待配置） |
+| 吉利 P611 | 13（复用 P416 读取计划） |
+| 吉利 P417 | 13（复用 P416 读取计划） |
 | 北汽 N61AB | 9（5 个必读、4 个可选） |
 | 北汽 BQB41 / B41V | 10（5 个必读、5 个可选） |
 
@@ -146,7 +147,7 @@
 
 ### 8.3 完整 Trace
 
-- 所有原始帧从监听开始持续写入 `logs/bus_monitor/*.asc.partial`，不受 UI 过滤和 10,000 帧上限影响；
+- 所有原始帧从监听开始持续写入 `logs/bus_monitor/*.asc.partial`，不受 UI 过滤和 10,000 帧上限影响；探测、版本读取、诊断报文和刷写 Trace 分别写入 `logs/traces/probe`、`version`、`diagnostic`、`flash`；
 - 正常停止后封口为完整 `.asc`；异常退出遗留的 `.partial` 会在下次启动时恢复；
 - “清空列表”只清空当前表格，不删除完整 Trace；
 - “导出 ASC”读取磁盘完整证据源，而不是只导出表格中的可见帧。
@@ -176,8 +177,9 @@
 | 时代新安 天王星、木星2代、庆铃 FMR | 独立 Profile / 复用 HJZJ Workflow | 独立端点和资源 |
 | 零跑 ARC | `lp_arc.ini` / `lp_arc` | 四设备；APP、FT |
 | 零跑 ARF | `lp_arf.ini` / `lp_arf` | APP、FT（PLS→APP）；TMP单包或S19/SREC/BIN配套ASC/TMP |
-| 吉利 P416 | `geely_p416.ini` / `geely_p416` | SBL、APP、ESS VBF；项目 NM 和专用传输 |
-| 吉利 P146 | `geely_p146.ini` / `geely_p146` | 通用 GEEA2.0 正常 Download；VBF 元数据驱动；SBL 可选；APP、CAL/DATA、APP+CAL；端点与 SeedKey 待目标配置 |
+| 吉利 P416 | `geely_p416.ini` / `geely_p416` | SBL、APP、ESS VBF；项目 NM 和专用传输；按所选 VBF 元数据刷写，不以文件哈希或固定块布局白名单阻断 |
+| 吉利 P417 | `geely_p417.ini` / `geely_p416` | 完整复用 P416 端点、入口、服务顺序和 VBF 参数；使用独立 `resources/geely_p417` 目录 |
+| 吉利 P611 | `geely_p611.ini` / `geely_p416` | 完整复用 P416 端点、入口、服务顺序和 VBF 参数；使用独立 `resources/geely_p611` 目录 |
 | 北汽 N61AB | `baic_n61ab.ini` / `baic_n61ab` | Classic CAN；归档 CAPL、Driver/APP S19 与 SeedKey 已接入；正常 APP Download |
 | 北汽 BQB41 | `baic_bqb41.ini` / `baic_bqb41` | CAN FD；四设备；成功 BLF 流程与已知答案验证的 SeedKey 已接入；Driver/APP需手动选择 |
 
@@ -195,14 +197,16 @@
 
 - `profiles`、经过运行时筛选的 `resources` 和 `drivers` 是发布内容；
 - `Configuration` 保存当前用户的界面和硬件选择，由程序运行时创建；
-- `logs` 保存运行日志、HTML 报告、版本读取记录和总线 Trace，由程序运行时创建；
+- `logs/execution` 保存界面运行日志，`logs/reports` 保存 HTML 报告，`logs/traces` 按 probe/version/diagnostic/flash 分类保存单次操作 ASC，`logs/bus_monitor` 保存持续总线监听 ASC；这些目录均由程序运行时创建；
+- 刷写页运行日志按目标持续追加；版本读取开始和结束会写入独立分隔标记，读取失败不会清除此前刷写日志，也不会覆盖刷写页最后结果；
+- 版本读取页的原始通信框只展示当前一轮读取，每次开始读取时会清空该区域，但磁盘执行日志和已有刷写报告不受影响；
 - 干净发布包不携带开发机历史 `Configuration`、`logs`、`.partial`、`validation`、台架探针、内部流程文档、厂商头文件/导入库、未使用的参考工程、构建目录或 Python 缓存；
 - 清理发布包不会清理源码目录或公共盘资料。
 
 ## 12. 构建、验证与证据边界
 
 - 构建命令：`scripts\build.ps1 -Config Release -DistPath dist`；
-- 当前离线 CTest 共 9 项：核心、P416、P146 GEEA2.0、CAN 适配、厂商 API 边界、厂商清单、应用状态、Qt 探测桥接和 Qt 主窗口；
+- 当前离线 CTest 共 8 项：核心、P416、CAN 适配、厂商 API 边界、厂商清单、应用状态、Qt 探测桥接和 Qt 主窗口；
 - 离线测试覆盖 Profile/Workflow、文件预检、ISO-TP/UDS、Fake ECU、共享通道、监听、日志尾随、审计和 UI 状态等回归；
 - 构建成功、CTest PASS、历史报告、硬件探针、真实 CAN 通信和真实 ECU 完整刷写是不同证据层级；
 - 某一项目、某一设备或某一模式的 PASS 不自动证明另一设备、FT/CAL、其他后端或相似项目通过；

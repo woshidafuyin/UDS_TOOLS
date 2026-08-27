@@ -535,10 +535,15 @@ ProbeResult ProbeService::run(const ProbeRequest& requested,
                                                                     : 0x01));
     std::string probe_description;
     if (geely_p416) {
+      const std::string geely_project = request.profile.id == L"geely_p611"
+                                            ? "吉利P611"
+                                            : "吉利P416";
       probe_description =
           ft_probe
-              ? "在线探测：吉利P416 PLS入口向0x701/0x761发送10 01；收到50 01即判定在线，不执行10 02或刷写。"
-              : "在线探测：吉利P416 APP入口向0x716/0x616发送10 01；收到50 01即判定在线，不执行10 02或刷写。";
+              ? "在线探测：" + geely_project +
+                    " PLS入口向0x701/0x761发送10 01；收到50 01即判定在线，不执行10 02或刷写。"
+              : "在线探测：" + geely_project +
+                    " APP入口向0x716/0x616发送10 01；收到50 01即判定在线，不执行10 02或刷写。";
     } else if (lingpao_radar) {
       probe_description =
           ft_probe

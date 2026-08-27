@@ -22,7 +22,7 @@
 | `LONGMA_ARS1_31_FLOW_PARITY.md` | 长马 J90K ARS1.31 | 当前 APP/FT 流程，从雷达待验收 |
 | `LP_ARC_FLOW_PARITY.md` | 零跑 LP-ARC | 当前 APP/FT 流程 |
 | `LP_ARF_FLOW_PARITY.md` | 零跑 LP-ARF | 当前 631 统一入口流程 |
-| `GEELY_P416_FLOW_PARITY.md` | 吉利 P416 | 当前专用 VBF 流程，待真实 ECU 验收 |
+| `GEELY_P416_FLOW_PARITY.md` | 吉利 P416 / P417 / P611 | 完全共用 P416 专用 VBF 流程；资源目录独立，P417/P611 待真实 ECU 验收 |
 | `XIZHONG_RSMR_FLOW_PARITY.md` | 犀重 RSMR | 当前流程与验收边界 |
 
 ## 项目接入

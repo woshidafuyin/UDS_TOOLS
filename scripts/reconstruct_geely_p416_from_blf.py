@@ -205,7 +205,6 @@ def main() -> int:
 
     outputs = {
         "SBL/P416_SBL_reconstructed.vbf": (baseline.blocks[:6], baseline.signatures[0]),
-        "ESS/P416_ESS_reconstructed.vbf": (baseline.blocks[6:8], baseline.signatures[1]),
         "APP/P416_APP_reconstructed.vbf": (baseline.blocks[8:], baseline.signatures[2]),
     }
     build_vbf(
@@ -213,12 +212,13 @@ def main() -> int:
         "P416_RECON_SBL", "SBL", 0x10,
         baseline.blocks[:6], baseline.signatures[0], call=0x00430000,
     )
-    build_vbf(
-        args.output / "ESS/P416_ESS_reconstructed.vbf",
-        "P416_RECON_ESS", "EXE", 0x00,
-        baseline.blocks[6:8], baseline.signatures[1],
-        erase=[(0x0013C000, 0x2C), (0x0013C100, 0x40)],
-    )
+    ess_input = args.output / "ESS/ess_out.VBF"
+    expected_ess_sha256 = "f85e2b378151a8e6630fea3476311193f0e18108aa79abf9cc2b25bdc2ba6c20"
+    if not ess_input.is_file() or sha256(ess_input) != expected_ess_sha256:
+        raise RuntimeError(
+            "ESS/ess_out.VBF is missing or differs from the supplier input "
+            "already verified byte-for-byte against the successful BLF"
+        )
     build_vbf(
         args.output / "APP/P416_APP_reconstructed.vbf",
         "P416_RECON_APP", "EXE", 0x10,
@@ -227,10 +227,17 @@ def main() -> int:
     )
 
     manifest = {
-        "status": "reconstructed_from_successful_blf_not_supplier_original",
+        "status": "SBL_APP_reconstructed_from_successful_blf_ESS_supplier_original",
         "app_blf": {"name": args.app_blf.name, "sha256": sha256(args.app_blf), "cycles": len(app_cycles)},
         "pls_blf": {"name": args.pls_blf.name, "sha256": sha256(args.pls_blf), "cycles": len(pls_cycles)},
         "outputs": {},
+        "retained_inputs": {
+            "ESS/ess_out.VBF": {
+                "bytes": ess_input.stat().st_size,
+                "sha256": sha256(ess_input),
+                "status": "supplier input matches successful BLF ESS blocks and signature",
+            }
+        },
     }
     for relative in outputs:
         output = args.output / relative

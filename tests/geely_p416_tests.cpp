@@ -17,6 +17,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -34,6 +35,9 @@ struct Request {
 
 class ScriptedGeelyBus final : public uds::ICanBus {
 public:
+  explicit ScriptedGeelyBus(std::uint32_t sbl_rx_id)
+      : sbl_rx_id_(sbl_rx_id) {}
+
   void open() override { open_ = true; }
   void close() noexcept override { open_ = false; }
   bool is_open() const noexcept override { return open_; }
@@ -110,10 +114,10 @@ private:
     std::vector<std::uint8_t> data;
   };
 
-  static std::uint32_t response_id(std::uint32_t request_id) {
+  std::uint32_t response_id(std::uint32_t request_id) const {
     if (request_id == uds::kGeelyP416AppTxId ||
         request_id == uds::kGeelyP416AppFunctionalId) {
-      return uds::kGeelyP416AppRxId;
+      return sbl_active_ ? sbl_rx_id_ : uds::kGeelyP416AppRxId;
     }
     if (request_id == uds::kGeelyP416PlsTxId ||
         request_id == uds::kGeelyP416PlsFunctionalId) {
@@ -163,8 +167,9 @@ private:
       reply_frame(response, {0x71, 0x01, 0x02, 0x12, 0x10, 0x00});
     } else if (payload.size() == 8U && payload[0] == 0x31U &&
                payload[2] == 0x03U && payload[3] == 0x01U) {
-      reply_frame(response, {0x7F, 0x31, 0x78});
-      reply_frame(response, {0x71, 0x01, 0x03, 0x01, 0x10});
+      reply_frame(uds::kGeelyP416AppRxId, {0x7F, 0x31, 0x78});
+      reply_frame(sbl_rx_id_, {0x71, 0x01, 0x03, 0x01, 0x10});
+      sbl_active_ = true;
     } else if (payload.size() == 12U && payload[0] == 0x31U &&
                payload[2] == 0xFFU && payload[3] == 0x00U) {
       reply_frame(response, {0x7F, 0x31, 0x78});
@@ -174,6 +179,7 @@ private:
       reply_frame(response, {0x71, 0x01, 0x02, 0x05, 0x10, 0x00});
     } else if (payload == std::vector<std::uint8_t>({0x11, 0x01})) {
       reply_frame(response, {0x51, 0x01});
+      sbl_active_ = false;
     } else {
       throw std::runtime_error("unexpected fake-ECU UDS request");
     }
@@ -184,6 +190,8 @@ private:
   std::deque<uds::CanFrame> rx_;
   std::map<std::uint32_t, Transfer> transfers_;
   std::vector<Request> requests_;
+  std::uint32_t sbl_rx_id_{};
+  bool sbl_active_{};
 };
 
 std::string compact_hash(std::span<const std::uint8_t> bytes) {
@@ -204,15 +212,28 @@ std::vector<std::uint8_t> read_all(const std::filesystem::path& path) {
 
 uds::GeelyP416Images load_images(const std::filesystem::path& root) {
   uds::GeelyP416Images images{
-      uds::load_vbf(root / "SBL" / "80048576AA.vbf"),
+      uds::load_vbf(root / "SBL" / "P416_SBL_reconstructed.vbf"),
       uds::load_vbf(root / "ESS" / "ess_out.VBF"),
-      uds::load_vbf(root / "APP" / "80078428AA.vbf"),
+      uds::load_vbf(root / "APP" / "P416_APP_reconstructed.vbf"),
   };
-  uds::validate_geely_p416_images(images);
-  check(!images.sbl.block_crc16_verified &&
+  check(images.sbl.block_crc16_verified &&
             images.ess.block_crc16_verified &&
-            !images.app.block_crc16_verified,
-        "supplier VBF processed-domain CRC classification mismatch");
+            images.app.block_crc16_verified,
+        "BLF-reconstructed VBF block CRC classification mismatch");
+  return images;
+}
+
+uds::GeelyP416Images load_djili_trial_images(
+    const std::filesystem::path& root) {
+  uds::GeelyP416Images images{
+      uds::load_vbf(root / "SBL" / "6608444966A_DJILI_trial.vbf"),
+      uds::load_vbf(root / "ESS" / "ess_out.VBF"),
+      uds::load_vbf(root / "APP" / "12345_APP_DJILI_trial.vbf"),
+  };
+  check(images.app.blocks.size() == 2U &&
+            images.app.blocks[1].address == 0x000C1000U &&
+            images.app.blocks[1].data.size() == 0x00035200U,
+        "D:\\JILI trial APP layout was not retained");
   return images;
 }
 
@@ -220,6 +241,10 @@ void test_profile_parser_key_and_resources() {
   const auto source = std::filesystem::path(UDS_SOURCE_DIR);
   const auto profile =
       uds::load_profile_ini(source / "profiles" / "geely_p416.ini");
+  const auto p417_profile =
+      uds::load_profile_ini(source / "profiles" / "geely_p417.ini");
+  const auto p611_profile =
+      uds::load_profile_ini(source / "profiles" / "geely_p611.ini");
   check(profile.id == L"geely_p416" && profile.flow == L"geely_p416" &&
             profile.can_fd && !profile.uds_fd && !profile.uds_brs &&
             profile.supports_ft_entry && !profile.supports_cal_download &&
@@ -227,10 +252,30 @@ void test_profile_parser_key_and_resources() {
             profile.tx_id == uds::kGeelyP416AppTxId &&
             profile.rx_id == uds::kGeelyP416AppRxId &&
             profile.functional_id == uds::kGeelyP416AppFunctionalId &&
+            profile.programming_tx_id == uds::kGeelyP416AppTxId &&
+            profile.programming_rx_id == uds::kGeelyP416AppRxId &&
             profile.ft_tx_id == uds::kGeelyP416PlsTxId &&
             profile.ft_rx_id == uds::kGeelyP416PlsRxId &&
-            profile.padding == 0x55 && profile.isotp_st_min == 0,
+            profile.padding == 0x55 && profile.isotp_st_min == 0 &&
+            profile.driver_file.filename() ==
+                L"6608444966A_DJILI_trial.vbf" &&
+            profile.app_file.filename() == L"12345_APP_DJILI_trial.vbf" &&
+            profile.cal_file.filename() == L"ess_out.VBF",
         "Geely P416 packaged profile mismatch");
+  check(p417_profile.id == L"geely_p417" &&
+            p417_profile.flow == L"geely_p416" &&
+            p417_profile.project_name == L"P417" &&
+            p417_profile.driver_file.parent_path().parent_path().filename() ==
+                L"geely_p417" &&
+            p611_profile.id == L"geely_p611" &&
+            p611_profile.flow == L"geely_p416" &&
+            p611_profile.project_name == L"P611" &&
+            p611_profile.device_name == L"ARS1.31L" &&
+            p611_profile.driver_file.parent_path().parent_path().filename() ==
+                L"geely_p611" &&
+            profile.driver_file != p417_profile.driver_file &&
+            profile.driver_file != p611_profile.driver_file,
+        "Geely P416/P417/P611 must share the flow but isolate resources");
 
   constexpr std::array seeds{
       std::array<std::uint8_t, 3>{0x41, 0x01, 0x4D},
@@ -267,11 +312,26 @@ void test_profile_parser_key_and_resources() {
                 std::array<std::uint8_t, 4>{0x74, 0x20, 0x08, 0x00}) ==
                 0x7FE,
         "Geely P416 request builders differ from Golden Trace");
+  check(uds::geely_p416_family_ess_data_format_identifier(
+            L"geely_p416", 0x00) == 0x00 &&
+            uds::geely_p416_family_ess_data_format_identifier(
+                L"geely_p417", 0x00) == 0x00 &&
+            uds::geely_p416_family_ess_data_format_identifier(
+                L"geely_p611", 0x00) == 0x00 &&
+            uds::geely_p416_request_download(0x00, 0x0013C000, 0x2C) ==
+                std::vector<std::uint8_t>(
+                    {0x34, 0x00, 0x44, 0x00, 0x13, 0xC0, 0x00,
+                     0x00, 0x00, 0x00, 0x2C}) &&
+            uds::geely_p416_request_download(0x00, 0x0013C100, 0x40) ==
+                std::vector<std::uint8_t>(
+                    {0x34, 0x00, 0x44, 0x00, 0x13, 0xC1, 0x00,
+                     0x00, 0x00, 0x00, 0x40}),
+        "Geely P416/P417/P611 ESS must all retain the VBF DFI");
 
   const auto root = source / "resources" / "geely_p416";
   const uds::GeelyP416Images reconstructed{
       uds::load_vbf(root / "SBL" / "P416_SBL_reconstructed.vbf"),
-      uds::load_vbf(root / "ESS" / "P416_ESS_reconstructed.vbf"),
+      uds::load_vbf(root / "ESS" / "ess_out.VBF"),
       uds::load_vbf(root / "APP" / "P416_APP_reconstructed.vbf")};
   check(compact_hash(reconstructed.sbl.signature) ==
                 "14b5eb5bf3cb42219e5ab02c685471d8f99110ba702b0bffadcedd3c1784feb0" &&
@@ -282,15 +342,17 @@ void test_profile_parser_key_and_resources() {
         "Geely P416 reconstructed signatures differ from BLF baseline");
   check(compact_hash(read_all(root / "SBL" / "P416_SBL_reconstructed.vbf")) ==
                 "5985a7ba6e080a9d42916991c736c203b3d34f7920b0ab7683e1a93c3ef7d3b9" &&
-            compact_hash(read_all(root / "ESS" / "P416_ESS_reconstructed.vbf")) ==
-                "b9e3c2e0ea23286944d4397e563e6975bbd3cacc1d13f1db2f51baf578500c7d" &&
+            compact_hash(read_all(root / "ESS" / "ess_out.VBF")) ==
+                "f85e2b378151a8e6630fea3476311193f0e18108aa79abf9cc2b25bdc2ba6c20" &&
             compact_hash(read_all(root / "APP" / "P416_APP_reconstructed.vbf")) ==
                 "525319cf93c9f36fbc70136db3ebcbd43805d22de627e7375a831bc7c7198566",
         "Geely P416 reconstructed VBF SHA-256 mismatch");
 
   const auto workflow = uds::create_flash_workflow(L"geely_p416");
   check(workflow && workflow->id() == L"geely_p416" &&
-            workflow->report_title(profile).find("P416") != std::string::npos,
+            workflow->report_title(profile).find("P416") != std::string::npos &&
+            workflow->report_title(p611_profile).find("P611") !=
+                std::string::npos,
         "Geely P416 workflow registry mapping mismatch");
 }
 
@@ -367,17 +429,26 @@ void validate_trace(const std::vector<Request>& requests,
         "Geely P416 dependency/reset/post-reset tail mismatch");
 }
 
-void run_fake_flow(uds::GeelyP416EntryMode mode) {
+void run_fake_flow(uds::GeelyP416EntryMode mode, std::uint32_t sbl_rx_id,
+                   bool use_djili_trial = false,
+                   const char* resource_directory = "geely_p416") {
   const auto root = std::filesystem::path(UDS_SOURCE_DIR) / "resources" /
-                    "geely_p416";
-  const auto images = load_images(root);
-  ScriptedGeelyBus bus;
+                    resource_directory;
+  auto images =
+      use_djili_trial ? load_djili_trial_images(root) : load_images(root);
+  ScriptedGeelyBus bus(sbl_rx_id);
   uds::IsoTpConfig app_config;
   app_config.tx_id = 0x716;
   app_config.rx_id = 0x616;
   app_config.padding = 0x55;
   app_config.st_min = 0;
   uds::IsoTpSession app_transport(bus, app_config);
+  auto programming_config = app_config;
+  programming_config.rx_id = 0x617;
+  uds::IsoTpSession programming_transport(bus, programming_config);
+  auto sbl_transition_config = programming_config;
+  sbl_transition_config.alternate_rx_id = 0x616;
+  uds::IsoTpSession sbl_transition_transport(bus, sbl_transition_config);
   auto app_functional_config = app_config;
   app_functional_config.tx_id = 0x7FF;
   uds::IsoTpSession app_functional_transport(bus, app_functional_config);
@@ -388,18 +459,49 @@ void run_fake_flow(uds::GeelyP416EntryMode mode) {
   auto pls_functional_config = pls_config;
   pls_functional_config.tx_id = 0x7DF;
   uds::IsoTpSession pls_functional_transport(bus, pls_functional_config);
-  uds::UdsClient app_physical(app_transport);
-  uds::UdsClient app_functional(app_functional_transport);
-  uds::UdsClient pls_physical(pls_transport);
-  uds::UdsClient pls_functional(pls_functional_transport);
-  uds::GeelyP416Flow flow(app_physical, app_functional, pls_physical,
-                          pls_functional, app_transport, {},
+  std::vector<std::string> uds_logs;
+  const auto logger = [&](const std::string& line) { uds_logs.push_back(line); };
+  uds::UdsClient app_physical(app_transport, logger);
+  uds::UdsClient sbl_transition_physical(sbl_transition_transport, logger);
+  uds::UdsClient programming_physical(programming_transport, logger);
+  uds::UdsClient app_functional(app_functional_transport, logger);
+  uds::UdsClient pls_physical(pls_transport, logger);
+  uds::UdsClient pls_functional(pls_functional_transport, logger);
+  std::vector<std::string> flow_logs;
+  uds::GeelyP416Flow flow(app_physical, sbl_transition_physical,
+                          programming_physical, app_functional, pls_physical,
+                          pls_functional, app_transport,
+                          sbl_transition_transport,
+                          [&](int, const std::string& line) {
+                            flow_logs.push_back(line);
+                          },
                           {0ms, 0ms, 1ms});
   flow.run(images, mode);
   check(flow.core_programming_completed(),
         "Geely P416 Fake ECU flow did not complete");
   check(bus.wake_count > 0U && !bus.invalid_wake,
         "Geely P416 0x53F/200 ms wake contract was not active");
+  const auto logged = [&](std::string_view fragment) {
+    return std::any_of(uds_logs.begin(), uds_logs.end(),
+                       [fragment](const std::string& line) {
+                         return line.find(fragment) != std::string::npos;
+                       });
+  };
+  const auto final_response = sbl_rx_id == 0x616U
+                                  ? "RX [0x616] 71 01 03 01 10"
+                                  : "RX [0x617] 71 01 03 01 10";
+  const auto selected_endpoint =
+      sbl_rx_id == 0x616U ? "0x716/0x616" : "0x716/0x617";
+  const auto flow_logged = [&](std::string_view fragment) {
+    return std::any_of(flow_logs.begin(), flow_logs.end(),
+                       [fragment](const std::string& line) {
+                         return line.find(fragment) != std::string::npos;
+                       });
+  };
+  check(logged("RX [0x616] 7F 31 78") && logged(final_response) &&
+            flow_logged(selected_endpoint),
+        "Geely P416 SBL transition did not select the endpoint proven by "
+        "its final response ID");
   validate_trace(bus.snapshot_requests(), mode, images);
 }
 
@@ -420,8 +522,14 @@ int main(int argc, char** argv) {
       return 0;
     }
     test_profile_parser_key_and_resources();
-    run_fake_flow(uds::GeelyP416EntryMode::app_to_app);
-    run_fake_flow(uds::GeelyP416EntryMode::pls_to_app);
+    run_fake_flow(uds::GeelyP416EntryMode::app_to_app, 0x616U);
+    run_fake_flow(uds::GeelyP416EntryMode::pls_to_app, 0x616U);
+    run_fake_flow(uds::GeelyP416EntryMode::app_to_app, 0x616U, true);
+    run_fake_flow(uds::GeelyP416EntryMode::pls_to_app, 0x616U, true);
+    run_fake_flow(uds::GeelyP416EntryMode::app_to_app, 0x616U, true,
+                  "geely_p417");
+    run_fake_flow(uds::GeelyP416EntryMode::pls_to_app, 0x616U, true,
+                  "geely_p611");
     std::cout << "geely_p416_tests PASS\n";
     return 0;
   } catch (const std::exception& error) {

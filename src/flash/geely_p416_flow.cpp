@@ -1,7 +1,6 @@
 #include "flash/geely_p416_flow.hpp"
 
 #include "core/hex.hpp"
-
 #include <algorithm>
 #include <array>
 #include <stdexcept>
@@ -24,42 +23,6 @@ bool starts_with(std::span<const std::uint8_t> value,
          std::equal(prefix.begin(), prefix.end(), value.begin());
 }
 
-template <std::size_t Size>
-void require_blocks(
-    const VbfFile& file,
-    const std::array<std::pair<std::uint32_t, std::uint32_t>, Size>& expected,
-    const char* label) {
-  if (file.blocks.size() != expected.size()) {
-    throw std::runtime_error(std::string("Geely P416 ") + label +
-                             " VBF block count mismatch");
-  }
-  for (std::size_t index = 0; index < expected.size(); ++index) {
-    if (file.blocks[index].address != expected[index].first ||
-        file.blocks[index].data.size() != expected[index].second) {
-      throw std::runtime_error(std::string("Geely P416 ") + label +
-                               " VBF block layout mismatch");
-    }
-  }
-}
-
-template <std::size_t Size>
-void require_erase(
-    const VbfFile& file,
-    const std::array<std::pair<std::uint32_t, std::uint32_t>, Size>& expected,
-    const char* label) {
-  if (file.erase_ranges.size() != expected.size()) {
-    throw std::runtime_error(std::string("Geely P416 ") + label +
-                             " VBF erase range count mismatch");
-  }
-  for (std::size_t index = 0; index < expected.size(); ++index) {
-    if (file.erase_ranges[index].address != expected[index].first ||
-        file.erase_ranges[index].length != expected[index].second) {
-      throw std::runtime_error(std::string("Geely P416 ") + label +
-                               " VBF erase layout mismatch");
-    }
-  }
-}
-
 } // namespace
 
 CanFrame geely_p416_nm_wakeup_frame() {
@@ -74,6 +37,12 @@ GeelyP416EntryMode resolve_geely_p416_entry_mode(
   if (entry_mode == L"ft") return GeelyP416EntryMode::pls_to_app;
   throw std::invalid_argument(
       "Geely P416 entry mode must be 'app' (APP-to-APP) or 'ft' (PLS-to-APP)");
+}
+
+std::uint8_t geely_p416_family_ess_data_format_identifier(
+    std::wstring_view profile_id, std::uint8_t vbf_value) {
+  (void)profile_id;
+  return vbf_value;
 }
 
 std::array<std::uint8_t, 3> geely_p416_seed_key(
@@ -156,61 +125,20 @@ std::size_t geely_p416_transfer_chunk_size(
   return std::min(max_block, kGeelyP416TransferBlockLength) - 2U;
 }
 
-void validate_geely_p416_images(const GeelyP416Images& images) {
-  constexpr std::array sbl_blocks{
-      std::pair{0x00430000U, 0x00000048U},
-      std::pair{0x00430200U, 0x00011DE3U},
-      std::pair{0x00453828U, 0x00003630U},
-      std::pair{0x0045A5C8U, 0x00000364U},
-      std::pair{0x0045BF80U, 0x00000006U},
-      std::pair{0x0045C000U, 0x000000E0U},
-  };
-  constexpr std::array ess_blocks{
-      std::pair{0x0013C000U, 0x0000002CU},
-      std::pair{0x0013C100U, 0x00000040U},
-  };
-  constexpr std::array app_blocks{
-      std::pair{0x000C0000U, 0x00000033U},
-      std::pair{0x000C1000U, 0x00034DEFU},
-  };
-  constexpr std::array ess_erase{
-      std::pair{0x0013C000U, 0x0000002CU},
-      std::pair{0x0013C100U, 0x00000040U},
-  };
-  constexpr std::array app_erase{
-      std::pair{0x000C0000U, 0x0000002CU},
-      std::pair{0x000C1000U, 0x0007B000U},
-  };
-  require_blocks(images.sbl, sbl_blocks, "SBL");
-  require_blocks(images.ess, ess_blocks, "ESS");
-  require_blocks(images.app, app_blocks, "APP");
-  require_erase(images.ess, ess_erase, "ESS");
-  require_erase(images.app, app_erase, "APP");
-  if (images.sbl.data_format_identifier != 0x10U ||
-      images.ess.data_format_identifier != 0x00U ||
-      images.app.data_format_identifier != 0x10U) {
-    throw std::runtime_error("Geely P416 VBF data format identifiers mismatch");
-  }
-  if (!images.sbl.has_call_address ||
-      images.sbl.call_address != 0x00430000U ||
-      !images.sbl.erase_ranges.empty()) {
-    throw std::runtime_error("Geely P416 SBL call/erase metadata mismatch");
-  }
-  if (images.sbl.signature.size() != 256U ||
-      images.ess.signature.size() != 256U ||
-      images.app.signature.size() != 256U) {
-    throw std::runtime_error(
-        "Geely P416 each VBF signature must be exactly 256 bytes");
-  }
-}
-
 GeelyP416Flow::GeelyP416Flow(
-    UdsClient& app_physical, UdsClient& app_functional,
+    UdsClient& app_physical, UdsClient& sbl_transition_physical,
+    UdsClient& programming_physical, UdsClient& app_functional,
     UdsClient& pls_physical, UdsClient& pls_functional,
-    IsoTpSession& raw_transport, Log log, GeelyP416Timing timing)
-    : app_physical_(app_physical), app_functional_(app_functional),
+    IsoTpSession& raw_transport, IsoTpSession& sbl_transition_transport,
+    Log log, GeelyP416Timing timing)
+    : app_physical_(app_physical),
+      sbl_transition_physical_(sbl_transition_physical),
+      programming_physical_(programming_physical),
+      app_functional_(app_functional),
       pls_physical_(pls_physical), pls_functional_(pls_functional),
-      raw_transport_(raw_transport), log_(std::move(log)), timing_(timing) {}
+      raw_transport_(raw_transport),
+      sbl_transition_transport_(sbl_transition_transport),
+      log_(std::move(log)), timing_(timing) {}
 
 UdsResponse GeelyP416Flow::expect(
     UdsClient& client, std::span<const std::uint8_t> request,
@@ -301,7 +229,8 @@ void GeelyP416Flow::unlock() {
          "27 02 SendKey");
 }
 
-void GeelyP416Flow::transfer_file(const VbfFile& file, int begin_percent,
+void GeelyP416Flow::transfer_file(UdsClient& client, const VbfFile& file,
+                                  int begin_percent,
                                   int end_percent,
                                   const std::string& label) {
   std::size_t total{};
@@ -314,7 +243,7 @@ void GeelyP416Flow::transfer_file(const VbfFile& file, int begin_percent,
         file.data_format_identifier, block.address,
         static_cast<std::uint32_t>(block.data.size()));
     const auto response = expect(
-        app_physical_, download, std::array<std::uint8_t, 1>{0x74},
+        client, download, std::array<std::uint8_t, 1>{0x74},
         begin_percent, "34 RequestDownload " + label + " block " +
                            std::to_string(block_index + 1U));
     const auto chunk_size = geely_p416_transfer_chunk_size(response.response);
@@ -334,31 +263,33 @@ void GeelyP416Flow::transfer_file(const VbfFile& file, int begin_percent,
                               (end_percent - begin_percent) *
                               static_cast<double>(completed) /
                               static_cast<double>(total));
-      expect(app_physical_, transfer,
+      expect(client, transfer,
              std::array<std::uint8_t, 2>{0x76, sequence}, percent,
              "36 TransferData " + label);
       offset += count;
       sequence = static_cast<std::uint8_t>(sequence + 1U);
     }
-    expect(app_physical_, std::array<std::uint8_t, 1>{0x37},
+    expect(client, std::array<std::uint8_t, 1>{0x37},
            std::array<std::uint8_t, 1>{0x77}, end_percent,
            "37 RequestTransferExit " + label);
     transferred += block.data.size();
   }
 }
 
-void GeelyP416Flow::verify_file(const VbfFile& file, int percent,
+void GeelyP416Flow::verify_file(UdsClient& client, const VbfFile& file,
+                                int percent,
                                 const std::string& label) {
-  expect(app_physical_, geely_p416_verify_signature(file.signature),
+  expect(client, geely_p416_verify_signature(file.signature),
          std::array<std::uint8_t, 6>{0x71, 0x01, 0x02, 0x12, 0x10, 0x00},
          percent, "31 01 02 12 Verify " + label + " signature");
 }
 
-void GeelyP416Flow::erase_file(const VbfFile& file, int begin_percent,
+void GeelyP416Flow::erase_file(UdsClient& client, const VbfFile& file,
+                               int begin_percent,
                                const std::string& label) {
   for (std::size_t index = 0; index < file.erase_ranges.size(); ++index) {
     const auto& range = file.erase_ranges[index];
-    expect(app_physical_, geely_p416_erase_memory(range.address, range.length),
+    expect(client, geely_p416_erase_memory(range.address, range.length),
            std::array<std::uint8_t, 5>{0x71, 0x01, 0xFF, 0x00, 0x10},
            begin_percent + static_cast<int>(index),
            "31 01 FF 00 Erase " + label + " range " +
@@ -367,23 +298,36 @@ void GeelyP416Flow::erase_file(const VbfFile& file, int begin_percent,
 }
 
 void GeelyP416Flow::program(const GeelyP416Images& images) {
-  transfer_file(images.sbl, 14, 34, "SBL");
-  verify_file(images.sbl, 36, "SBL");
-  expect(app_physical_, geely_p416_call(images.sbl.call_address),
+  transfer_file(app_physical_, images.sbl, 14, 34, "SBL");
+  verify_file(app_physical_, images.sbl, 36, "SBL");
+  expect(sbl_transition_physical_, geely_p416_call(images.sbl.call_address),
          std::array<std::uint8_t, 5>{0x71, 0x01, 0x03, 0x01, 0x10}, 38,
          "31 01 03 01 Start SBL");
 
-  erase_file(images.ess, 40, "ESS");
-  transfer_file(images.ess, 44, 50, "ESS");
-  verify_file(images.ess, 52, "ESS");
+  auto& active_physical =
+      sbl_transition_transport_.last_rx_id() == kGeelyP416AppRxId
+          ? app_physical_
+          : programming_physical_;
+  if (log_) {
+    log_(38, sbl_transition_transport_.last_rx_id() == kGeelyP416AppRxId
+                 ? "SBL runtime endpoint selected from final response: "
+                   "0x716/0x616"
+                 : "SBL runtime endpoint selected from final response: "
+                   "0x716/0x617");
+  }
 
-  erase_file(images.app, 54, "APP");
-  transfer_file(images.app, 58, 92, "APP");
-  verify_file(images.app, 94, "APP");
-  expect(app_physical_, std::array<std::uint8_t, 4>{0x31, 0x01, 0x02, 0x05},
+  erase_file(active_physical, images.ess, 40, "ESS");
+  transfer_file(active_physical, images.ess, 44, 50, "ESS");
+  verify_file(active_physical, images.ess, 52, "ESS");
+
+  erase_file(active_physical, images.app, 54, "APP");
+  transfer_file(active_physical, images.app, 58, 92, "APP");
+  verify_file(active_physical, images.app, 94, "APP");
+  expect(active_physical,
+         std::array<std::uint8_t, 4>{0x31, 0x01, 0x02, 0x05},
          std::array<std::uint8_t, 6>{0x71, 0x01, 0x02, 0x05, 0x10, 0x00}, 96,
          "31 01 02 05 DependencyCheck");
-  expect(app_physical_, std::array<std::uint8_t, 2>{0x11, 0x01},
+  expect(active_physical, std::array<std::uint8_t, 2>{0x11, 0x01},
          std::array<std::uint8_t, 2>{0x51, 0x01}, 97, "11 01 ECUReset");
   core_programming_completed_ = true;
   wait_for(timing_.post_reset_settle);
@@ -398,8 +342,6 @@ void GeelyP416Flow::run(const GeelyP416Images& images,
   stop_ = stop;
   wake_failed_.store(false);
   core_programming_completed_ = false;
-  validate_geely_p416_images(images);
-
   const auto wake = geely_p416_nm_wakeup_frame();
   try {
     raw_transport_.send_raw(wake.id, wake.data);

@@ -1,6 +1,8 @@
 #include "app/flash_request.hpp"
 #include "ui/qt/main_window.hpp"
 #include "ui/qt/bus_monitor_page.hpp"
+#include "ui/qt/controller_bridge.hpp"
+#include "ui/qt/resource_file_store.hpp"
 #include "ui/qt/version_confirmation_page.hpp"
 
 #include <QAction>
@@ -25,6 +27,7 @@
 #include <QSpinBox>
 #include <QTabWidget>
 #include <QTableWidget>
+#include <QTemporaryDir>
 #include <QTextBlock>
 #include <QTextFragment>
 #include <QVariantMap>
@@ -289,6 +292,32 @@ int main(int argc, char* argv[]) {
     QSettings settings;
     settings.clear();
     settings.sync();
+
+    {
+      QTemporaryDir sandbox;
+      check(sandbox.isValid(), "Resource replacement sandbox unavailable");
+      const auto resources = QDir(sandbox.path()).filePath("resources/demo/APP");
+      check(QDir().mkpath(resources), "Resource replacement directory missing");
+      const auto selected = QDir(sandbox.path()).filePath("external/new.s19");
+      check(QDir().mkpath(QFileInfo(selected).absolutePath()),
+            "Resource replacement input directory missing");
+      QFile input(selected);
+      check(input.open(QIODevice::WriteOnly) &&
+                input.write("NEW_RESOURCE", 12) == 12,
+            "Resource replacement input write failed");
+      input.close();
+      const auto configured = QDir(resources).filePath("default.s19");
+      QFile old(configured);
+      check(old.open(QIODevice::WriteOnly) && old.write("OLD", 3) == 3,
+            "Resource replacement default write failed");
+      old.close();
+      const auto replaced = uds::ui::qt::replaceConfiguredResourceFile(
+          selected, configured, QDir(sandbox.path()).filePath("resources"));
+      QFile stored(configured);
+      check(replaced.success && stored.open(QIODevice::ReadOnly) &&
+                stored.readAll() == QByteArray("NEW_RESOURCE", 12),
+            "Selected file did not atomically replace the default resource");
+    }
 
     {
       uds::ui::qt::MainWindow window;
@@ -854,8 +883,22 @@ int main(int argc, char* argv[]) {
             "Execution log persistence or clear action is missing");
       QFile persisted(execution_log);
       check(persisted.open(QIODevice::ReadOnly) &&
-                persisted.readAll().contains("界面已就绪"),
-            "Execution log did not persist UI messages");
+                 persisted.readAll().contains("界面已就绪"),
+             "Execution log did not persist UI messages");
+      auto* bridge = window.findChild<uds::ui::qt::ControllerBridge*>();
+      check(bridge, "Controller bridge missing for TX/RX color test");
+      bridge->logMessage(QStringLiteral("TX [0x716] 34 00 44"));
+      bridge->logMessage(QStringLiteral("RX [0x616] 74 20 08 00"));
+      application.processEvents();
+      auto rx_block = log_view->document()->lastBlock();
+      auto tx_block = rx_block.previous();
+      check(tx_block.text().contains(QStringLiteral("TX [")) &&
+                tx_block.begin().fragment().charFormat().foreground().color() ==
+                    QColor(QStringLiteral("#7189AE")) &&
+                rx_block.text().contains(QStringLiteral("RX [")) &&
+                rx_block.begin().fragment().charFormat().foreground().color() ==
+                    QColor(QStringLiteral("#5F927F")),
+            "TX and RX log entries do not use distinct muted colors");
       QString long_execution_log;
       for (int line = 0; line < 240; ++line) {
         long_execution_log +=
@@ -907,6 +950,33 @@ int main(int argc, char* argv[]) {
                     QColor(QStringLiteral("#C62828")) &&
                 result_format.fontWeight() == QFont::Bold,
             "Failed flash result is not a bold red log entry");
+
+      progress_status->setText(QStringLiteral("最近一次刷写成功"));
+      check(QMetaObject::invokeMethod(
+                &window, "handleVersionCheckRunningChanged",
+                Qt::DirectConnection, Q_ARG(bool, true)) &&
+                QMetaObject::invokeMethod(
+                    &window, "handleProgressChanged", Qt::DirectConnection,
+                    Q_ARG(int, 50),
+                    Q_ARG(QString, QStringLiteral("版本读取进行中"))),
+            "Version-read UI handlers are not invokable");
+      application.processEvents();
+      check(progress_status->text() == QStringLiteral("最近一次刷写成功") &&
+                log_view->toPlainText().contains(
+                    QStringLiteral("========== 开始版本读取 ==========")),
+            "Version-read progress overwrote the flash result or omitted its log boundary");
+      check(QMetaObject::invokeMethod(
+                &window, "handleVersionCheckFinished", Qt::DirectConnection,
+                Q_ARG(bool, false), Q_ARG(bool, false),
+                Q_ARG(QString, QStringLiteral("读取失败：测试错误"))),
+            "Version-read result handler is not invokable");
+      application.processEvents();
+      check(progress_status->text() == QStringLiteral("最近一次刷写成功") &&
+                log_view->toPlainText().contains(
+                    QStringLiteral("========== 版本读取失败 ==========")) &&
+                log_view->toPlainText().contains(
+                    QStringLiteral("========== 刷写成功 ==========")),
+            "Failed version read hid the latest flash result or erased its log history");
       check(QMetaObject::invokeMethod(
                 &window, "handleFlashFinished", Qt::DirectConnection,
                 Q_ARG(bool, false), Q_ARG(bool, false),
@@ -1046,6 +1116,101 @@ int main(int argc, char* argv[]) {
                 chuneng_app_path,
             "Qt diagnostic ID, CBF, or SeedKey fields are missing");
       check_all_flash_projects_present(projects);
+
+      // User-selected flash files are session state: switching away and back
+      // in the same window restores them, while a newly constructed window
+      // starts again from the Profile resources defaults.
+      const auto geely_vendor = find_text(projects, QStringLiteral("吉利"));
+      check(geely_vendor >= 0, "Geely vendor missing for runtime file test");
+      projects->setCurrentIndex(geely_vendor);
+      application.processEvents();
+      const auto p611_project = find_text(devices, QStringLiteral("P611"));
+      const auto p417_project = find_text(devices, QStringLiteral("P417"));
+      const auto p416_project = find_text(devices, QStringLiteral("P416"));
+      check(p611_project >= 0 && p417_project >= 0 && p416_project >= 0,
+            "Geely P416/P417/P611 projects missing for runtime file test");
+      devices->setCurrentIndex(p611_project);
+      application.processEvents();
+
+      const std::array<QString, 7> file_field_names{
+          QStringLiteral("driverPathLineEdit"),
+          QStringLiteral("appPathLineEdit"),
+          QStringLiteral("calPathLineEdit"),
+          QStringLiteral("driverVerifyPathLineEdit"),
+          QStringLiteral("appVerifyPathLineEdit"),
+          QStringLiteral("calVerifyPathLineEdit"),
+          QStringLiteral("seedKeyDllPathLineEdit")};
+      const std::array<QString, 7> runtime_paths{
+          QStringLiteral("D:/611/runtime_driver.vbf"),
+          QStringLiteral("D:/611/runtime_app.vbf"),
+          QStringLiteral("D:/611/runtime_ess.vbf"),
+          QStringLiteral("D:/611/runtime_driver_verify.bin"),
+          QStringLiteral("D:/611/runtime_app_verify.bin"),
+          QStringLiteral("D:/611/runtime_cal_verify.bin"),
+          QStringLiteral("D:/611/runtime_seedkey.dll")};
+      std::array<QString, 7> profile_defaults;
+      for (std::size_t index = 0; index < file_field_names.size(); ++index) {
+        auto* field = window.findChild<QLineEdit*>(file_field_names[index]);
+        check(field, "Runtime flash-file field missing");
+        profile_defaults[index] = field->property("fullPath").toString();
+        field->setProperty("fullPath", runtime_paths[index]);
+        field->setText(runtime_paths[index]);
+      }
+
+      devices->setCurrentIndex(p416_project);
+      application.processEvents();
+      devices->setCurrentIndex(find_text(devices, QStringLiteral("P611")));
+      application.processEvents();
+      for (std::size_t index = 0; index < file_field_names.size(); ++index) {
+        const auto* field =
+            window.findChild<QLineEdit*>(file_field_names[index]);
+        check(field && field->property("fullPath").toString() ==
+                           QDir::toNativeSeparators(runtime_paths[index]),
+              "Runtime flash-file selection was not restored");
+      }
+
+      const std::array<QString, 7> file_label_names{
+          QStringLiteral("driverPathLabel"),
+          QStringLiteral("appPathLabel"),
+          QStringLiteral("calPathLabel"),
+          QStringLiteral("driverVerifyPathLabel"),
+          QStringLiteral("appVerifyPathLabel"),
+          QStringLiteral("calVerifyPathLabel"),
+          QStringLiteral("seedKeyDllPathLabel")};
+      for (std::size_t index = 0; index < file_label_names.size(); ++index) {
+        auto* label = window.findChild<QLabel*>(file_label_names[index]);
+        check(label && label->toolTip().contains(QStringLiteral("双击恢复")),
+              "Flash-file label has no default-restore affordance");
+        QEvent restore_file_event(QEvent::MouseButtonDblClick);
+        QCoreApplication::sendEvent(label, &restore_file_event);
+        const auto* restored_field =
+            window.findChild<QLineEdit*>(file_field_names[index]);
+        check(restored_field &&
+                  restored_field->property("fullPath").toString() ==
+                      profile_defaults[index],
+              "Double-clicking a flash-file label did not restore its Profile default");
+        if (index + 1U < file_field_names.size()) {
+          const auto* untouched_field =
+              window.findChild<QLineEdit*>(file_field_names[index + 1U]);
+          check(untouched_field &&
+                    untouched_field->property("fullPath").toString() ==
+                        QDir::toNativeSeparators(runtime_paths[index + 1U]),
+                "Restoring one flash-file default changed another field");
+        }
+      }
+
+      {
+        uds::ui::qt::MainWindow reopened;
+        for (std::size_t index = 0; index < file_field_names.size(); ++index) {
+          const auto* field =
+              reopened.findChild<QLineEdit*>(file_field_names[index]);
+          check(field && field->property("fullPath").toString() ==
+                             profile_defaults[index],
+                "A new window persisted a runtime flash-file override");
+        }
+      }
+      checkpoint("runtime-file-selection");
+
       check_project_devices(application, projects, devices,
                             QStringLiteral("楚能"),
                             {QStringLiteral("ARC331")});
@@ -1098,7 +1263,9 @@ int main(int argc, char* argv[]) {
             "Target selection did not restore its default diagnostic IDs");
       check_project_devices(application, projects, devices,
                             QStringLiteral("吉利"),
-                            {QStringLiteral("P146"), QStringLiteral("P416")});
+                            {QStringLiteral("P416"),
+                             QStringLiteral("P417"),
+                             QStringLiteral("P611")});
       devices->setCurrentIndex(find_text(devices, QStringLiteral("P416")));
       application.processEvents();
       check(radar->count() == 1 &&
@@ -1112,23 +1279,19 @@ int main(int argc, char* argv[]) {
                 version_table->item(0, 3)->text().contains(
                     QStringLiteral("Boot软件标识")),
             "Version page did not follow P416 or show its DID meanings");
-      devices->setCurrentIndex(find_text(devices, QStringLiteral("P146")));
+      devices->setCurrentIndex(find_text(devices, QStringLiteral("P611")));
       application.processEvents();
-      const auto p146_app = entries->findData(QStringLiteral("app"));
-      const auto p146_cal = entries->findData(QStringLiteral("cal"));
-      const auto p146_app_cal = entries->findData(QStringLiteral("app_cal"));
       check(radar->count() == 1 &&
-                radar->currentText() == QStringLiteral("GEEA2.0 SWDL") &&
-                tx_id->text() == QStringLiteral("0x0") &&
-                rx_id->text() == QStringLiteral("0x0") &&
-                !tx_id->isReadOnly() && !rx_id->isReadOnly() &&
-                p146_app >= 0 && p146_cal >= 0 && p146_app_cal >= 0 &&
-                entries->itemText(p146_app) == QStringLiteral("APP") &&
-                entries->itemText(p146_cal) == QStringLiteral("CAL") &&
-                entries->itemText(p146_app_cal) ==
-                    QStringLiteral("APP+CAL") &&
-                version_table->rowCount() == 0,
-            "Geely P146 safe configurable UI mapping mismatch");
+                radar->currentText() == QStringLiteral("ARS1.31L") &&
+                entries->findData(QStringLiteral("app")) >= 0 &&
+                entries->findData(QStringLiteral("ft")) >= 0,
+            "Geely P611 did not reuse the P416 device and entry modes");
+      check(version_selection->text().contains(QStringLiteral("吉利")) &&
+                version_selection->text().contains(QStringLiteral("P611")) &&
+                version_selection->text().contains(QStringLiteral("ARS1.31L")) &&
+                version_table->rowCount() == 13 &&
+                version_table->item(0, 1)->text() == QStringLiteral("F180"),
+            "Version page did not follow P611 or reuse the P416 DID plan");
       const auto chery_log_project =
           find_text(projects, QStringLiteral("奇瑞"));
       const auto xizhong_log_project =

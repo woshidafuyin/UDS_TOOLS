@@ -327,7 +327,7 @@ void test_flash_controller_success() {
         "flash report is missing the top result/time summary or exposes C++");
   std::size_t html_count{};
   for (const auto& entry :
-       std::filesystem::directory_iterator(directory / "logs")) {
+       std::filesystem::directory_iterator(directory / "logs" / "reports")) {
     if (entry.path().extension() == ".html") ++html_count;
   }
   check(html_count == 2,

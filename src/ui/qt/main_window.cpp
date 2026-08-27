@@ -1,4 +1,5 @@
 #include "ui/qt/main_window.hpp"
+#include "ui/qt/resource_file_store.hpp"
 
 #include "core/flash_data.hpp"
 #include "drivers/can/can_bus_provider.hpp"
@@ -66,6 +67,7 @@ constexpr auto kFullPathProperty = "fullPath";
 constexpr auto kConfiguredPlaceholderProperty = "configuredPathPlaceholder";
 constexpr auto kEmbeddedVerificationProperty = "embeddedVerification";
 constexpr auto kPackageValidProperty = "appPackageValid";
+constexpr auto kFlashFileFieldProperty = "flashFileField";
 
 std::optional<std::uint8_t> nrcFromLogLine(const QString& message) {
   static const QRegularExpression explicit_nrc(
@@ -170,7 +172,7 @@ QString selectFile(QWidget* parent, const QLineEdit* pathEdit,
 
 QString newestReportPath() {
   QDir logs(QDir(QCoreApplication::applicationDirPath()).filePath(
-      QStringLiteral("logs")));
+      QStringLiteral("logs/reports")));
   const auto reports = logs.entryInfoList(
       {QStringLiteral("*.html"), QStringLiteral("*.htm")},
       QDir::Files | QDir::Readable, QDir::Time);
@@ -361,7 +363,7 @@ MainWindow::MainWindow(QWidget* parent)
   // close controls.
   setWindowFlags(Qt::Window);
   initializeExecutionLog();
-  controller_bridge_ = std::make_unique<ControllerBridge>();
+  controller_bridge_ = std::make_unique<ControllerBridge>(this);
   for (int index = 0; index < ui_->vectorChannelComboBox->count(); ++index) {
     const auto physical_channel = index + 1;
     ui_->vectorChannelComboBox->setItemText(
@@ -648,6 +650,22 @@ QStatusBar {
   ui_->calPathLabel->setText(QStringLiteral("CAL 文件"));
   ui_->calVerifyPathLabel->setText(QStringLiteral("CAL 校验文件"));
   ui_->seedKeyDllPathLabel->setText(QStringLiteral("SeedKey 算法库"));
+  const std::array<std::pair<QLabel*, FlashFileField>, 7> file_labels{{
+      {ui_->driverPathLabel, FlashFileField::Driver},
+      {ui_->driverVerifyPathLabel, FlashFileField::DriverVerify},
+      {ui_->appPathLabel, FlashFileField::App},
+      {ui_->appVerifyPathLabel, FlashFileField::AppVerify},
+      {ui_->calPathLabel, FlashFileField::Cal},
+      {ui_->calVerifyPathLabel, FlashFileField::CalVerify},
+      {ui_->seedKeyDllPathLabel, FlashFileField::SeedKeyDll},
+  }};
+  for (const auto& [label, field] : file_labels) {
+    label->setProperty(kFlashFileFieldProperty, static_cast<int>(field));
+    label->setToolTip(QStringLiteral(
+        "双击恢复当前项目/设备在 resources 中配置的默认文件"));
+    label->setCursor(Qt::PointingHandCursor);
+    label->installEventFilter(this);
+  }
 
   // Keep frequently used actions and progress visible while the configuration
   // area scrolls. Widgets and their signal connections remain unchanged.
@@ -701,16 +719,14 @@ void MainWindow::connectActions() {
   const auto connectFileButton =
       [this](QPushButton* button, QLineEdit* pathEdit,
               const QString& caption, const QString& filter,
-              const QString& logName) {
+              const QString& logName, FlashFileField field) {
         button->setProperty("fileDialogFilter", filter);
         connect(button, &QPushButton::clicked, this,
-                [this, pathEdit, caption, filter, logName] {
+                [this, pathEdit, caption, filter, logName, field] {
                   const auto selected =
                       selectFile(this, pathEdit, caption, filter);
                   if (selected.isEmpty()) return;
-                  showPath(pathEdit, selected);
-                  appendUiLog(QStringLiteral("%1路径：%2")
-                                  .arg(logName, fullPath(pathEdit)));
+                  storeSelectedFlashFile(field, selected, pathEdit, logName);
                 });
       };
 
@@ -722,11 +738,12 @@ void MainWindow::connectActions() {
           "校验数据 (*.asc *.tmp *.txt *.rsa *.s19 *.srec *.s28 *.s37 *.mot *.hex *.bin);;所有文件 (*.*)");
   connectFileButton(ui_->driverBrowseButton, ui_->driverPathLineEdit,
                     QStringLiteral("选择 Driver 文件"), srecordFilter,
-                    QStringLiteral("Driver"));
+                    QStringLiteral("Driver"), FlashFileField::Driver);
   connectFileButton(ui_->driverVerifyBrowseButton,
                     ui_->driverVerifyPathLineEdit,
                     QStringLiteral("选择 DriverData 文件"),
-                    verificationFilter, QStringLiteral("DriverData"));
+                    verificationFilter, QStringLiteral("DriverData"),
+                    FlashFileField::DriverVerify);
   const auto appPackageFilter =
       QStringLiteral(
           "APP 文件/升级包 (*.s19 *.srec *.s28 *.s37 *.mot *.hex *.bin *.tmp);;"
@@ -743,15 +760,17 @@ void MainWindow::connectActions() {
                                  : QStringLiteral("选择 APP 文件"),
                 supports_package ? appPackageFilter : srecordFilter);
             if (selected.isEmpty()) return;
-            showPath(ui_->appPathLineEdit, selected);
+            if (!storeSelectedFlashFile(FlashFileField::App, selected,
+                                        ui_->appPathLineEdit,
+                                        QStringLiteral("APP"))) {
+              return;
+            }
             if (supports_package) {
               // A newly selected standalone APP must never silently reuse a
               // certificate that belonged to the previous APP/package.
               showPath(ui_->appVerifyPathLineEdit, {});
             }
             updateAppPackagePresentation(true);
-            appendUiLog(QStringLiteral("APP输入：%1")
-                            .arg(fullPath(ui_->appPathLineEdit)));
           });
   ui_->appVerifyBrowseButton->setProperty("fileDialogFilter",
                                           verificationFilter);
@@ -769,22 +788,23 @@ void MainWindow::connectActions() {
                 this, ui_->appVerifyPathLineEdit,
                 QStringLiteral("选择 APP 校验文件"), verificationFilter);
             if (selected.isEmpty()) return;
-            showPath(ui_->appVerifyPathLineEdit, selected);
-            appendUiLog(QStringLiteral("APP 校验文件：%1")
-                            .arg(fullPath(ui_->appVerifyPathLineEdit)));
+            storeSelectedFlashFile(FlashFileField::AppVerify, selected,
+                                   ui_->appVerifyPathLineEdit,
+                                   QStringLiteral("APP 校验文件"));
           });
   connectFileButton(ui_->calBrowseButton, ui_->calPathLineEdit,
                     QStringLiteral("选择 CAL 文件"), srecordFilter,
-                    QStringLiteral("CAL"));
+                    QStringLiteral("CAL"), FlashFileField::Cal);
   connectFileButton(ui_->calVerifyBrowseButton,
                     ui_->calVerifyPathLineEdit,
                     QStringLiteral("选择 CALData 文件"),
-                    verificationFilter, QStringLiteral("CALData"));
+                    verificationFilter, QStringLiteral("CALData"),
+                    FlashFileField::CalVerify);
   connectFileButton(ui_->seedKeyDllBrowseButton,
                     ui_->seedKeyDllPathLineEdit,
                     QStringLiteral("选择 SeedKey DLL"),
                     QStringLiteral("动态链接库 (*.dll);;所有文件 (*.*)"),
-                    QStringLiteral("SeedKey DLL"));
+                    QStringLiteral("SeedKey DLL"), FlashFileField::SeedKeyDll);
 
   connect(ui_->probeButton, &QPushButton::clicked, this,
           &MainWindow::startProbeFromUi);
@@ -959,19 +979,7 @@ void MainWindow::connectControllerActions() {
   connect(controller_bridge_.get(), &ControllerBridge::logMessage, this,
           [this](const QString& message) { appendUiLog(message); });
   connect(controller_bridge_.get(), &ControllerBridge::progressChanged, this,
-           [this](int percent, const QString& message) {
-             if (probe_running_) {
-               // Online detection is a binary verdict: 0 until a validated
-               // physical diagnostic response is received, then 100.
-               ui_->progressBar->setValue(percent >= 100 ? 100 : 0);
-             } else if (flash_running_) {
-               flash_progress_ =
-                   std::max(flash_progress_, std::clamp(percent, 0, 100));
-               ui_->progressBar->setValue(flash_progress_);
-             }
-              ui_->progressStatusLabel->setText(message);
-              if (version_check_running_) statusBar()->showMessage(message);
-           });
+          &MainWindow::handleProgressChanged);
   connect(controller_bridge_.get(), &ControllerBridge::probeRunningChanged,
           this, [this](bool running) {
             probe_running_ = running;
@@ -1002,22 +1010,11 @@ void MainWindow::connectControllerActions() {
           &MainWindow::handleFlashFinished);
   connect(controller_bridge_.get(),
           &ControllerBridge::versionCheckRunningChanged, this,
-          [this](bool running) {
-            version_check_running_ = running;
-            version_page_->setRunning(running);
-            updateEnabledState();
-          });
+          &MainWindow::handleVersionCheckRunningChanged);
   connect(controller_bridge_.get(), &ControllerBridge::versionCheckRow,
           version_page_, &VersionConfirmationPage::appendResult);
   connect(controller_bridge_.get(), &ControllerBridge::versionCheckFinished,
-          this,
-          [this](bool success, bool cancelled, const QString& message) {
-            version_check_running_ = false;
-            version_page_->finish(success, cancelled, message);
-            appendUiLog(message);
-            updateEnabledState();
-            updateStatusBar();
-          });
+          this, &MainWindow::handleVersionCheckFinished);
   connect(controller_bridge_.get(),
           &ControllerBridge::diagnosticRunningChanged, this,
           [this](bool running) {
@@ -1236,6 +1233,11 @@ void MainWindow::populateTargetOptions(int project_index) {
 
 void MainWindow::applySelectedProfile(int device_index) {
   if (device_index < 0) return;
+  // File overrides belong to the running window only. Save the paths shown
+  // for the previously active profile/target before rebuilding the fields.
+  // This map is deliberately not backed by QSettings: a new process must
+  // always start from the Profile's resources defaults.
+  saveRuntimeFileSelection();
   // A target/project change rebuilds the list because capabilities may differ,
   // but it must not silently discard a mode that the user explicitly chose.
   // Keep the semantic value (app/ft/cal/...) and restore it when the newly
@@ -1345,6 +1347,7 @@ void MainWindow::applySelectedProfile(int device_index) {
   ui_->txIdLineEdit->setReadOnly(false);
   ui_->rxIdLineEdit->setReadOnly(false);
   applySelectedRadar(false);
+  restoreRuntimeFileSelection();
   updateAppPackagePresentation(false);
   activateSelectedLogTarget();
   // Keep every generic file row stable while switching projects.
@@ -1360,6 +1363,157 @@ void MainWindow::applySelectedProfile(int device_index) {
                   .arg(ui_->txIdLineEdit->text(),
                        ui_->rxIdLineEdit->text())
                   .arg(QString::number(profile.functional_id, 16).toUpper()));
+}
+
+void MainWindow::saveRuntimeFileSelection() {
+  if (active_file_selection_key_.isEmpty()) return;
+  runtime_file_selections_.insert(
+      active_file_selection_key_,
+      RuntimeFileSelection{
+          fullPath(ui_->driverPathLineEdit),
+          fullPath(ui_->appPathLineEdit),
+          fullPath(ui_->calPathLineEdit),
+          fullPath(ui_->driverVerifyPathLineEdit),
+          fullPath(ui_->appVerifyPathLineEdit),
+          fullPath(ui_->calVerifyPathLineEdit),
+          fullPath(ui_->seedKeyDllPathLineEdit),
+      });
+}
+
+void MainWindow::restoreRuntimeFileSelection() {
+  active_file_selection_key_ = selectedLogTargetKey();
+  if (active_file_selection_key_.isEmpty()) return;
+  const auto saved = runtime_file_selections_.constFind(
+      active_file_selection_key_);
+  if (saved == runtime_file_selections_.cend()) return;
+
+  showPath(ui_->driverPathLineEdit, saved->driver_path);
+  showPath(ui_->appPathLineEdit, saved->app_path);
+  showPath(ui_->calPathLineEdit, saved->cal_path);
+  showPath(ui_->driverVerifyPathLineEdit, saved->driver_verify_path);
+  showPath(ui_->appVerifyPathLineEdit, saved->app_verify_path);
+  showPath(ui_->calVerifyPathLineEdit, saved->cal_verify_path);
+  showPath(ui_->seedKeyDllPathLineEdit, saved->seed_key_dll_path);
+}
+
+QString MainWindow::configuredDefaultFlashFile(FlashFileField field) const {
+  bool valid{};
+  const auto profile_index = selectedProfileIndex(&valid);
+  const auto& profiles = controller_bridge_->profileOptions();
+  if (!valid || profile_index < 0 ||
+      static_cast<std::size_t>(profile_index) >= profiles.size()) {
+    return {};
+  }
+
+  const auto path_from = [field](const auto& option) -> QString {
+    switch (field) {
+    case FlashFileField::Driver:
+      return option.driver_path;
+    case FlashFileField::DriverVerify:
+      return option.driver_verify_path;
+    case FlashFileField::App:
+      return option.app_path;
+    case FlashFileField::AppVerify:
+      return option.app_verify_path;
+    case FlashFileField::Cal:
+      return option.cal_path;
+    case FlashFileField::CalVerify:
+      return option.cal_verify_path;
+    case FlashFileField::SeedKeyDll:
+      return option.seed_key_dll_path;
+    }
+    return {};
+  };
+
+  const auto& profile = profiles[profile_index];
+  auto default_path = path_from(profile);
+  if (!profile.target_options.empty()) {
+    const auto target_id = selectedTargetId();
+    const auto target = std::find_if(
+        profile.target_options.cbegin(), profile.target_options.cend(),
+        [&target_id](const ControllerTargetOption& option) {
+          return option.target_id == target_id;
+        });
+    if (target != profile.target_options.cend()) {
+      default_path = path_from(*target);
+    }
+  }
+  return default_path;
+}
+
+bool MainWindow::storeSelectedFlashFile(FlashFileField field,
+                                        const QString& selected,
+                                        QLineEdit* editor,
+                                        const QString& log_name) {
+  const auto default_path = configuredDefaultFlashFile(field);
+  const auto resources_root = QDir(QCoreApplication::applicationDirPath())
+                                  .filePath(QStringLiteral("resources"));
+  const auto result = replaceConfiguredResourceFile(
+      selected, default_path, resources_root);
+  if (!result.success) {
+    QMessageBox::warning(this, QStringLiteral("替换默认资源失败"), result.error);
+    appendUiLog(QStringLiteral("%1默认资源替换失败：%2")
+                    .arg(log_name, result.error),
+                UiLogTone::Failure);
+    return false;
+  }
+
+  showPath(editor, result.stored_path);
+  saveRuntimeFileSelection();
+  appendUiLog(QStringLiteral("%1默认资源已替换：%2 → %3")
+                  .arg(log_name, QDir::toNativeSeparators(selected),
+                       QDir::toNativeSeparators(result.stored_path)));
+  return true;
+}
+
+void MainWindow::restoreDefaultFlashFile(FlashFileField field) {
+  const auto default_path = configuredDefaultFlashFile(field);
+
+  QLineEdit* editor{};
+  QString field_name;
+  switch (field) {
+  case FlashFileField::Driver:
+    editor = ui_->driverPathLineEdit;
+    field_name = ui_->driverPathLabel->text();
+    break;
+  case FlashFileField::DriverVerify:
+    editor = ui_->driverVerifyPathLineEdit;
+    field_name = ui_->driverVerifyPathLabel->text();
+    break;
+  case FlashFileField::App:
+    editor = ui_->appPathLineEdit;
+    field_name = ui_->appPathLabel->text();
+    break;
+  case FlashFileField::AppVerify:
+    editor = ui_->appVerifyPathLineEdit;
+    field_name = ui_->appVerifyPathLabel->text();
+    break;
+  case FlashFileField::Cal:
+    editor = ui_->calPathLineEdit;
+    field_name = ui_->calPathLabel->text();
+    break;
+  case FlashFileField::CalVerify:
+    editor = ui_->calVerifyPathLineEdit;
+    field_name = ui_->calVerifyPathLabel->text();
+    break;
+  case FlashFileField::SeedKeyDll:
+    editor = ui_->seedKeyDllPathLineEdit;
+    field_name = ui_->seedKeyDllPathLabel->text();
+    break;
+  }
+  if (!editor) return;
+
+  showPath(editor, default_path);
+  if (field == FlashFileField::App || field == FlashFileField::AppVerify) {
+    updateAppPackagePresentation(false);
+  }
+  saveRuntimeFileSelection();
+  appendUiLog(
+      QStringLiteral("已恢复当前项目/设备默认%1：%2")
+          .arg(field_name,
+               default_path.isEmpty()
+                   ? QStringLiteral("<未配置>")
+                   : QDir::toNativeSeparators(default_path)));
 }
 
 int MainWindow::selectedProfileIndex(bool* valid) const {
@@ -2029,12 +2183,13 @@ void MainWindow::updateEnabledState() {
 
 void MainWindow::initializeExecutionLog() {
   QDir application_directory(QCoreApplication::applicationDirPath());
-  if (!application_directory.mkpath(QStringLiteral("logs"))) return;
+  if (!application_directory.mkpath(QStringLiteral("logs/execution"))) return;
   const auto file_name = QStringLiteral("execution_%1.log")
                              .arg(QDateTime::currentDateTime().toString(
                                  QStringLiteral("yyyyMMdd_HHmmss_zzz")));
   auto file = std::make_unique<QFile>(
-      application_directory.filePath(QStringLiteral("logs/%1").arg(file_name)));
+      application_directory.filePath(
+          QStringLiteral("logs/execution/%1").arg(file_name)));
   if (!file->open(QIODevice::WriteOnly | QIODevice::Append)) {
     return;
   }
@@ -2103,7 +2258,14 @@ void MainWindow::appendUiLog(const QString& message, UiLogTone tone) {
     }
   }
   auto& target_entries = target_log_entries_[active_log_target_key_];
-  target_entries.push_back(UiLogEntry{display_line, tone});
+  UiLogDirection direction = UiLogDirection::None;
+  const auto trimmed_message = displayed_message.trimmed();
+  if (trimmed_message.startsWith(QStringLiteral("TX ["))) {
+    direction = UiLogDirection::Tx;
+  } else if (trimmed_message.startsWith(QStringLiteral("RX ["))) {
+    direction = UiLogDirection::Rx;
+  }
+  target_entries.push_back(UiLogEntry{display_line, tone, direction});
   constexpr qsizetype kMaximumUiLogLinesPerTarget = 5000;
   while (target_entries.size() > kMaximumUiLogLinesPerTarget) {
     target_entries.removeFirst();
@@ -2145,6 +2307,11 @@ void MainWindow::scheduleExecutionLogTailFollow() {
 
 void MainWindow::appendUiLogEntryToView(const UiLogEntry& entry) {
   QTextCharFormat format;
+  if (entry.direction == UiLogDirection::Tx) {
+    format.setForeground(QColor(QStringLiteral("#7189AE")));
+  } else if (entry.direction == UiLogDirection::Rx) {
+    format.setForeground(QColor(QStringLiteral("#5F927F")));
+  }
   switch (entry.tone) {
   case UiLogTone::Success:
     format.setForeground(QColor(QStringLiteral("#16803C")));
@@ -2232,6 +2399,53 @@ void MainWindow::handleProbeFinished(bool success, bool cancelled,
   }
 }
 
+void MainWindow::handleProgressChanged(int percent, const QString& message) {
+  if (probe_running_) {
+    // Online detection is a binary verdict: 0 until a validated physical
+    // diagnostic response is received, then 100.
+    ui_->progressBar->setValue(percent >= 100 ? 100 : 0);
+  } else if (flash_running_) {
+    flash_progress_ =
+        std::max(flash_progress_, std::clamp(percent, 0, 100));
+    ui_->progressBar->setValue(flash_progress_);
+  }
+
+  if (version_check_running_) {
+    // Version reading belongs to its own page. Keep the flash page's final
+    // result visible and use the status bar for transient version progress.
+    statusBar()->showMessage(message);
+    return;
+  }
+  ui_->progressStatusLabel->setText(message);
+}
+
+void MainWindow::handleVersionCheckRunningChanged(bool running) {
+  version_check_running_ = running;
+  version_page_->setRunning(running);
+  if (running) {
+    appendUiLog(QStringLiteral("========== 开始版本读取 =========="),
+                UiLogTone::Pending);
+    statusBar()->showMessage(QStringLiteral("版本读取中……"));
+  }
+  updateEnabledState();
+}
+
+void MainWindow::handleVersionCheckFinished(bool success, bool cancelled,
+                                            const QString& message) {
+  version_check_running_ = false;
+  version_page_->finish(success, cancelled, message);
+  const auto tone = success ? UiLogTone::Success : UiLogTone::Failure;
+  appendUiLog(message, tone);
+  appendUiLog(cancelled
+                  ? QStringLiteral("========== 版本读取已停止 ==========")
+                  : success
+                        ? QStringLiteral("========== 版本读取成功 ==========")
+                        : QStringLiteral("========== 版本读取失败 =========="),
+              tone);
+  updateEnabledState();
+  updateStatusBar();
+}
+
 QString MainWindow::selectedLogTargetKey() const {
   if (!controller_bridge_ || !ui_) return {};
   bool valid{};
@@ -2273,6 +2487,12 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
     }
     if (watched == ui_->rxIdLabel) {
       restoreDefaultDiagnosticId(false);
+      return true;
+    }
+    const auto file_field = watched->property(kFlashFileFieldProperty);
+    if (file_field.isValid()) {
+      restoreDefaultFlashFile(
+          static_cast<FlashFileField>(file_field.toInt()));
       return true;
     }
   }

@@ -126,8 +126,6 @@ add_library(uds_flash STATIC
   src/flash/lp_arf_workflow.cpp
   src/flash/geely_p416_flow.cpp
   src/flash/geely_p416_workflow.cpp
-  src/flash/geely_geea2_flow.cpp
-  src/flash/geely_p146_workflow.cpp
   src/flash/shidaixinan_hjzj_fmr_flow.cpp
   src/flash/shidaixinan_hjzj_fmr_workflow.cpp
   src/flash/xizhong_rsmr_flow.cpp
@@ -252,8 +250,6 @@ if(UDS_BUILD_QT_UI AND CMAKE_SIZEOF_VOID_P EQUAL 8)
       src/flash/lp_arf_workflow.cpp
       src/flash/geely_p416_flow.cpp
       src/flash/geely_p416_workflow.cpp
-      src/flash/geely_geea2_flow.cpp
-      src/flash/geely_p146_workflow.cpp
       src/flash/shidaixinan_hjzj_fmr_flow.cpp
       src/flash/shidaixinan_hjzj_fmr_workflow.cpp
       src/flash/xizhong_rsmr_flow.cpp
@@ -316,6 +312,7 @@ if(UDS_BUILD_QT_UI AND CMAKE_SIZEOF_VOID_P EQUAL 8)
       src/app/uds_tool.rc
       src/ui/qt/main_qt.cpp
       src/ui/qt/main_window.cpp
+      src/ui/qt/resource_file_store.cpp
       src/ui/qt/main_window.hpp
       src/ui/qt/main_window.ui
       src/ui/qt/version_confirmation_page.cpp
@@ -345,7 +342,7 @@ if(UDS_BUILD_QT_UI AND CMAKE_SIZEOF_VOID_P EQUAL 8)
       oleaut32
     )
     set_target_properties(uds_tool_qt PROPERTIES
-      OUTPUT_NAME "UDS_Tool"
+      OUTPUT_NAME "CH_FLASH_tools"
       MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
     )
     add_custom_command(TARGET uds_tool_qt POST_BUILD
@@ -463,14 +460,19 @@ if(UDS_BUILD_QT_UI AND CMAKE_SIZEOF_VOID_P EQUAL 8)
               "$<TARGET_FILE_DIR:uds_tool_qt>/resources/lp_arf_231_b01"
       COMMAND ${CMAKE_COMMAND} -E remove_directory
               "$<TARGET_FILE_DIR:uds_tool_qt>/resources/geely_p416"
-      COMMAND ${CMAKE_COMMAND} -E copy_directory
-              "${CMAKE_CURRENT_SOURCE_DIR}/resources/geely_p416"
-              "$<TARGET_FILE_DIR:uds_tool_qt>/resources/geely_p416"
-      COMMAND ${CMAKE_COMMAND} -E remove_directory
-              "$<TARGET_FILE_DIR:uds_tool_qt>/resources/geely_p146"
-      COMMAND ${CMAKE_COMMAND} -E copy_directory
-              "${CMAKE_CURRENT_SOURCE_DIR}/resources/geely_p146"
-              "$<TARGET_FILE_DIR:uds_tool_qt>/resources/geely_p146"
+       COMMAND ${CMAKE_COMMAND} -E copy_directory
+               "${CMAKE_CURRENT_SOURCE_DIR}/resources/geely_p416"
+               "$<TARGET_FILE_DIR:uds_tool_qt>/resources/geely_p416"
+       COMMAND ${CMAKE_COMMAND} -E remove_directory
+               "$<TARGET_FILE_DIR:uds_tool_qt>/resources/geely_p417"
+       COMMAND ${CMAKE_COMMAND} -E copy_directory
+               "${CMAKE_CURRENT_SOURCE_DIR}/resources/geely_p417"
+               "$<TARGET_FILE_DIR:uds_tool_qt>/resources/geely_p417"
+       COMMAND ${CMAKE_COMMAND} -E remove_directory
+               "$<TARGET_FILE_DIR:uds_tool_qt>/resources/geely_p611"
+       COMMAND ${CMAKE_COMMAND} -E copy_directory
+               "${CMAKE_CURRENT_SOURCE_DIR}/resources/geely_p611"
+               "$<TARGET_FILE_DIR:uds_tool_qt>/resources/geely_p611"
     )
     if(EXISTS "${CHUNENG_331_RESOURCES}")
       add_custom_command(TARGET uds_tool_qt POST_BUILD
@@ -527,12 +529,6 @@ target_compile_definitions(geely_p416_tests PRIVATE
   UDS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 add_test(NAME geely_p416_tests COMMAND geely_p416_tests)
 
-add_executable(geely_p146_tests tests/geely_p146_tests.cpp)
-target_link_libraries(geely_p146_tests PRIVATE uds_flash uds_core)
-target_compile_definitions(geely_p146_tests PRIVATE
-  UDS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
-add_test(NAME geely_p146_tests COMMAND geely_p146_tests)
-
 add_executable(can_adapter_tests tests/can_adapter_tests.cpp)
 target_link_libraries(can_adapter_tests PRIVATE uds_flash uds_core)
 add_test(NAME can_adapter_tests COMMAND can_adapter_tests)
@@ -574,6 +570,7 @@ if(TARGET uds_tool_qt)
   add_executable(qt_main_window_tests
     tests/qt_main_window_tests.cpp
     src/ui/qt/main_window.cpp
+    src/ui/qt/resource_file_store.cpp
     src/ui/qt/main_window.hpp
     src/ui/qt/main_window.ui
     src/ui/qt/version_confirmation_page.cpp
@@ -660,8 +657,7 @@ function(install_runtime_resource resource_name)
     PATTERN "*MANIFEST*" EXCLUDE
     PATTERN "PROVENANCE.md" EXCLUDE
     PATTERN "BASELINE.md" EXCLUDE
-    PATTERN "manifest.json" EXCLUDE
-    PATTERN "*_reconstructed.vbf" EXCLUDE)
+    PATTERN "manifest.json" EXCLUDE)
 endfunction()
 
 install(DIRECTORY profiles DESTINATION .)
@@ -687,7 +683,8 @@ install_runtime_resource(shidaixinan_qingling_fmr)
 install_runtime_resource(lp_arc)
 install_runtime_resource(lp_arf)
 install_runtime_resource(geely_p416)
-install_runtime_resource(geely_p146)
+install_runtime_resource(geely_p417)
+install_runtime_resource(geely_p611)
 if(EXISTS "${CHUNENG_331_RESOURCES}")
   get_filename_component(CHUNENG_331_RESOURCE_NAME
     "${CHUNENG_331_RESOURCES}" NAME)

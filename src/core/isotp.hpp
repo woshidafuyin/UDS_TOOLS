@@ -44,6 +44,10 @@ struct IsoTpConfig {
   // concurrent high-rate wake-up frame can disable it so that frame may be
   // interleaved between ISO-TP Consecutive Frames.
   bool batch_consecutive_frames{true};
+  // Some bootloader transitions keep FlowControl/NRC 0x78 on the APP
+  // response ID but publish the final response on the new runtime ID.
+  // Zero disables the alternate receive endpoint.
+  std::uint32_t alternate_rx_id{};
 };
 
 class IsoTpSession {
@@ -56,10 +60,14 @@ public:
   void send_raw(std::uint32_t can_id, std::span<const std::uint8_t> data);
   [[nodiscard]] std::uint32_t tx_id() const noexcept { return config_.tx_id; }
   [[nodiscard]] std::uint32_t rx_id() const noexcept { return config_.rx_id; }
+  [[nodiscard]] std::uint32_t last_rx_id() const noexcept {
+    return last_rx_id_;
+  }
 
 private:
   ICanBus& bus_;
   IsoTpConfig config_;
+  std::uint32_t last_rx_id_{};
   CanFrame wait_for_id(std::chrono::milliseconds timeout,
                        std::stop_token stop = {});
   void send_formatted(std::uint32_t can_id,

@@ -54,6 +54,10 @@ struct FlashProfile {
   std::uint32_t tx_id{};
   std::uint32_t rx_id{};
   std::uint32_t functional_id{};
+  // Optional endpoint used after a downloaded secondary bootloader starts.
+  // Zero keeps the normal physical endpoint for projects without a switch.
+  std::uint32_t programming_tx_id{};
+  std::uint32_t programming_rx_id{};
   std::uint32_t ft_tx_id{};
   std::uint32_t ft_rx_id{};
   bool ft_extended_id{};

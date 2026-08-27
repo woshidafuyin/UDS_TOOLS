@@ -46,6 +46,8 @@ struct GeelyP416Timing {
 };
 
 GeelyP416EntryMode resolve_geely_p416_entry_mode(std::wstring_view entry_mode);
+std::uint8_t geely_p416_family_ess_data_format_identifier(
+    std::wstring_view profile_id, std::uint8_t vbf_value);
 std::array<std::uint8_t, 3> geely_p416_seed_key(
     std::span<const std::uint8_t> seed);
 std::vector<std::uint8_t> geely_p416_request_download(
@@ -58,15 +60,15 @@ std::vector<std::uint8_t> geely_p416_verify_signature(
 std::vector<std::uint8_t> geely_p416_call(std::uint32_t address);
 std::size_t geely_p416_transfer_chunk_size(
     std::span<const std::uint8_t> request_download_response);
-void validate_geely_p416_images(const GeelyP416Images& images);
-
 class GeelyP416Flow {
 public:
   using Log = std::function<void(int, const std::string&)>;
 
-  GeelyP416Flow(UdsClient& app_physical, UdsClient& app_functional,
+  GeelyP416Flow(UdsClient& app_physical, UdsClient& sbl_transition_physical,
+                UdsClient& programming_physical, UdsClient& app_functional,
                 UdsClient& pls_physical, UdsClient& pls_functional,
-                IsoTpSession& raw_transport, Log log,
+                IsoTpSession& raw_transport,
+                IsoTpSession& sbl_transition_transport, Log log,
                 GeelyP416Timing timing = {});
 
   void run(const GeelyP416Images& images, GeelyP416EntryMode entry_mode,
@@ -83,19 +85,22 @@ private:
   void enter_from_app();
   void enter_from_pls();
   void unlock();
-  void transfer_file(const VbfFile& file, int begin_percent,
+  void transfer_file(UdsClient& client, const VbfFile& file, int begin_percent,
                      int end_percent, const std::string& label);
-  void verify_file(const VbfFile& file, int percent,
+  void verify_file(UdsClient& client, const VbfFile& file, int percent,
                    const std::string& label);
-  void erase_file(const VbfFile& file, int begin_percent,
+  void erase_file(UdsClient& client, const VbfFile& file, int begin_percent,
                   const std::string& label);
   void program(const GeelyP416Images& images);
 
   UdsClient& app_physical_;
+  UdsClient& sbl_transition_physical_;
+  UdsClient& programming_physical_;
   UdsClient& app_functional_;
   UdsClient& pls_physical_;
   UdsClient& pls_functional_;
   IsoTpSession& raw_transport_;
+  IsoTpSession& sbl_transition_transport_;
   Log log_;
   GeelyP416Timing timing_;
   std::stop_token stop_;

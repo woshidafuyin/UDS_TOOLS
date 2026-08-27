@@ -66,8 +66,11 @@ UdsResponse UdsClient::request(std::span<const std::uint8_t> payload,
     const auto matching_negative =
         negative && negative->request_sid == payload[0];
     if (logger_) {
+      const auto response_id = transport_.last_rx_id() != 0
+                                   ? transport_.last_rx_id()
+                                   : transport_.rx_id();
       auto line =
-          "RX [" + format_can_id(transport_.rx_id()) + "] " + to_hex(response);
+          "RX [" + format_can_id(response_id) + "] " + to_hex(response);
       if (matching_negative) line += " | " + format_uds_nrc(negative->nrc);
       logger_(line);
     }
