@@ -769,6 +769,7 @@ void MainWindow::connectActions() {
               // A newly selected standalone APP must never silently reuse a
               // certificate that belonged to the previous APP/package.
               showPath(ui_->appVerifyPathLineEdit, {});
+              saveRuntimeFileSelection();
             }
             updateAppPackagePresentation(true);
           });
@@ -1367,24 +1368,59 @@ void MainWindow::applySelectedProfile(int device_index) {
 
 void MainWindow::saveRuntimeFileSelection() {
   if (active_file_selection_key_.isEmpty()) return;
-  runtime_file_selections_.insert(
-      active_file_selection_key_,
-      RuntimeFileSelection{
-          fullPath(ui_->driverPathLineEdit),
-          fullPath(ui_->appPathLineEdit),
-          fullPath(ui_->calPathLineEdit),
-          fullPath(ui_->driverVerifyPathLineEdit),
-          fullPath(ui_->appVerifyPathLineEdit),
-          fullPath(ui_->calVerifyPathLineEdit),
-          fullPath(ui_->seedKeyDllPathLineEdit),
-      });
+  const RuntimeFileSelection selection{
+      fullPath(ui_->driverPathLineEdit),
+      fullPath(ui_->appPathLineEdit),
+      fullPath(ui_->calPathLineEdit),
+      fullPath(ui_->driverVerifyPathLineEdit),
+      fullPath(ui_->appVerifyPathLineEdit),
+      fullPath(ui_->calVerifyPathLineEdit),
+      fullPath(ui_->seedKeyDllPathLineEdit),
+  };
+  runtime_file_selections_.insert(active_file_selection_key_, selection);
+
+  QSettings settings;
+  settings.beginGroup(QStringLiteral("flash_file_selections"));
+  settings.beginGroup(active_file_selection_key_);
+  settings.setValue(QStringLiteral("driver"), selection.driver_path);
+  settings.setValue(QStringLiteral("app"), selection.app_path);
+  settings.setValue(QStringLiteral("cal"), selection.cal_path);
+  settings.setValue(QStringLiteral("driver_verify"),
+                    selection.driver_verify_path);
+  settings.setValue(QStringLiteral("app_verify"), selection.app_verify_path);
+  settings.setValue(QStringLiteral("cal_verify"), selection.cal_verify_path);
+  settings.setValue(QStringLiteral("seed_key_dll"),
+                    selection.seed_key_dll_path);
+  settings.endGroup();
+  settings.endGroup();
+  settings.sync();
 }
 
 void MainWindow::restoreRuntimeFileSelection() {
   active_file_selection_key_ = selectedLogTargetKey();
   if (active_file_selection_key_.isEmpty()) return;
-  const auto saved = runtime_file_selections_.constFind(
-      active_file_selection_key_);
+  auto saved = runtime_file_selections_.constFind(active_file_selection_key_);
+  if (saved == runtime_file_selections_.cend()) {
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("flash_file_selections"));
+    settings.beginGroup(active_file_selection_key_);
+    if (settings.contains(QStringLiteral("driver"))) {
+      runtime_file_selections_.insert(
+          active_file_selection_key_,
+          RuntimeFileSelection{
+              settings.value(QStringLiteral("driver")).toString(),
+              settings.value(QStringLiteral("app")).toString(),
+              settings.value(QStringLiteral("cal")).toString(),
+              settings.value(QStringLiteral("driver_verify")).toString(),
+              settings.value(QStringLiteral("app_verify")).toString(),
+              settings.value(QStringLiteral("cal_verify")).toString(),
+              settings.value(QStringLiteral("seed_key_dll")).toString(),
+          });
+      saved = runtime_file_selections_.constFind(active_file_selection_key_);
+    }
+    settings.endGroup();
+    settings.endGroup();
+  }
   if (saved == runtime_file_selections_.cend()) return;
 
   showPath(ui_->driverPathLineEdit, saved->driver_path);
@@ -1445,11 +1481,29 @@ bool MainWindow::storeSelectedFlashFile(FlashFileField field,
                                         const QString& selected,
                                         QLineEdit* editor,
                                         const QString& log_name) {
-  const auto default_path = configuredDefaultFlashFile(field);
+  auto default_path = configuredDefaultFlashFile(field);
+  // Some package formats embed verification data, so their verification slot
+  // intentionally has no default file. Use the corresponding payload file as
+  // a project-owned directory anchor without introducing project branches.
+  if (default_path.isEmpty()) {
+    switch (field) {
+    case FlashFileField::DriverVerify:
+      default_path = configuredDefaultFlashFile(FlashFileField::Driver);
+      break;
+    case FlashFileField::AppVerify:
+      default_path = configuredDefaultFlashFile(FlashFileField::App);
+      break;
+    case FlashFileField::CalVerify:
+      default_path = configuredDefaultFlashFile(FlashFileField::Cal);
+      break;
+    default:
+      break;
+    }
+  }
   const auto resources_root = QDir(QCoreApplication::applicationDirPath())
                                   .filePath(QStringLiteral("resources"));
   const auto result = replaceConfiguredResourceFile(
-      selected, default_path, resources_root);
+      selected, default_path, resources_root, fullPath(editor));
   if (!result.success) {
     QMessageBox::warning(this, QStringLiteral("替换默认资源失败"), result.error);
     appendUiLog(QStringLiteral("%1默认资源替换失败：%2")
@@ -1460,9 +1514,19 @@ bool MainWindow::storeSelectedFlashFile(FlashFileField field,
 
   showPath(editor, result.stored_path);
   saveRuntimeFileSelection();
-  appendUiLog(QStringLiteral("%1默认资源已替换：%2 → %3")
+  appendUiLog(QStringLiteral("%1已复制到默认资源目录（保留原文件名）：%2 → %3")
                   .arg(log_name, QDir::toNativeSeparators(selected),
                        QDir::toNativeSeparators(result.stored_path)));
+  if (!result.removed_path.isEmpty()) {
+    appendUiLog(QStringLiteral("已删除%1默认目录中的同后缀旧文件：%2")
+                    .arg(log_name,
+                         QDir::toNativeSeparators(result.removed_path)));
+  }
+  if (!result.cleanup_warning.isEmpty()) {
+    appendUiLog(result.cleanup_warning, UiLogTone::Pending);
+    QMessageBox::warning(this, QStringLiteral("旧资源清理未完成"),
+                         result.cleanup_warning);
+  }
   return true;
 }
 
@@ -1502,6 +1566,15 @@ void MainWindow::restoreDefaultFlashFile(FlashFileField field) {
     break;
   }
   if (!editor) return;
+
+  if (!default_path.isEmpty() && !QFileInfo(default_path).isFile()) {
+    const auto message =
+        QStringLiteral("Profile原默认%1已被更新文件替换并清理，无法恢复：%2")
+            .arg(field_name, QDir::toNativeSeparators(default_path));
+    appendUiLog(message, UiLogTone::Pending);
+    QMessageBox::warning(this, QStringLiteral("原默认资源已不存在"), message);
+    return;
+  }
 
   showPath(editor, default_path);
   if (field == FlashFileField::App || field == FlashFileField::AppVerify) {

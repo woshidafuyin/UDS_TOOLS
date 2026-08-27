@@ -311,6 +311,8 @@ if(UDS_BUILD_QT_UI AND CMAKE_SIZEOF_VOID_P EQUAL 8)
     add_executable(uds_tool_qt WIN32
       src/app/uds_tool.rc
       src/ui/qt/main_qt.cpp
+      src/ui/qt/startup_window_presenter.cpp
+      src/ui/qt/startup_window_presenter.hpp
       src/ui/qt/main_window.cpp
       src/ui/qt/resource_file_store.cpp
       src/ui/qt/main_window.hpp
@@ -569,6 +571,8 @@ if(TARGET uds_tool_qt)
 
   add_executable(qt_main_window_tests
     tests/qt_main_window_tests.cpp
+    src/ui/qt/startup_window_presenter.cpp
+    src/ui/qt/startup_window_presenter.hpp
     src/ui/qt/main_window.cpp
     src/ui/qt/resource_file_store.cpp
     src/ui/qt/main_window.hpp

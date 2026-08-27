@@ -1,4 +1,5 @@
 #include "ui/qt/main_window.hpp"
+#include "ui/qt/startup_window_presenter.hpp"
 
 #include <QApplication>
 #include <QFont>
@@ -17,7 +18,7 @@ int main(int argc, char* argv[]) {
   QApplication::setWindowIcon(QIcon(QStringLiteral(":/icons/uds_flash_tool.ico")));
 
   uds::ui::qt::MainWindow window;
-  window.show();
+  uds::ui::qt::presentWindowOnStartup(window);
   window.startDefaultBusMonitoring();
 
   return application.exec();

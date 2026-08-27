@@ -1,5 +1,6 @@
 #include "app/flash_request.hpp"
 #include "ui/qt/main_window.hpp"
+#include "ui/qt/startup_window_presenter.hpp"
 #include "ui/qt/bus_monitor_page.hpp"
 #include "ui/qt/controller_bridge.hpp"
 #include "ui/qt/resource_file_store.hpp"
@@ -39,6 +40,10 @@
 #include <iostream>
 #include <random>
 #include <stdexcept>
+
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#endif
 
 namespace {
 
@@ -279,6 +284,26 @@ int main(int argc, char* argv[]) {
     QApplication application(argc, argv);
     QApplication::setOrganizationName(QStringLiteral("UDSToolsTests"));
     QApplication::setApplicationName(QStringLiteral("uds_tool_qt_state_test"));
+
+    {
+      QWidget startup_window;
+      startup_window.setWindowTitle(QStringLiteral("startup presentation test"));
+      uds::ui::qt::presentWindowOnStartup(startup_window);
+      application.processEvents();
+      check(startup_window.isVisible(),
+            "startup presenter must show the requested window");
+      check((startup_window.windowFlags() & Qt::WindowStaysOnTopHint) == 0,
+            "startup presenter must not leave the window always on top");
+#ifdef Q_OS_WIN
+      const auto startup_handle =
+          reinterpret_cast<HWND>(startup_window.winId());
+      const auto extended_style =
+          GetWindowLongPtr(startup_handle, GWL_EXSTYLE);
+      check((extended_style & WS_EX_TOPMOST) == 0,
+            "startup presenter must clear the native topmost state");
+#endif
+      startup_window.close();
+    }
     application.setQuitOnLastWindowClosed(false);
     const auto settings_path = QDir::temp().filePath(
         QStringLiteral("uds_tool_qt_state_test_settings_%1")
@@ -311,12 +336,52 @@ int main(int argc, char* argv[]) {
       check(old.open(QIODevice::WriteOnly) && old.write("OLD", 3) == 3,
             "Resource replacement default write failed");
       old.close();
+      const auto preserved_tmp = QDir(resources).filePath("package.tmp");
+      QFile tmp_file(preserved_tmp);
+      check(tmp_file.open(QIODevice::WriteOnly) &&
+                tmp_file.write("KEEP_TMP", 8) == 8,
+            "Different-suffix resource setup failed");
+      tmp_file.close();
+      const auto unrelated_s19 = QDir(resources).filePath("other-field.s19");
+      QFile unrelated_file(unrelated_s19);
+      check(unrelated_file.open(QIODevice::WriteOnly) &&
+                unrelated_file.write("KEEP_OTHER_FIELD", 16) == 16,
+            "Unrelated same-suffix resource setup failed");
+      unrelated_file.close();
       const auto replaced = uds::ui::qt::replaceConfiguredResourceFile(
           selected, configured, QDir(sandbox.path()).filePath("resources"));
-      QFile stored(configured);
+      const auto stored_path = QDir(resources).filePath("new.s19");
+      QFile stored(stored_path);
       check(replaced.success && stored.open(QIODevice::ReadOnly) &&
-                stored.readAll() == QByteArray("NEW_RESOURCE", 12),
-            "Selected file did not atomically replace the default resource");
+                stored.readAll() == QByteArray("NEW_RESOURCE", 12) &&
+                QFileInfo(replaced.stored_path).fileName() == "new.s19" &&
+                !QFileInfo::exists(configured) && QFileInfo::exists(selected) &&
+                QFileInfo::exists(preserved_tmp) &&
+                QFileInfo::exists(unrelated_s19),
+            "Replacement removed an unrelated resource file");
+      stored.close();
+
+      const auto next_selected =
+          QDir(sandbox.path()).filePath("external/next.s19");
+      QFile next_input(next_selected);
+      check(next_input.open(QIODevice::WriteOnly) &&
+                next_input.write("NEXT_RESOURCE", 13) == 13,
+            "Second resource replacement input write failed");
+      next_input.close();
+      const auto next = uds::ui::qt::replaceConfiguredResourceFile(
+          next_selected, configured,
+          QDir(sandbox.path()).filePath("resources"), replaced.stored_path);
+      QFile next_stored(QDir(resources).filePath("next.s19"));
+      check(next.success && next_stored.open(QIODevice::ReadOnly) &&
+                next_stored.readAll() == QByteArray("NEXT_RESOURCE", 13) &&
+                !QFileInfo::exists(stored_path) &&
+                QFileInfo::exists(next_selected),
+            "Second selection did not remove the previous managed file");
+      next_stored.close();
+
+      check(QFileInfo::exists(preserved_tmp) &&
+                QFileInfo::exists(unrelated_s19),
+            "Second replacement removed an unrelated resource file");
     }
 
     {
@@ -1117,9 +1182,9 @@ int main(int argc, char* argv[]) {
             "Qt diagnostic ID, CBF, or SeedKey fields are missing");
       check_all_flash_projects_present(projects);
 
-      // User-selected flash files are session state: switching away and back
-      // in the same window restores them, while a newly constructed window
-      // starts again from the Profile resources defaults.
+      // User-selected flash files remain isolated per project/target and are
+      // persisted so a restart keeps referring to the original selected
+      // filename copied into that target's resource directory.
       const auto geely_vendor = find_text(projects, QStringLiteral("吉利"));
       check(geely_vendor >= 0, "Geely vendor missing for runtime file test");
       projects->setCurrentIndex(geely_vendor);
@@ -1167,6 +1232,27 @@ int main(int argc, char* argv[]) {
         check(field && field->property("fullPath").toString() ==
                            QDir::toNativeSeparators(runtime_paths[index]),
               "Runtime flash-file selection was not restored");
+      }
+
+      {
+        uds::ui::qt::MainWindow persisted_reopen;
+        auto* persisted_vendors = persisted_reopen.findChild<QComboBox*>(
+            QStringLiteral("projectComboBox"));
+        auto* persisted_projects = persisted_reopen.findChild<QComboBox*>(
+            QStringLiteral("deviceComboBox"));
+        persisted_vendors->setCurrentIndex(
+            find_text(persisted_vendors, QStringLiteral("吉利")));
+        application.processEvents();
+        persisted_projects->setCurrentIndex(
+            find_text(persisted_projects, QStringLiteral("P611")));
+        application.processEvents();
+        for (std::size_t index = 0; index < file_field_names.size(); ++index) {
+          const auto* field = persisted_reopen.findChild<QLineEdit*>(
+              file_field_names[index]);
+          check(field && field->property("fullPath").toString() ==
+                             QDir::toNativeSeparators(runtime_paths[index]),
+                "A new window did not restore the persisted flash-file selection");
+        }
       }
 
       const std::array<QString, 7> file_label_names{

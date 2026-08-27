@@ -117,16 +117,12 @@ void LpArfWorkflow::run(
 
   const auto app_crc = lingpao_radar_crc32(images.app.data);
   const auto app_hash = sha256(images.app.data);
-  if (!same_bytes(app_hash,
-                  std::span(images.certificate).first(app_hash.size()))) {
-    throw std::runtime_error(
-        "LP-ARF certificate prefix does not match APP data SHA-256");
-  }
   const auto layout =
       "APP=" + hex_u32(images.app.address) + "/" +
       hex_u32(static_cast<std::uint32_t>(images.app.data.size())) +
       ", CRC32=" + hex_u32(app_crc) + ", SHA-256=" + to_hex(app_hash) +
-      "; certificate=1322 bytes matched to selected APP; "
+      "; certificate=1322 bytes loaded; binding verdict is delegated to ECU "
+      "31 01 60 00 per CANoe baseline; "
       "certificate-source=" +
       std::string(artifacts.certificate_embedded ? "TMP embedded" :
                                                    "external file") +
@@ -162,8 +158,9 @@ void LpArfWorkflow::run(
          "FFFD13DE->C0828573 and FFFD03D0->1407370F");
   report(callbacks, "Acceptance boundary", "WARN",
          "Unified ARF entry covers A12/B11 ARF2.31 and ARF6.31; select one "
-         "project-matched TMP package or APP/certificate pair. C++ bench "
-         "acceptance remains separate for each ECU variant");
+         "project-appropriate TMP package or APP/certificate input. The "
+         "certificate is sent as-is and ECU 31 01 60 00 is authoritative; "
+         "C++ bench acceptance remains separate for each ECU variant");
 
   if (!job.can_bus_provider) {
     throw std::runtime_error("CAN bus provider is not configured");
