@@ -1637,7 +1637,7 @@ void MainWindow::updateAppPackagePresentation(bool report_error) {
     const auto summary =
         QStringLiteral(
             "来源：%1\nAPP 地址：0x%2\nAPP 长度：0x%3（%4 bytes）\n"
-            "APP CRC32：0x%5\nCertificate：%6 bytes\n状态：结构、CRC32及APP哈希绑定校验通过")
+            "APP声明CRC32：0x%5\nCertificate：%6 bytes\n状态：TMP结构解析完成；CRC及验签由ECU判定")
             .arg(QDir::toNativeSeparators(app_path))
             .arg(package.app.address, 8, 16, QLatin1Char('0'))
             .arg(package.app.data.size(), 0, 16)
@@ -1648,7 +1648,7 @@ void MainWindow::updateAppPackagePresentation(bool report_error) {
     verification->setProperty(kFullPathProperty, QString{});
     verification->setProperty(kEmbeddedVerificationProperty, true);
     verification->setText(
-        QStringLiteral("TMP 内置 Certificate · %1 B · 已验证")
+        QStringLiteral("TMP 内置 Certificate · %1 B · 已解析")
             .arg(package.certificate.size()));
     verification->setToolTip(summary);
     verification->setCursorPosition(0);
@@ -2093,7 +2093,7 @@ void MainWindow::startFlashFromUi() {
       !ui_->appPathLineEdit->property(kPackageValidProperty).toBool()) {
     QMessageBox::warning(
         this, QStringLiteral("TMP升级包无效"),
-        QStringLiteral("当前TMP未通过结构、CRC32或APP哈希绑定校验，禁止刷写。"));
+        QStringLiteral("当前TMP结构解析失败，禁止刷写。"));
     return;
   }
   if (needs_app && profile.supports_app_tmp_package && !embedded_tmp &&

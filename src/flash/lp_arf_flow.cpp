@@ -19,12 +19,6 @@ std::wstring lowercase_extension(const std::filesystem::path& path) {
   return extension;
 }
 
-bool same_bytes(std::span<const std::uint8_t> left,
-                std::span<const std::uint8_t> right) {
-  return left.size() == right.size() &&
-         std::equal(left.begin(), left.end(), right.begin());
-}
-
 SRecordSegment load_external_app(const std::filesystem::path& path) {
   if (path.empty()) {
     throw std::runtime_error("select an LP-ARF APP S19/SREC/BIN or TMP package");
@@ -80,11 +74,6 @@ LpArfArtifacts load_lp_arf_artifacts(
   if (lowercase_extension(certificate_path) == L".tmp") {
     auto package = load_leapmotor_tmp(certificate_path);
     require_valid_package(package);
-    if (package.app.address != app.address ||
-        !same_bytes(package.app.data, app.data)) {
-      throw std::runtime_error(
-          "LP-ARF TMP APP does not match the selected S19/BIN");
-    }
     return {{{}, {app.address, std::move(app.data)},
              std::move(package.certificate)},
             false};

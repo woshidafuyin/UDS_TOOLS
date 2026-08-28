@@ -23,9 +23,10 @@ struct LpArfArtifacts {
 // Normalize both supported operator inputs into one execution artifact:
 //   TMP              -> embedded APP + embedded certificate
 //   S19/SREC/BIN+ASC -> selected APP + external certificate
-//   S19/SREC/BIN+TMP -> selected APP + matched package certificate
+//   S19/SREC/BIN+TMP -> selected APP + parsed package certificate
 // This is deliberately UI-independent so every ARF workflow shares the same
-// package policy and fail-closed validation.
+// package parsing policy. Certificate authenticity and APP binding are left
+// to the ECU's 6000/6001 routines.
 LpArfArtifacts load_lp_arf_artifacts(
     const std::filesystem::path& app_path,
     const std::filesystem::path& certificate_path = {});

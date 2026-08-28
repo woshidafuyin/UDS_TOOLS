@@ -1856,16 +1856,31 @@ void test_lp_arf_tmp_packages() {
     output.write(reinterpret_cast<const char*>(corrupted_package.data()),
                  static_cast<std::streamsize>(corrupted_package.size()));
   }
-  bool corrupted_rejected = false;
+  bool corrupted_parsed = false;
   try {
-    static_cast<void>(uds::load_leapmotor_tmp(corrupted_tmp));
+    const auto parsed = uds::load_leapmotor_tmp(corrupted_tmp);
+    corrupted_parsed =
+        parsed.app.data.size() == uds::kLpArfAppLength &&
+        parsed.app.data.front() == corrupted_package[app_offset];
   } catch (const std::runtime_error&) {
-    corrupted_rejected = true;
+    corrupted_parsed = false;
   }
   std::error_code remove_error;
   std::filesystem::remove(corrupted_tmp, remove_error);
-  check(corrupted_rejected,
-        "Leapmotor TMP parser accepted an APP with invalid CRC32");
+  check(corrupted_parsed,
+        "Leapmotor TMP parser rejected a structurally valid package because of local integrity policy");
+
+  const auto external_s19 =
+      source / "resources/lp_arf/APP/"
+               "ARF6.31V1.0_PF4T4R_B1.00.01_APP_V1.00.04_CHF0383N_without_boot.s19";
+  const auto unbound_artifacts =
+      uds::load_lp_arf_artifacts(external_s19, valid_tmp);
+  check(!unbound_artifacts.certificate_embedded &&
+            unbound_artifacts.images.app.data.size() ==
+                uds::kLpArfAppLength &&
+            unbound_artifacts.images.certificate.size() ==
+                uds::kLpArfCertificateLength,
+        "LP-ARF S19+TMP parsing still enforces a local APP/certificate binding policy");
   const auto n61 = uds::load_profile_ini(
       source / "profiles" / "baic_n61ab.ini");
   const auto bqb41 = uds::load_profile_ini(

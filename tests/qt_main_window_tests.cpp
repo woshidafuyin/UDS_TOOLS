@@ -1853,6 +1853,10 @@ int main(int argc, char* argv[]) {
                         .contains(QStringLiteral("TMP 内置 Certificate")) &&
                 window.findChild<QLineEdit*>(
                           QStringLiteral("appVerifyPathLineEdit"))
+                        ->text()
+                        .contains(QStringLiteral("已解析")) &&
+                window.findChild<QLineEdit*>(
+                          QStringLiteral("appVerifyPathLineEdit"))
                         ->property("embeddedVerification")
                         .toBool() &&
                 window.findChild<QLineEdit*>(

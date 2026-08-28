@@ -420,16 +420,6 @@ LeapmotorTmpPackage load_leapmotor_tmp(
   package.certificate.assign(
       file.begin() + static_cast<std::ptrdiff_t>(certificate_offset),
       file.end());
-  if (crc32_ieee(package.app.data) != package.app_crc32) {
-    throw std::runtime_error("Leapmotor TMP APP CRC32 mismatch");
-  }
-  const auto app_hash = sha256(package.app.data);
-  if (package.certificate.size() < app_hash.size() ||
-      !std::equal(app_hash.begin(), app_hash.end(),
-                  package.certificate.begin())) {
-    throw std::runtime_error(
-        "Leapmotor TMP certificate is not bound to the APP SHA-256");
-  }
   return package;
 }
 
