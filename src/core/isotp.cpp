@@ -1,4 +1,5 @@
 #include "core/isotp.hpp"
+#include "core/hex.hpp"
 
 #include <algorithm>
 #include <array>
@@ -80,7 +81,7 @@ CanFrame IsoTpSession::wait_for_id(std::chrono::milliseconds timeout,
     }
   }
   throw_if_cancelled(stop);
-  throw std::runtime_error("ISO-TP receive timeout");
+  throw IsoTpReceiveTimeout();
 }
 
 std::chrono::microseconds IsoTpSession::st_min_delay(std::uint8_t value) {
@@ -143,7 +144,8 @@ void IsoTpSession::send(std::span<const std::uint8_t> payload,
     throw std::runtime_error("ISO-TP first flow-control timeout");
   }
   if (fc.data.size() < 3 || (fc.data[0] & 0xF0U) != 0x30U || (fc.data[0] & 0x0FU) != 0) {
-    throw std::runtime_error("ISO-TP flow control rejected");
+    throw std::runtime_error("ISO-TP flow control rejected; received " +
+                             to_hex(fc.data));
   }
   auto block_size = fc.data[1];
   auto separation = st_min_delay(fc.data[2]);
@@ -209,7 +211,8 @@ void IsoTpSession::send(std::span<const std::uint8_t> payload,
       }
       if (fc.data.size() < 3 || (fc.data[0] & 0xF0U) != 0x30U ||
           (fc.data[0] & 0x0FU) != 0) {
-        throw std::runtime_error("ISO-TP block FC rejected");
+        throw std::runtime_error("ISO-TP block FC rejected; received " +
+                                 to_hex(fc.data));
       }
       block_size = fc.data[1];
       separation = st_min_delay(fc.data[2]);

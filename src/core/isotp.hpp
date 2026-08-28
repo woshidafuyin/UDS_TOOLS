@@ -6,10 +6,16 @@
 #include <array>
 #include <cstdint>
 #include <span>
+#include <stdexcept>
 #include <stop_token>
 #include <vector>
 
 namespace uds {
+
+class IsoTpReceiveTimeout final : public std::runtime_error {
+public:
+  IsoTpReceiveTimeout() : std::runtime_error("ISO-TP receive timeout") {}
+};
 
 struct IsoTpConfig {
   std::uint32_t tx_id{0x772};

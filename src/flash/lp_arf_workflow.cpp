@@ -137,9 +137,10 @@ void LpArfWorkflow::run(
       "Unified ARF entry covers A12/B11 ARF2.31 and ARF6.31. The flashing "
       "service sequence is unchanged and always sends 31 01 60 00 followed "
       "by 31 01 60 01; an omitted S19 certificate produces an empty 6000 "
-      "payload. LP-ARF sends both routines without waiting for or requiring "
-      "their responses. C++ bench acceptance remains separate for each ECU "
-      "variant");
+      "payload. LP-ARF observes, logs, and consumes both routine responses "
+      "within bounded windows, but positive, negative, or no response does "
+      "not gate continuation. Transport send failures remain fatal. C++ "
+      "bench acceptance remains separate for each ECU variant");
 
   if (!job.can_bus_provider) {
     throw std::runtime_error("CAN bus provider is not configured");

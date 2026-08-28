@@ -160,6 +160,38 @@ UdsResponse LingpaoRadarFlow::expect(
   return result;
 }
 
+void LingpaoRadarFlow::observe_certificate_response(
+    std::span<const std::uint8_t> request, int percent,
+    const std::string& name) {
+  check_cancelled();
+  if (log_) {
+    log_(percent, name +
+                      " (observe response; LP-ARF result is non-gating)");
+  }
+  const auto observation = physical_.request_observe(
+      request, timing_.certificate_response_window,
+      timing_.certificate_pending_window, stop_);
+  if (!log_) return;
+
+  switch (observation.kind) {
+  case UdsObservationKind::positive:
+    log_(percent, name + " response consumed; LP-ARF continues: " +
+                      to_hex(observation.response));
+    return;
+  case UdsObservationKind::negative:
+    log_(percent, "WARN: " + name + " received " + observation.detail +
+                      "; response consumed and ignored by LP-ARF policy; "
+                      "continuing");
+    return;
+  case UdsObservationKind::timeout:
+    log_(percent, "WARN: " + name +
+                      " received no final response after " +
+                      std::to_string(observation.elapsed.count()) +
+                      " ms; continuing by LP-ARF policy");
+    return;
+  }
+}
+
 void LingpaoRadarFlow::check_cancelled() const {
   if (periodic_wakeup_failed_.load()) {
     throw std::runtime_error(spec_.name +
@@ -379,7 +411,8 @@ void LingpaoRadarFlow::run_programming_body(
                      images.certificate.end());
   constexpr std::array<std::uint8_t, 4> certificate_verify{
       0x31, 0x01, 0x60, 0x01};
-  if (spec_.wait_for_certificate_responses) {
+  if (spec_.certificate_response_policy ==
+      CertificateResponsePolicy::require_positive) {
     expect(physical_, certificate,
            std::array<std::uint8_t, 5>{0x71, 0x01, 0x60, 0x00, 0x04}, 18,
            "31 01 60 00 CertificateDownload");
@@ -387,20 +420,10 @@ void LingpaoRadarFlow::run_programming_body(
            std::array<std::uint8_t, 5>{0x71, 0x01, 0x60, 0x01, 0x04}, 20,
            "31 01 60 01 CertificateVerify");
   } else {
-    check_cancelled();
-    if (log_) {
-      log_(18,
-           "31 01 60 00 CertificateDownload (send-only; response not required)");
-    }
-    physical_.send_only(certificate, stop_);
-    wait_for(timing_.step_delay);
-    check_cancelled();
-    if (log_) {
-      log_(20,
-           "31 01 60 01 CertificateVerify (send-only; response not required)");
-    }
-    physical_.send_only(certificate_verify, stop_);
-    wait_for(timing_.step_delay);
+    observe_certificate_response(certificate, 18,
+                                 "31 01 60 00 CertificateDownload");
+    observe_certificate_response(certificate_verify, 20,
+                                 "31 01 60 01 CertificateVerify");
   }
 
   std::vector<std::uint8_t> f198{0x2E, 0xF1, 0x98};

@@ -36,6 +36,11 @@ struct RadarSecurityAccessSpec {
   std::string self_test_description;
 };
 
+enum class CertificateResponsePolicy {
+  require_positive,
+  observe_and_continue,
+};
+
 struct LingpaoRadarSpec {
   std::string name;
   std::uint32_t app_tx_id{};
@@ -55,9 +60,10 @@ struct LingpaoRadarSpec {
   // Boot does not require an external S19 certificate. Other flows retain
   // the exact certificate-length requirement by default.
   bool allow_empty_certificate{};
-  // LP-ARF can transmit the two certificate routines without waiting for
-  // their responses. Other flows retain request/positive-response handling.
-  bool wait_for_certificate_responses{true};
+  // LP-ARF consumes and records both certificate routine responses without
+  // using them as a continue/fail gate. Other flows require a positive reply.
+  CertificateResponsePolicy certificate_response_policy{
+      CertificateResponsePolicy::require_positive};
   bool supports_pls_entry{true};
   std::uint32_t raw_boot_transition_tx_id{};
   std::optional<std::uint32_t> periodic_wakeup_id;
@@ -75,6 +81,8 @@ struct LingpaoRadarTiming {
   std::chrono::milliseconds startup_settle{1000};
   std::chrono::milliseconds initial_session_settle{2000};
   std::chrono::milliseconds step_delay{100};
+  std::chrono::milliseconds certificate_response_window{1000};
+  std::chrono::milliseconds certificate_pending_window{5000};
   std::chrono::milliseconds programming_session_settle{2000};
   std::chrono::milliseconds boot_before{10};
   std::chrono::milliseconds boot_after{30};
@@ -120,6 +128,9 @@ private:
                      std::span<const std::uint8_t> request,
                      std::span<const std::uint8_t> prefix, int percent,
                      const std::string& name);
+  void observe_certificate_response(
+      std::span<const std::uint8_t> request, int percent,
+      const std::string& name);
   void check_cancelled() const;
   void wait_for(std::chrono::milliseconds duration) const;
   void enter_from_app();

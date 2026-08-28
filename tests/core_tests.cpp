@@ -307,6 +307,71 @@ void test_uds_response_pending_and_nrc() {
         "negative UDS response did not retain the concrete NRC meaning");
 }
 
+void test_uds_observe_consumes_non_gating_responses() {
+  using namespace std::chrono_literals;
+
+  MockBus negative_bus;
+  negative_bus.rx.push_back(
+      frame({0x03, 0x7F, 0x31, 0x13, 0, 0, 0, 0}));
+  uds::IsoTpSession negative_tp(negative_bus, {0x772, 0x77A, 0x55});
+  std::vector<std::string> logs;
+  uds::UdsClient negative_client(
+      negative_tp, [&logs](const std::string& line) { logs.push_back(line); });
+  const std::array<std::uint8_t, 4> certificate{
+      0x31, 0x01, 0x60, 0x00};
+  const auto negative =
+      negative_client.request_observe(certificate, 10ms, 20ms);
+  check(negative.kind == uds::UdsObservationKind::negative &&
+            negative.nrc == 0x13 && negative_bus.rx.empty() &&
+            !logs.empty() && logs.back().find("NRC 0x13") != std::string::npos,
+        "non-gating UDS observation did not consume/log the final NRC");
+
+  // Reproduce the LP-ARF failure shape: a delayed 31 response must be consumed
+  // before the following multi-frame 2E request waits for FlowControl.
+  negative_bus.rx.push_back(frame({0x30, 0x00, 0x00, 0, 0, 0, 0, 0}));
+  negative_bus.rx.push_back(frame({0x03, 0x6E, 0xF1, 0x98, 0, 0, 0, 0}));
+  std::vector<std::uint8_t> fingerprint{0x2E, 0xF1, 0x98};
+  fingerprint.resize(19, 0);
+  const auto fingerprint_response = negative_client.request(fingerprint);
+  check(fingerprint_response.success &&
+            fingerprint_response.response ==
+                std::vector<std::uint8_t>({0x6E, 0xF1, 0x98}),
+        "consumed certificate NRC contaminated the next multi-frame request");
+
+  MockBus positive_bus;
+  positive_bus.rx.push_back(
+      frame({0x05, 0x71, 0x01, 0x60, 0x01, 0x04, 0, 0}));
+  uds::IsoTpSession positive_tp(positive_bus, {0x772, 0x77A, 0x55});
+  uds::UdsClient positive_client(positive_tp);
+  const std::array<std::uint8_t, 4> verify{0x31, 0x01, 0x60, 0x01};
+  const auto positive = positive_client.request_observe(verify, 10ms, 20ms);
+  check(positive.kind == uds::UdsObservationKind::positive &&
+            positive.response ==
+                std::vector<std::uint8_t>({0x71, 0x01, 0x60, 0x01, 0x04}),
+        "non-gating UDS observation lost a positive response");
+
+  MockBus timeout_bus;
+  uds::IsoTpSession timeout_tp(timeout_bus, {0x772, 0x77A, 0x55});
+  uds::UdsClient timeout_client(timeout_tp);
+  const auto timeout = timeout_client.request_observe(verify, 2ms, 4ms);
+  check(timeout.kind == uds::UdsObservationKind::timeout &&
+            timeout.response.empty() && timeout_bus.sent.size() == 1,
+        "non-gating UDS observation did not return a clean timeout");
+
+  MockBus pending_bus;
+  pending_bus.rx.push_back(
+      frame({0x03, 0x7F, 0x31, 0x78, 0, 0, 0, 0}));
+  pending_bus.rx.push_back(
+      frame({0x03, 0x7F, 0x31, 0x13, 0, 0, 0, 0}));
+  uds::IsoTpSession pending_tp(pending_bus, {0x772, 0x77A, 0x55});
+  uds::UdsClient pending_client(pending_tp);
+  const auto pending =
+      pending_client.request_observe(certificate, 10ms, 20ms);
+  check(pending.kind == uds::UdsObservationKind::negative &&
+            pending.nrc == 0x13 && pending_bus.rx.empty(),
+        "non-gating UDS observation did not consume the final response after NRC78");
+}
+
 void test_uds_nrc_diagnostics() {
   const std::array required_nrcs{
       0x10U, 0x11U, 0x12U, 0x13U, 0x21U, 0x22U, 0x24U,
@@ -2773,7 +2838,8 @@ void test_lp_arc_protocol_and_resources() {
             configurable_spec.security.seed_length == 4 &&
             configurable_spec.security.key_length == 4 &&
             !configurable_spec.allow_empty_certificate &&
-            configurable_spec.wait_for_certificate_responses &&
+            configurable_spec.certificate_response_policy ==
+                uds::CertificateResponsePolicy::require_positive &&
             configurable_spec.security.known_answers.empty() &&
             configurable_spec.security.self_test_description.empty(),
         "LP-ARC configurable APP endpoint/target-aware boot transition mismatch");
@@ -3052,7 +3118,8 @@ void test_lp_arf_protocol_and_resources() {
             spec.pls_programming_final_on_app &&
             !spec.send_raw_boot_transition &&
             spec.allow_empty_certificate &&
-            !spec.wait_for_certificate_responses &&
+            spec.certificate_response_policy ==
+                uds::CertificateResponsePolicy::observe_and_continue &&
             spec.app_address == uds::kLpArfAppAddress &&
             spec.app_length == uds::kLpArfAppLength,
         "LP-ARF flow spec lost its APP-final transition route or imported an ARC-only phase");
@@ -3134,6 +3201,8 @@ int main() {
     run("isotp_multiframe_receive", test_isotp_multiframe_receive);
     run("isotp_reorders_adjacent_consecutive_frames",
         test_isotp_reorders_adjacent_consecutive_frames);
+    run("uds_observe_consumes_non_gating_responses",
+        test_uds_observe_consumes_non_gating_responses);
     run("isotp_multiframe_send", test_isotp_multiframe_send);
     run("isotp_mixed_can_fd_adaptation", test_isotp_mixed_can_fd_adaptation);
     run("isotp_can_fd_64_byte_frames",
