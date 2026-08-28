@@ -377,12 +377,20 @@ void LingpaoRadarFlow::run_programming_body(
   std::vector<std::uint8_t> certificate{0x31, 0x01, 0x60, 0x00};
   certificate.insert(certificate.end(), images.certificate.begin(),
                      images.certificate.end());
+  auto certificate_download_response =
+      std::vector<std::uint8_t>{0x71, 0x01, 0x60, 0x00};
+  auto certificate_verify_response =
+      std::vector<std::uint8_t>{0x71, 0x01, 0x60, 0x01};
+  if (spec_.require_certificate_result_code) {
+    certificate_download_response.push_back(0x04);
+    certificate_verify_response.push_back(0x04);
+  }
   expect(physical_, certificate,
-         std::array<std::uint8_t, 5>{0x71, 0x01, 0x60, 0x00, 0x04}, 18,
+         certificate_download_response, 18,
          "31 01 60 00 CertificateDownload");
   expect(physical_,
          std::array<std::uint8_t, 4>{0x31, 0x01, 0x60, 0x01},
-         std::array<std::uint8_t, 5>{0x71, 0x01, 0x60, 0x01, 0x04}, 20,
+         certificate_verify_response, 20,
          "31 01 60 01 CertificateVerify");
 
   std::vector<std::uint8_t> f198{0x2E, 0xF1, 0x98};

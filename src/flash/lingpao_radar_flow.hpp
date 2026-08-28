@@ -55,6 +55,9 @@ struct LingpaoRadarSpec {
   // Boot does not require an external S19 certificate. Other flows retain
   // the exact certificate-length requirement by default.
   bool allow_empty_certificate{};
+  // Some LP-ARF Boot variants no longer define the routine result byte. The
+  // UDS positive response and routine identifier are still synchronized.
+  bool require_certificate_result_code{true};
   bool supports_pls_entry{true};
   std::uint32_t raw_boot_transition_tx_id{};
   std::optional<std::uint32_t> periodic_wakeup_id;

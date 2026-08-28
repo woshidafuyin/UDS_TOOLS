@@ -2773,6 +2773,7 @@ void test_lp_arc_protocol_and_resources() {
             configurable_spec.security.seed_length == 4 &&
             configurable_spec.security.key_length == 4 &&
             !configurable_spec.allow_empty_certificate &&
+            configurable_spec.require_certificate_result_code &&
             configurable_spec.security.known_answers.size() == 2,
         "LP-ARC configurable APP endpoint/target-aware boot transition mismatch");
 
@@ -3050,6 +3051,7 @@ void test_lp_arf_protocol_and_resources() {
             spec.pls_programming_final_on_app &&
             !spec.send_raw_boot_transition &&
             spec.allow_empty_certificate &&
+            !spec.require_certificate_result_code &&
             spec.app_address == uds::kLpArfAppAddress &&
             spec.app_length == uds::kLpArfAppLength,
         "LP-ARF flow spec lost its APP-final transition route or imported an ARC-only phase");

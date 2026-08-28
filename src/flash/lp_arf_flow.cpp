@@ -97,6 +97,7 @@ LingpaoRadarSpec lp_arf_radar_spec() {
   spec.pls_programming_final_on_app = true;
   spec.send_raw_boot_transition = false;
   spec.allow_empty_certificate = true;
+  spec.require_certificate_result_code = false;
   return spec;
 }
 
