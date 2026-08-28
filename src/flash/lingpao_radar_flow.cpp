@@ -374,24 +374,16 @@ void LingpaoRadarFlow::run_programming_body(
   wait_for(timing_.boot_after);
   unlock();
 
-  if (spec_.skip_signature_verification) {
-    if (log_) {
-      log_(20,
-           "SKIP LP-ARF APP signature verification: 31 01 60 00 and "
-           "31 01 60 01 are disabled by the operator");
-    }
-  } else {
-    std::vector<std::uint8_t> certificate{0x31, 0x01, 0x60, 0x00};
-    certificate.insert(certificate.end(), images.certificate.begin(),
-                       images.certificate.end());
-    expect(physical_, certificate,
-           std::array<std::uint8_t, 5>{0x71, 0x01, 0x60, 0x00, 0x04}, 18,
-           "31 01 60 00 CertificateDownload");
-    expect(physical_,
-           std::array<std::uint8_t, 4>{0x31, 0x01, 0x60, 0x01},
-           std::array<std::uint8_t, 5>{0x71, 0x01, 0x60, 0x01, 0x04}, 20,
-           "31 01 60 01 CertificateVerify");
-  }
+  std::vector<std::uint8_t> certificate{0x31, 0x01, 0x60, 0x00};
+  certificate.insert(certificate.end(), images.certificate.begin(),
+                     images.certificate.end());
+  expect(physical_, certificate,
+         std::array<std::uint8_t, 5>{0x71, 0x01, 0x60, 0x00, 0x04}, 18,
+         "31 01 60 00 CertificateDownload");
+  expect(physical_,
+         std::array<std::uint8_t, 4>{0x31, 0x01, 0x60, 0x01},
+         std::array<std::uint8_t, 5>{0x71, 0x01, 0x60, 0x01, 0x04}, 20,
+         "31 01 60 01 CertificateVerify");
 
   std::vector<std::uint8_t> f198{0x2E, 0xF1, 0x98};
   f198.resize(19, 0x00);
@@ -478,8 +470,8 @@ void LingpaoRadarFlow::run(const LingpaoRadarImages& images,
       images.app.data.size() != spec_.app_length) {
     throw std::runtime_error(spec_.name + " APP layout mismatch");
   }
-  if (!spec_.skip_signature_verification &&
-      images.certificate.size() != spec_.certificate_length) {
+  if (images.certificate.size() != spec_.certificate_length &&
+      !(spec_.allow_empty_certificate && images.certificate.empty())) {
     throw std::runtime_error(spec_.name + " certificate length mismatch");
   }
 

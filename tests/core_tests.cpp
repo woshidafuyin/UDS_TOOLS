@@ -1881,14 +1881,14 @@ void test_lp_arf_tmp_packages() {
             unbound_artifacts.images.certificate.size() ==
                 uds::kLpArfCertificateLength,
         "LP-ARF S19+TMP parsing still enforces a local APP/certificate binding policy");
-  const auto unsigned_artifacts =
-      uds::load_lp_arf_artifacts(external_s19, {}, true);
-  check(!unsigned_artifacts.certificate_embedded &&
-            unsigned_artifacts.images.app.address == uds::kLpArfAppAddress &&
-            unsigned_artifacts.images.app.data.size() ==
+  const auto app_only_artifacts =
+      uds::load_lp_arf_artifacts(external_s19);
+  check(!app_only_artifacts.certificate_embedded &&
+            app_only_artifacts.images.app.address == uds::kLpArfAppAddress &&
+            app_only_artifacts.images.app.data.size() ==
                 uds::kLpArfAppLength &&
-            unsigned_artifacts.images.certificate.empty(),
-        "LP-ARF signature bypass did not accept an APP-only S19 artifact");
+            app_only_artifacts.images.certificate.empty(),
+        "LP-ARF did not accept an APP-only S19 artifact without changing its image");
   const auto n61 = uds::load_profile_ini(
       source / "profiles" / "baic_n61ab.ini");
   const auto bqb41 = uds::load_profile_ini(
@@ -2772,6 +2772,7 @@ void test_lp_arc_protocol_and_resources() {
             configurable_spec.security.seed_subfunction == 0x11 &&
             configurable_spec.security.seed_length == 4 &&
             configurable_spec.security.key_length == 4 &&
+            !configurable_spec.allow_empty_certificate &&
             configurable_spec.security.known_answers.size() == 2,
         "LP-ARC configurable APP endpoint/target-aware boot transition mismatch");
 
@@ -3042,15 +3043,13 @@ void test_lp_arf_protocol_and_resources() {
   check(rejected, "LP-ARF accepted an unapproved automatic entry mode");
 
   const auto spec = uds::lp_arf_radar_spec();
-  const auto unsigned_spec = uds::lp_arf_radar_spec(true);
   check(spec.app_tx_id == 0x751 && spec.app_rx_id == 0x759 &&
             spec.pls_tx_id == 0x701 && spec.pls_rx_id == 0x761 &&
             spec.functional_id == 0x7DF && !spec.driver_address &&
             !spec.driver_length &&
-             spec.pls_programming_final_on_app &&
-             !spec.send_raw_boot_transition &&
-             !spec.skip_signature_verification &&
-             unsigned_spec.skip_signature_verification &&
+            spec.pls_programming_final_on_app &&
+            !spec.send_raw_boot_transition &&
+            spec.allow_empty_certificate &&
             spec.app_address == uds::kLpArfAppAddress &&
             spec.app_length == uds::kLpArfAppLength,
         "LP-ARF flow spec lost its APP-final transition route or imported an ARC-only phase");

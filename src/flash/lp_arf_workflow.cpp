@@ -102,8 +102,7 @@ void LpArfWorkflow::run(
 
   LpArfArtifacts artifacts;
   try {
-    artifacts = load_lp_arf_artifacts(
-        app_path, certificate_path, job.skip_signature_verification);
+    artifacts = load_lp_arf_artifacts(app_path, certificate_path);
   } catch (const std::exception& error) {
     throw std::runtime_error(
         std::string("LP-ARF file preflight failed before CAN access: ") +
@@ -118,8 +117,10 @@ void LpArfWorkflow::run(
 
   const auto app_crc = lingpao_radar_crc32(images.app.data);
   const auto app_hash = sha256(images.app.data);
-  const auto verification_layout = job.skip_signature_verification
-      ? std::string("; signature-verification=SKIPPED by operator; 6000/6001 disabled; ")
+  const auto verification_layout = images.certificate.empty()
+      ? std::string(
+            "; certificate=not provided; unchanged 31 01 60 00/6001 sequence "
+            "will use an empty CertificateDownload payload; ")
       : "; certificate=1322 bytes loaded; binding verdict is delegated to ECU "
         "31 01 60 00 per CANoe baseline; certificate-source=" +
             std::string(artifacts.certificate_embedded ? "TMP embedded" :
@@ -161,15 +162,11 @@ void LpArfWorkflow::run(
          "FFFD13DE->C0828573 and FFFD03D0->1407370F");
   report(
       callbacks, "Acceptance boundary", "WARN",
-      job.skip_signature_verification
-          ? "Operator enabled LP-ARF signature-verification bypass: ECU "
-            "31 01 60 00/6001 will not be sent; use only with a Boot that "
-            "explicitly removed certificate verification. APP 0203 remains "
-            "enabled; C++ bench acceptance remains separate for each variant"
-          : "Unified ARF entry covers A12/B11 ARF2.31 and ARF6.31; select one "
-            "project-appropriate TMP package or APP/certificate input. The "
-            "certificate is sent as-is and ECU 31 01 60 00 is authoritative; "
-            "C++ bench acceptance remains separate for each ECU variant");
+      "Unified ARF entry covers A12/B11 ARF2.31 and ARF6.31. The flashing "
+      "service sequence is unchanged and always sends 31 01 60 00 followed "
+      "by 31 01 60 01; an omitted S19 certificate produces an empty 6000 "
+      "payload and is intended only for a Boot without certificate "
+      "validation. C++ bench acceptance remains separate for each ECU variant");
 
   if (!job.can_bus_provider) {
     throw std::runtime_error("CAN bus provider is not configured");
@@ -212,7 +209,7 @@ void LpArfWorkflow::run(
           callbacks.progress(percent, line);
         }
       },
-      keygen, {}, job.skip_signature_verification);
+      keygen);
   try {
     flow.run(images, entry_mode, stop);
   } catch (...) {

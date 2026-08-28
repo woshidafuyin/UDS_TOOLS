@@ -24,17 +24,15 @@ struct LpArfArtifacts {
 //   TMP              -> embedded APP + embedded certificate
 //   S19/SREC/BIN+ASC -> selected APP + external certificate
 //   S19/SREC/BIN+TMP -> selected APP + parsed package certificate
-//   S19/SREC/BIN     -> selected APP only when the operator explicitly skips
-//                       signature verification
+//   S19/SREC/BIN     -> selected APP with no external certificate payload
 // This is deliberately UI-independent so every ARF workflow shares the same
-// package parsing policy. In the default mode certificate authenticity and APP
-// binding are left to the ECU's 6000/6001 routines.
+// package parsing policy. Certificate authenticity and APP binding are left
+// to the ECU's unchanged 6000/6001 routines.
 LpArfArtifacts load_lp_arf_artifacts(
     const std::filesystem::path& app_path,
-    const std::filesystem::path& certificate_path = {},
-    bool skip_signature_verification = false);
+    const std::filesystem::path& certificate_path = {});
 
-LingpaoRadarSpec lp_arf_radar_spec(bool skip_signature_verification = false);
+LingpaoRadarSpec lp_arf_radar_spec();
 LpArfEntryMode resolve_lp_arf_entry_mode(std::wstring_view entry_mode);
 
 class LpArfFlow final : public LingpaoRadarFlow {
@@ -42,8 +40,7 @@ public:
   LpArfFlow(UdsClient& physical, UdsClient& app_functional,
             UdsClient& pls_functional, IsoTpSession& physical_transport,
             IsoTpSession& pls_transport, IsoTpSession& functional_transport,
-            Log log, KeyGenerator key_generator, LpArfTiming timing = {},
-            bool skip_signature_verification = false);
+            Log log, KeyGenerator key_generator, LpArfTiming timing = {});
 };
 
 } // namespace uds

@@ -304,8 +304,7 @@ void ControllerBridge::startFlash(
     const QString& driver_path,
     const QString& app_path, const QString& cal_path,
     const QString& driver_verify_path, const QString& app_verify_path,
-    const QString& cal_verify_path, const QString& seed_key_dll_path,
-    bool skip_signature_verification) {
+    const QString& cal_verify_path, const QString& seed_key_dll_path) {
   if (shutting_down_.load()) return;
   if (profile_index < 0 ||
       static_cast<std::size_t>(profile_index) >= profiles_.size()) {
@@ -336,7 +335,6 @@ void ControllerBridge::startFlash(
   request.profile = profile;
   request.target_id = target_id.toStdWString();
   request.entry_mode = entry_mode.toStdWString();
-  request.skip_signature_verification = skip_signature_verification;
   request.repeat_count = repeat_count;
   request.executable_directory =
       QCoreApplication::applicationDirPath().toStdWString();

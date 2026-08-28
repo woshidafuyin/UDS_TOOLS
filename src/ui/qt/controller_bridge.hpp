@@ -109,8 +109,7 @@ public slots:
                   const QString& driver_verify_path,
                   const QString& app_verify_path,
                   const QString& cal_verify_path,
-                  const QString& seed_key_dll_path,
-                  bool skip_signature_verification = false);
+                  const QString& seed_key_dll_path);
   bool requestFlashStop();
   void startVersionCheck(int profile_index, const QString& target_id,
                          unsigned channel, quint32 tx_id, quint32 rx_id);

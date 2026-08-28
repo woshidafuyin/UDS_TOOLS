@@ -314,7 +314,7 @@
        </item>
        <item>
         <widget class="QGroupBox" name="filesGroupBox">
-          <property name="minimumHeight"><number>250</number></property>
+          <property name="minimumHeight"><number>220</number></property>
           <property name="sizePolicy">
            <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
             <horstretch>0</horstretch><verstretch>0</verstretch>
@@ -330,30 +330,14 @@
            <property name="verticalSpacing">
             <number>5</number>
           </property>
-           <item row="0" column="0" colspan="3">
-            <widget class="QCheckBox" name="skipAppSignatureVerificationCheckBox">
-             <property name="minimumHeight">
-              <number>28</number>
-             </property>
-             <property name="toolTip">
-              <string>仅用于已取消证书验签的 LP-ARF Boot；勾选后不发送 31 01 60 00 和 31 01 60 01。</string>
-             </property>
-             <property name="text">
-              <string>跳过 APP 签名验签（不发送 31 01 60 00 / 60 01）</string>
-             </property>
-             <property name="checked">
-              <bool>false</bool>
-             </property>
-            </widget>
-           </item>
-           <item row="1" column="0">
+           <item row="0" column="0">
             <widget class="QLabel" name="driverPathLabel">
             <property name="text">
               <string>Driver 文件</string>
             </property>
            </widget>
           </item>
-           <item row="1" column="1">
+           <item row="0" column="1">
            <widget class="QLineEdit" name="driverPathLineEdit">
             <property name="minimumHeight">
              <number>30</number>
@@ -366,7 +350,7 @@
             </property>
            </widget>
           </item>
-           <item row="1" column="2">
+           <item row="0" column="2">
            <widget class="QPushButton" name="driverBrowseButton">
             <property name="minimumSize">
              <size>
@@ -379,14 +363,14 @@
             </property>
            </widget>
           </item>
-           <item row="3" column="0">
+           <item row="2" column="0">
            <widget class="QLabel" name="appPathLabel">
             <property name="text">
              <string>APP</string>
             </property>
            </widget>
           </item>
-           <item row="3" column="1">
+           <item row="2" column="1">
            <widget class="QLineEdit" name="appPathLineEdit">
             <property name="minimumHeight">
              <number>30</number>
@@ -399,7 +383,7 @@
             </property>
            </widget>
           </item>
-           <item row="3" column="2">
+           <item row="2" column="2">
            <widget class="QPushButton" name="appBrowseButton">
             <property name="minimumSize">
              <size>
@@ -412,14 +396,14 @@
             </property>
            </widget>
           </item>
-           <item row="5" column="0">
+           <item row="4" column="0">
            <widget class="QLabel" name="calPathLabel">
             <property name="text">
              <string>CAL</string>
             </property>
            </widget>
           </item>
-           <item row="5" column="1">
+           <item row="4" column="1">
            <widget class="QLineEdit" name="calPathLineEdit">
             <property name="minimumHeight">
              <number>30</number>
@@ -432,7 +416,7 @@
             </property>
            </widget>
           </item>
-           <item row="5" column="2">
+           <item row="4" column="2">
            <widget class="QPushButton" name="calBrowseButton">
             <property name="minimumSize">
              <size>
@@ -445,14 +429,14 @@
             </property>
            </widget>
           </item>
-           <item row="7" column="0">
+           <item row="6" column="0">
            <widget class="QLabel" name="seedKeyDllPathLabel">
             <property name="text">
              <string>SeedKey</string>
             </property>
            </widget>
           </item>
-           <item row="7" column="1">
+           <item row="6" column="1">
            <widget class="QLineEdit" name="seedKeyDllPathLineEdit">
             <property name="minimumHeight">
              <number>30</number>
@@ -465,7 +449,7 @@
             </property>
            </widget>
           </item>
-           <item row="7" column="2">
+           <item row="6" column="2">
            <widget class="QPushButton" name="seedKeyDllBrowseButton">
             <property name="minimumSize">
              <size>
@@ -478,14 +462,14 @@
              </property>
            </widget>
           </item>
-           <item row="2" column="0">
+           <item row="1" column="0">
            <widget class="QLabel" name="driverVerifyPathLabel">
              <property name="text">
               <string>Driver Data</string>
              </property>
            </widget>
           </item>
-           <item row="2" column="1">
+           <item row="1" column="1">
            <widget class="QLineEdit" name="driverVerifyPathLineEdit">
             <property name="minimumHeight">
              <number>30</number>
@@ -498,7 +482,7 @@
             </property>
            </widget>
           </item>
-           <item row="2" column="2">
+           <item row="1" column="2">
            <widget class="QPushButton" name="driverVerifyBrowseButton">
             <property name="minimumSize">
              <size><width>78</width><height>30</height></size>
@@ -506,19 +490,19 @@
              <property name="text"><string>浏览</string></property>
            </widget>
           </item>
-           <item row="4" column="0">
+           <item row="3" column="0">
            <widget class="QLabel" name="appVerifyPathLabel">
               <property name="text"><string>APP 校验文件</string></property>
            </widget>
           </item>
-           <item row="4" column="1">
+           <item row="3" column="1">
            <widget class="QLineEdit" name="appVerifyPathLineEdit">
             <property name="minimumHeight"><number>30</number></property>
             <property name="readOnly"><bool>true</bool></property>
              <property name="placeholderText"><string>请选择 APP 校验文件</string></property>
            </widget>
           </item>
-           <item row="4" column="2">
+           <item row="3" column="2">
            <widget class="QPushButton" name="appVerifyBrowseButton">
             <property name="minimumSize">
              <size><width>78</width><height>30</height></size>
@@ -526,19 +510,19 @@
              <property name="text"><string>浏览</string></property>
            </widget>
           </item>
-           <item row="6" column="0">
+           <item row="5" column="0">
            <widget class="QLabel" name="calVerifyPathLabel">
              <property name="text"><string>CAL Data</string></property>
            </widget>
           </item>
-           <item row="6" column="1">
+           <item row="5" column="1">
            <widget class="QLineEdit" name="calVerifyPathLineEdit">
             <property name="minimumHeight"><number>30</number></property>
             <property name="readOnly"><bool>true</bool></property>
             <property name="placeholderText"><string>请选择 CAL 校验数据</string></property>
            </widget>
           </item>
-           <item row="6" column="2">
+           <item row="5" column="2">
            <widget class="QPushButton" name="calVerifyBrowseButton">
             <property name="minimumSize">
              <size><width>78</width><height>30</height></size>

@@ -341,7 +341,6 @@ void FlashController::execute(FlashRequest request,
     FlashJob job;
     job.profile = request.profile;
     job.entry_mode = request.entry_mode;
-    job.skip_signature_verification = request.skip_signature_verification;
     job.executable_directory = request.executable_directory;
     job.driver_file = request.driver_file;
     job.app_file = request.app_file;

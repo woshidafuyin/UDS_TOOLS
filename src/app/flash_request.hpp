@@ -18,7 +18,6 @@ struct FlashRequest {
   FlashProfile profile;
   std::wstring target_id;
   std::wstring entry_mode{L"app"};
-  bool skip_signature_verification{};
   unsigned repeat_count{kMinFlashRepeatCount};
   std::filesystem::path executable_directory;
 
