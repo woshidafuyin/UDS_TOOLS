@@ -377,21 +377,31 @@ void LingpaoRadarFlow::run_programming_body(
   std::vector<std::uint8_t> certificate{0x31, 0x01, 0x60, 0x00};
   certificate.insert(certificate.end(), images.certificate.begin(),
                      images.certificate.end());
-  auto certificate_download_response =
-      std::vector<std::uint8_t>{0x71, 0x01, 0x60, 0x00};
-  auto certificate_verify_response =
-      std::vector<std::uint8_t>{0x71, 0x01, 0x60, 0x01};
-  if (spec_.require_certificate_result_code) {
-    certificate_download_response.push_back(0x04);
-    certificate_verify_response.push_back(0x04);
+  constexpr std::array<std::uint8_t, 4> certificate_verify{
+      0x31, 0x01, 0x60, 0x01};
+  if (spec_.wait_for_certificate_responses) {
+    expect(physical_, certificate,
+           std::array<std::uint8_t, 5>{0x71, 0x01, 0x60, 0x00, 0x04}, 18,
+           "31 01 60 00 CertificateDownload");
+    expect(physical_, certificate_verify,
+           std::array<std::uint8_t, 5>{0x71, 0x01, 0x60, 0x01, 0x04}, 20,
+           "31 01 60 01 CertificateVerify");
+  } else {
+    check_cancelled();
+    if (log_) {
+      log_(18,
+           "31 01 60 00 CertificateDownload (send-only; response not required)");
+    }
+    physical_.send_only(certificate, stop_);
+    wait_for(timing_.step_delay);
+    check_cancelled();
+    if (log_) {
+      log_(20,
+           "31 01 60 01 CertificateVerify (send-only; response not required)");
+    }
+    physical_.send_only(certificate_verify, stop_);
+    wait_for(timing_.step_delay);
   }
-  expect(physical_, certificate,
-         certificate_download_response, 18,
-         "31 01 60 00 CertificateDownload");
-  expect(physical_,
-         std::array<std::uint8_t, 4>{0x31, 0x01, 0x60, 0x01},
-         certificate_verify_response, 20,
-         "31 01 60 01 CertificateVerify");
 
   std::vector<std::uint8_t> f198{0x2E, 0xF1, 0x98};
   f198.resize(19, 0x00);
