@@ -109,12 +109,15 @@ void LpArfWorkflow::run(
 
   const auto app_crc = lingpao_radar_crc32(images.app.data);
   const auto app_hash = sha256(images.app.data);
-  const auto verification_layout =
-      "; certificate=1322 bytes loaded; 31 01 60 00 and 31 01 60 01 "
-      "require CANoe-baseline positive responses; certificate-source=" +
-      std::string(artifacts.certificate_embedded ? "TMP embedded" :
-                                                   "external file") +
-      "; ";
+  const auto verification_layout = images.certificate.empty()
+      ? std::string(
+            "; certificate=not selected; CANoe-style Skip omits 31 01 60 00 "
+            "and 31 01 60 01; ")
+      : "; certificate=1322 bytes loaded; 31 01 60 00 and 31 01 60 01 "
+        "require CANoe-baseline positive responses; certificate-source=" +
+            std::string(artifacts.certificate_embedded ? "TMP embedded" :
+                                                       "external file") +
+            "; ";
   const auto layout =
       "APP=" + hex_u32(images.app.address) + "/" +
       hex_u32(static_cast<std::uint32_t>(images.app.data.size())) +
@@ -132,9 +135,10 @@ void LpArfWorkflow::run(
   report(
       callbacks, "Acceptance boundary", "WARN",
       "Unified ARF entry covers A12/B11 ARF2.31 and ARF6.31. The flashing "
-      "service sequence requires a 1322-byte embedded or external "
-      "Certificate, sends 31 01 60 00 followed by 31 01 60 01, and requires "
-      "the expected positive response for both routines. C++ bench "
+      "service sequence uses a selected embedded or external Certificate to "
+      "send 31 01 60 00 followed by 31 01 60 01 and requires the expected "
+      "positive response for both routines. Without a Certificate, both "
+      "routines are omitted together by the CANoe-style Skip policy. C++ bench "
       "acceptance remains separate for each ECU variant");
 
   if (!job.can_bus_provider) {

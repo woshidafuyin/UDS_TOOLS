@@ -1691,15 +1691,16 @@ void MainWindow::updateAppPackagePresentation(bool report_error) {
   bool profile_valid{};
   const auto profile_index = selectedProfileIndex(&profile_valid);
   const auto& profiles = controller_bridge_->profileOptions();
-  const auto lp_arf =
+  const auto optional_lingpao_certificate =
       profile_valid && profile_index >= 0 &&
       static_cast<std::size_t>(profile_index) < profiles.size() &&
-      profiles[profile_index].flow_id == QStringLiteral("lp_arf");
+      (profiles[profile_index].flow_id == QStringLiteral("lp_arf") ||
+       profiles[profile_index].flow_id == QStringLiteral("lp_arc"));
   verification->setProperty(kEmbeddedVerificationProperty, false);
   ui_->appPathLineEdit->setProperty(kPackageValidProperty, true);
   ui_->appVerifyPathLabel->setText(
-      lp_arf
-          ? QStringLiteral("APP 验签文件")
+      optional_lingpao_certificate
+          ? QStringLiteral("APP 验签文件（可选）")
           : QStringLiteral("APP 校验文件"));
   ui_->appVerifyBrowseButton->setText(QStringLiteral("浏览"));
   verification->setStyleSheet({});
@@ -2171,6 +2172,9 @@ void MainWindow::startFlashFromUi() {
     return;
   }
   const auto entry_mode = ui_->entryModeComboBox->currentData().toString();
+  const auto optional_lingpao_certificate =
+      profile.flow_id == QStringLiteral("lp_arf") ||
+      profile.flow_id == QStringLiteral("lp_arc");
   const auto needs_app =
       entry_mode != QStringLiteral("cal");
   const auto embedded_tmp =
@@ -2185,6 +2189,7 @@ void MainWindow::startFlashFromUi() {
     return;
   }
   if (needs_app && profile.supports_app_tmp_package && !embedded_tmp &&
+      !optional_lingpao_certificate &&
       fullPath(ui_->appVerifyPathLineEdit).isEmpty()) {
     QMessageBox::warning(
         this, QStringLiteral("缺少APP验签文件"),
@@ -2192,7 +2197,7 @@ void MainWindow::startFlashFromUi() {
     return;
   }
   const auto needs_app_verification =
-      (needs_app && !embedded_tmp) ||
+      (needs_app && !embedded_tmp && !optional_lingpao_certificate) ||
       (profile.profile_id == QStringLiteral("chery_t22") &&
        entry_mode == QStringLiteral("cal"));
   const auto needs_cal =

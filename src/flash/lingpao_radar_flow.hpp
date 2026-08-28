@@ -56,9 +56,12 @@ struct LingpaoRadarSpec {
   std::size_t certificate_length{1322};
   bool pls_programming_final_on_app{true};
   bool send_raw_boot_transition{true};
-  // Reserved for explicitly approved project variants. The production
-  // LP-ARC and LP-ARF specs keep this false to match CANoe normal Download().
+  // LP-ARC/LP-ARF allow no selected Certificate only together with the
+  // explicit CANoe-style routine-skip flag below.
   bool allow_empty_certificate{};
+  // When no Certificate is selected, follow the CANoe Skip controls and omit
+  // both 6000/6001 routines instead of transmitting an empty payload.
+  bool skip_certificate_routines_when_empty{};
   // Production LP-ARC and LP-ARF require positive certificate responses.
   CertificateResponsePolicy certificate_response_policy{
       CertificateResponsePolicy::require_positive};

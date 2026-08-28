@@ -865,7 +865,8 @@ int main(int argc, char* argv[]) {
                     .contains(QStringLiteral("*.s19")),
             "Qt file dialogs still hide S19 resources");
       const auto check_file_panel_is_stable =
-          [&window](const bool allow_embedded_verification = false) {
+          [&window](const bool allow_embedded_verification = false,
+                    const bool allow_optional_verification = false) {
         const auto* driver_label =
             window.findChild<QLabel*>(QStringLiteral("driverPathLabel"));
         const auto* app_verify_label = window.findChild<QLabel*>(
@@ -881,7 +882,10 @@ int main(int argc, char* argv[]) {
                     app_verify_label->text() ==
                         QStringLiteral("APP 验签（内置）") &&
                     app_verify_path->property("embeddedVerification")
-                        .toBool())) &&
+                        .toBool()) ||
+                   (allow_optional_verification &&
+                    app_verify_label->text() ==
+                        QStringLiteral("APP 验签文件（可选）"))) &&
                    app_verify_path,
                "Flash-file labels changed between projects");
         for (const auto& name :
@@ -1763,13 +1767,12 @@ int main(int argc, char* argv[]) {
                     QStringLiteral("lingpao_SeednKey")) &&
                  app_verify_label &&
                  app_verify_label->text() ==
-                     QStringLiteral("APP 校验文件") &&
+                     QStringLiteral("APP 验签文件（可选）") &&
                  window.findChild<QLineEdit*>(
                      QStringLiteral("appVerifyPathLineEdit"))
                      ->property("fullPath")
                      .toString()
-                     .endsWith(QStringLiteral(".asc"),
-                               Qt::CaseInsensitive),
+                     .isEmpty(),
             "ARC merged four-target UI or preset resources mismatch");
       check(!tx_id->isReadOnly() && !rx_id->isReadOnly() && tx_id_label &&
                 rx_id_label &&
@@ -1844,7 +1847,7 @@ int main(int argc, char* argv[]) {
 
       entries->setCurrentIndex(entries->findData(QStringLiteral("app")));
       application.processEvents();
-      check_file_panel_is_stable();
+      check_file_panel_is_stable(false, true);
       devices->setCurrentIndex(find_text(devices, QStringLiteral("ARF")));
       application.processEvents();
       check(!radar->isHidden() && radar->count() == 1 &&

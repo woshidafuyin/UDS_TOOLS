@@ -180,8 +180,8 @@
 | 犀重 LSMR | `xizhong_lsmr.ini` / `xizhong_lsmr` | APP 待验证入口；独立扩展 ID、NM 和 SeedKey；Driver/APP/Hash 必须从同一 LSMR 发布包手动选择，源 CANoe 的 LSMR 下载分支为空 |
 | 时代新安 HJZJ FMR | `shidaixinan_hjzj_fmr.ini` / `shidaixinan_hjzj_fmr` | APP、FT |
 | 时代新安 天王星、木星2代、庆铃 FMR | 独立 Profile / 复用 HJZJ Workflow | 独立端点和资源 |
-| 零跑 ARC | `lp_arc.ini` / `lp_arc` | 四设备；APP、FT；必须提供1322字节Certificate，`6000/6001`按CANoe正常流程严格判定 |
-| 零跑 ARF | `lp_arf.ini` / `lp_arf` | APP、FT（PLS→APP）；TMP必须包含Certificate，S19/SREC/BIN必须搭配ASC/TMP Certificate；`6000/6001`严格判定 |
+| 零跑 ARC | `lp_arc.ini` / `lp_arc` | 四设备；APP、FT；Certificate可选：有文件时`6000/6001`严格判定，无文件时按CANoe Skip跳过两步 |
+| 零跑 ARF | `lp_arf.ini` / `lp_arf` | APP、FT（PLS→APP）；TMP可内置Certificate，S19/SREC/BIN可搭配ASC/TMP；无Certificate时按CANoe Skip跳过`6000/6001` |
 | 吉利 P416 | `geely_p416.ini` / `geely_p416` | SBL、APP、ESS VBF；项目 NM 和专用传输；按所选 VBF 元数据刷写，不以文件哈希或固定块布局白名单阻断 |
 | 吉利 P417 | `geely_p417.ini` / `geely_p416` | 完整复用 P416 端点、入口、服务顺序和 VBF 参数；使用独立 `resources/geely_p417` 目录 |
 | 吉利 P611 | `geely_p611.ini` / `geely_p416` | 完整复用 P416 端点、入口、服务顺序和 VBF 参数；使用独立 `resources/geely_p611` 目录 |
@@ -190,13 +190,13 @@
 
 ## 11. 零跑 LP-ARC / LP-ARF 专项说明
 
-- `lp_arc` 必须提供恰好1322字节的ASC Certificate，Profile默认预选已归档验签文件；缺失或长度不符时在访问CAN前阻止刷写；
-- LP-ARC依次发送`31 01 60 00 + Certificate`和`31 01 60 01`，分别要求`71 01 60 00 04`和`71 01 60 01 04`肯定响应；NRC、超时或状态不符立即判定失败；
+- `lp_arc` 的APP验签文件可选，Profile默认不预选Certificate；提供时必须恰好解析为1322字节；
+- LP-ARC提供Certificate时依次发送`31 01 60 00 + Certificate`和`31 01 60 01`，分别要求`71 01 60 00 04`和`71 01 60 01 04`肯定响应；NRC、超时或状态不符立即判定失败；未提供时按CANoe Skip同时省略`6000/6001`，不发送空Certificate；
 
 - `lp_arf` 是 A12/B11 ARF2.31 与 ARF6.31 的统一入口，支持 APP 和 FT（PLS→APP）；各 ECU 变体的资源来源、实车结论和台架验收仍分别管理；
 - 选择 `.tmp` 时自动解析其中的 APP、地址、长度、声明 CRC32 和内置 Certificate；本地要求 TMP 基础结构完整且能提取刷写数据，但不以本地 CRC 复算、APP SHA-256、Certificate 真实性或 APP/Certificate 绑定关系阻断刷写，这些结论交由 ECU/Boot 判定；
-- 选择S19/SREC/BIN时必须搭配外部ASC或TMP Certificate；未选择验签文件时在访问CAN前阻止刷写，不发送空Certificate请求；
-- LP-ARF同样依次发送`31 01 60 00 + Certificate`和`31 01 60 01`，并严格要求两个例程返回CANoe正常流程的预期肯定响应；NRC、超时、尾字节非`04`、ISO-TP发送或FlowControl失败均终止刷写；
+- 选择S19/SREC/BIN时外部ASC或TMP Certificate为可选；未选择时按CANoe Skip同时省略`6000/6001`，不发送空Certificate请求；
+- LP-ARF存在Certificate时同样依次发送`31 01 60 00 + Certificate`和`31 01 60 01`，并严格要求两个例程返回CANoe正常流程的预期肯定响应；NRC、超时、尾字节非`04`、ISO-TP发送或FlowControl失败均终止刷写；
 - 当前 C++ LP-ARF 默认不发送可选原始切换帧 `03 FB A5 00 00 00 00 00`；Profile、离线测试或 CANoe 参考资料一致，只能证明配置和流程基线，不能替代各 ECU 变体的真实刷写验收。
 
 ## 12. 楚能 ARC331 专项说明

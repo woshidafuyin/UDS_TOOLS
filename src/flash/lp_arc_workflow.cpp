@@ -89,6 +89,7 @@ void RadarS19Workflow::run(
         " profile must enable PLS entry and disable CAL download");
   }
   const auto entry_mode = resolve_lp_arc_entry_mode(job.entry_mode);
+  const auto certificate_provided = !job.app_verify_file.empty();
   auto radar_spec = send_raw_boot_transition_
                         ? lp_arc_radar_spec(job.profile)
                         : chuneng_arc331_radar_spec(job.profile);
@@ -107,9 +108,14 @@ void RadarS19Workflow::run(
   try {
     images.driver = load_single_srecord_segment(driver_path);
     images.app = load_single_srecord_segment(app_path);
-    images.certificate =
-        load_asc_hex(certificate_path, kLpArcCertificateLength,
-                     kLpArcCertificateLength);
+    if (certificate_provided) {
+      images.certificate =
+          load_asc_hex(certificate_path, kLpArcCertificateLength,
+                       kLpArcCertificateLength);
+    } else if (!send_raw_boot_transition_) {
+      throw std::runtime_error(project_name_ +
+                               " requires a 1322-byte certificate file");
+    }
   } catch (const std::exception& error) {
     throw std::runtime_error(
         std::string(
@@ -134,7 +140,9 @@ void RadarS19Workflow::run(
       hex_u32(images.app.address) + "/" +
       hex_u32(static_cast<std::uint32_t>(images.app.data.size())) +
       ", CRC32=" + hex_u32(app_crc) +
-      "; certificate=1322 bytes; 6000/6001 require positive responses";
+      (certificate_provided
+           ? "; certificate=1322 bytes; 6000/6001 require positive responses"
+           : "; certificate=not selected; CANoe-style Skip omits 6000/6001");
   if (callbacks.log) {
     callbacks.log(project_name_ + " S19 auto-analysis complete: " + layout);
   }

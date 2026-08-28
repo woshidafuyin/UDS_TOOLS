@@ -16,6 +16,10 @@ LingpaoRadarSpec lp_arc_radar_spec(const FlashProfile& profile) {
   // this unset makes the shared core resolve it from spec.app_tx_id instead of
   // forcing every LP-ARC target onto the older fixed 0x771 route.
   spec.raw_boot_transition_tx_id = 0;
+  spec.allow_empty_certificate = true;
+  spec.skip_certificate_routines_when_empty = true;
+  spec.certificate_response_policy =
+      CertificateResponsePolicy::require_positive;
   spec.security.seed_subfunction =
       static_cast<std::uint8_t>(profile.security_level);
   return spec;

@@ -406,24 +406,33 @@ void LingpaoRadarFlow::run_programming_body(
   wait_for(timing_.boot_after);
   unlock();
 
-  std::vector<std::uint8_t> certificate{0x31, 0x01, 0x60, 0x00};
-  certificate.insert(certificate.end(), images.certificate.begin(),
-                     images.certificate.end());
-  constexpr std::array<std::uint8_t, 4> certificate_verify{
-      0x31, 0x01, 0x60, 0x01};
-  if (spec_.certificate_response_policy ==
-      CertificateResponsePolicy::require_positive) {
-    expect(physical_, certificate,
-           std::array<std::uint8_t, 5>{0x71, 0x01, 0x60, 0x00, 0x04}, 18,
-           "31 01 60 00 CertificateDownload");
-    expect(physical_, certificate_verify,
-           std::array<std::uint8_t, 5>{0x71, 0x01, 0x60, 0x01, 0x04}, 20,
-           "31 01 60 01 CertificateVerify");
+  if (images.certificate.empty() &&
+      spec_.skip_certificate_routines_when_empty) {
+    if (log_) {
+      log_(20, spec_.name +
+                   " Certificate not selected; CANoe-style Skip omits "
+                   "31 01 60 00 and 31 01 60 01");
+    }
   } else {
-    observe_certificate_response(certificate, 18,
-                                 "31 01 60 00 CertificateDownload");
-    observe_certificate_response(certificate_verify, 20,
-                                 "31 01 60 01 CertificateVerify");
+    std::vector<std::uint8_t> certificate{0x31, 0x01, 0x60, 0x00};
+    certificate.insert(certificate.end(), images.certificate.begin(),
+                       images.certificate.end());
+    constexpr std::array<std::uint8_t, 4> certificate_verify{
+        0x31, 0x01, 0x60, 0x01};
+    if (spec_.certificate_response_policy ==
+        CertificateResponsePolicy::require_positive) {
+      expect(physical_, certificate,
+             std::array<std::uint8_t, 5>{0x71, 0x01, 0x60, 0x00, 0x04}, 18,
+             "31 01 60 00 CertificateDownload");
+      expect(physical_, certificate_verify,
+             std::array<std::uint8_t, 5>{0x71, 0x01, 0x60, 0x01, 0x04}, 20,
+             "31 01 60 01 CertificateVerify");
+    } else {
+      observe_certificate_response(certificate, 18,
+                                   "31 01 60 00 CertificateDownload");
+      observe_certificate_response(certificate_verify, 20,
+                                   "31 01 60 01 CertificateVerify");
+    }
   }
 
   std::vector<std::uint8_t> f198{0x2E, 0xF1, 0x98};

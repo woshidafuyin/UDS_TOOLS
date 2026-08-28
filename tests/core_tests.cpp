@@ -1946,14 +1946,14 @@ void test_lp_arf_tmp_packages() {
             unbound_artifacts.images.certificate.size() ==
                 uds::kLpArfCertificateLength,
         "LP-ARF S19+TMP parsing still enforces a local APP/certificate binding policy");
-  bool missing_certificate_rejected{};
-  try {
-    static_cast<void>(uds::load_lp_arf_artifacts(external_s19));
-  } catch (const std::exception&) {
-    missing_certificate_rejected = true;
-  }
-  check(missing_certificate_rejected,
-        "LP-ARF accepted an external APP without the CANoe-baseline certificate");
+  const auto app_only_artifacts =
+      uds::load_lp_arf_artifacts(external_s19);
+  check(!app_only_artifacts.certificate_embedded &&
+            app_only_artifacts.images.app.address == uds::kLpArfAppAddress &&
+            app_only_artifacts.images.app.data.size() ==
+                uds::kLpArfAppLength &&
+            app_only_artifacts.images.certificate.empty(),
+        "LP-ARF did not accept APP-only input for CANoe-style certificate Skip");
   const auto n61 = uds::load_profile_ini(
       source / "profiles" / "baic_n61ab.ini");
   const auto bqb41 = uds::load_profile_ini(
@@ -2805,7 +2805,7 @@ void test_lp_arc_protocol_and_resources() {
             profile.driver_length == uds::kLpArcDriverLength &&
             profile.app_start == uds::kLpArcAppAddress &&
             profile.app_length == uds::kLpArcAppLength &&
-            !profile.app_verify_file.empty() &&
+            profile.app_verify_file.empty() &&
             profile.app_verify_label == L"Certificate" &&
             profile.targets.size() == 4 &&
             profile.targets[0].tx_id == 0x772 &&
@@ -2838,7 +2838,8 @@ void test_lp_arc_protocol_and_resources() {
             configurable_spec.security.seed_subfunction == 0x11 &&
             configurable_spec.security.seed_length == 4 &&
             configurable_spec.security.key_length == 4 &&
-            !configurable_spec.allow_empty_certificate &&
+            configurable_spec.allow_empty_certificate &&
+            configurable_spec.skip_certificate_routines_when_empty &&
             configurable_spec.certificate_response_policy ==
                 uds::CertificateResponsePolicy::require_positive &&
             configurable_spec.security.known_answers.empty() &&
@@ -3118,7 +3119,8 @@ void test_lp_arf_protocol_and_resources() {
             !spec.driver_length &&
             spec.pls_programming_final_on_app &&
             !spec.send_raw_boot_transition &&
-            !spec.allow_empty_certificate &&
+            spec.allow_empty_certificate &&
+            spec.skip_certificate_routines_when_empty &&
             spec.certificate_response_policy ==
                 uds::CertificateResponsePolicy::require_positive &&
             spec.app_address == uds::kLpArfAppAddress &&
