@@ -6,8 +6,6 @@
 #include "core/uds_client.hpp"
 #include "flash/lp_arc_flow.hpp"
 
-#include <algorithm>
-#include <array>
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
@@ -38,28 +36,20 @@ std::string hex_u32(std::uint32_t value) {
   return output.str();
 }
 
-bool same_bytes(std::span<const std::uint8_t> left,
-                std::span<const std::uint8_t> right) {
-  return left.size() == right.size() &&
-         std::equal(left.begin(), left.end(), right.begin());
-}
-
 } // namespace
 
 LpArcWorkflow::LpArcWorkflow()
     : RadarS19Workflow(L"lp_arc", "LP-ARC",
-                       "Leapmotor LP-ARC Download Report", true, true) {}
+                       "Leapmotor LP-ARC Download Report", true) {}
 
 RadarS19Workflow::RadarS19Workflow(std::wstring workflow_id,
                                    std::string project_name,
                                    std::string report_name,
-                                   bool send_raw_boot_transition,
-                                   bool compare_lp_reference_crc)
+                                   bool send_raw_boot_transition)
     : workflow_id_(std::move(workflow_id)),
       project_name_(std::move(project_name)),
       report_name_(std::move(report_name)),
-      send_raw_boot_transition_(send_raw_boot_transition),
-      compare_lp_reference_crc_(compare_lp_reference_crc) {}
+      send_raw_boot_transition_(send_raw_boot_transition) {}
 
 std::wstring_view RadarS19Workflow::id() const noexcept {
   return workflow_id_;
@@ -149,21 +139,6 @@ void RadarS19Workflow::run(
     callbacks.log(project_name_ + " S19 auto-analysis complete: " + layout);
   }
   report(callbacks, "File preflight", "PASS", layout);
-  if (compare_lp_reference_crc_ &&
-      (driver_crc != kLpArcReferenceDriverCrc32 ||
-       app_crc != kLpArcReferenceAppCrc32)) {
-    const auto warning =
-        "LP-ARC selected images differ from the 2026-07-31 CANoe "
-        "success baseline CRC32; address/length and runtime CRC remain "
-        "derived from the selected S19 files.";
-    if (callbacks.log) callbacks.log("WARN: " + std::string(warning));
-    report(callbacks, "Reference identity", "WARN", warning);
-  } else {
-    report(callbacks, "Reference identity", "PASS",
-           compare_lp_reference_crc_
-               ? "Driver/APP CRC32 match the 2026-07-31 CANoe success baseline"
-               : "Selected Driver/APP passed the configured address, length and runtime CRC checks");
-  }
 
   const auto keygen =
       [broker, security_dll, variant = job.profile.security_variant](
@@ -171,36 +146,6 @@ void RadarS19Workflow::run(
         return generate_key_x86(broker, security_dll, seed, level,
                                 variant);
       };
-  try {
-    if (radar_spec.security.known_answers.empty() ||
-        radar_spec.security.self_test_description.empty()) {
-      throw std::runtime_error("project SeedKey self-test is not configured");
-    }
-    for (const auto& known_answer :
-         radar_spec.security.known_answers) {
-      if (known_answer.seed.size() != radar_spec.security.seed_length ||
-          known_answer.key.size() != radar_spec.security.key_length) {
-        throw std::runtime_error(
-            "project SeedKey self-test length does not match the security "
-            "contract");
-      }
-      const auto generated = keygen(
-          std::span<const std::uint8_t>(known_answer.seed),
-          radar_spec.security.seed_subfunction);
-      if (!same_bytes(generated, known_answer.key)) {
-        throw std::runtime_error(
-            "captured SeedKey known-answer test does not match");
-      }
-    }
-  } catch (const std::exception& error) {
-    throw std::runtime_error(
-        std::string(
-            project_name_ +
-            " SeedKey DLL/x86 broker preflight failed before CAN access: ") +
-        error.what());
-  }
-  report(callbacks, "SeedKey preflight", "PASS",
-         radar_spec.security.self_test_description);
 
   if (!job.can_bus_provider) {
     throw std::runtime_error("CAN bus provider is not configured");

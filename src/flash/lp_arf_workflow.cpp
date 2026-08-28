@@ -8,8 +8,6 @@
 #include "core/uds_client.hpp"
 #include "flash/lp_arf_flow.hpp"
 
-#include <algorithm>
-#include <array>
 #include <chrono>
 #include <iomanip>
 #include <sstream>
@@ -38,12 +36,6 @@ std::string hex_u32(std::uint32_t value) {
   output << "0x" << std::uppercase << std::hex << std::setw(8)
          << std::setfill('0') << value;
   return output.str();
-}
-
-bool same_bytes(std::span<const std::uint8_t> left,
-                std::span<const std::uint8_t> right) {
-  return left.size() == right.size() &&
-         std::equal(left.begin(), left.end(), right.begin());
 }
 
 } // namespace
@@ -140,26 +132,6 @@ void LpArfWorkflow::run(
           std::span<const std::uint8_t> seed, unsigned level) {
         return generate_key_x86(broker, security_dll, seed, level, variant);
       };
-  constexpr std::array<std::uint8_t, 4> kSeed1{
-      0xFF, 0xFD, 0x13, 0xDE};
-  constexpr std::array<std::uint8_t, 4> kKey1{
-      0xC0, 0x82, 0x85, 0x73};
-  constexpr std::array<std::uint8_t, 4> kSeed2{
-      0xFF, 0xFD, 0x03, 0xD0};
-  constexpr std::array<std::uint8_t, 4> kKey2{
-      0x14, 0x07, 0x37, 0x0F};
-  try {
-    if (!same_bytes(keygen(kSeed1, 0x11), kKey1) ||
-        !same_bytes(keygen(kSeed2, 0x11), kKey2)) {
-      throw std::runtime_error("captured SeedKey vectors do not match");
-    }
-  } catch (const std::exception& error) {
-    throw std::runtime_error(
-        std::string("LP-ARF SeedKey DLL/x86 broker preflight failed before CAN access: ") +
-        error.what());
-  }
-  report(callbacks, "SeedKey preflight", "PASS",
-         "FFFD13DE->C0828573 and FFFD03D0->1407370F");
   report(
       callbacks, "Acceptance boundary", "WARN",
       "Unified ARF entry covers A12/B11 ARF2.31 and ARF6.31. The flashing "

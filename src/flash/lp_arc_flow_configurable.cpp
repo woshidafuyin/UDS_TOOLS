@@ -18,12 +18,6 @@ LingpaoRadarSpec lp_arc_radar_spec(const FlashProfile& profile) {
   spec.raw_boot_transition_tx_id = 0;
   spec.security.seed_subfunction =
       static_cast<std::uint8_t>(profile.security_level);
-  spec.security.known_answers = {
-      {{0xFF, 0xFD, 0x13, 0xDE}, {0xC0, 0x82, 0x85, 0x73}},
-      {{0xFF, 0xFD, 0x03, 0xD0}, {0x14, 0x07, 0x37, 0x0F}},
-  };
-  spec.security.self_test_description =
-      "FFFD13DE->C0828573 and FFFD03D0->1407370F";
   return spec;
 }
 

@@ -13,15 +13,13 @@ public:
 
 protected:
   RadarS19Workflow(std::wstring workflow_id, std::string project_name,
-                   std::string report_name, bool send_raw_boot_transition,
-                   bool compare_lp_reference_crc);
+                   std::string report_name, bool send_raw_boot_transition);
 
 private:
   std::wstring workflow_id_;
   std::string project_name_;
   std::string report_name_;
   bool send_raw_boot_transition_{};
-  bool compare_lp_reference_crc_{};
 };
 
 class LpArcWorkflow final : public RadarS19Workflow {

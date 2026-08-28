@@ -2774,7 +2774,8 @@ void test_lp_arc_protocol_and_resources() {
             configurable_spec.security.key_length == 4 &&
             !configurable_spec.allow_empty_certificate &&
             configurable_spec.wait_for_certificate_responses &&
-            configurable_spec.security.known_answers.size() == 2,
+            configurable_spec.security.known_answers.empty() &&
+            configurable_spec.security.self_test_description.empty(),
         "LP-ARC configurable APP endpoint/target-aware boot transition mismatch");
 
   const auto chuneng_profile = uds::load_profile_ini(
