@@ -36,7 +36,9 @@ void check(bool condition, const char* message) {
 
 void test_flash_request_defaults() {
   const uds::app::FlashRequest request;
-  check(request.entry_mode == L"app", "flash request entry mode default mismatch");
+  check(request.entry_mode == L"app" &&
+            !request.skip_signature_verification,
+        "flash request entry/signature defaults mismatch");
   check(uds::app::kMinFlashRepeatCount == 1 &&
             uds::app::kMaxFlashRepeatCount == 10000 &&
             request.repeat_count == uds::app::kMinFlashRepeatCount &&
@@ -211,6 +213,7 @@ uds::app::FlashRequest make_flash_request(
   request.profile.flow = L"fake";
   request.profile.name = L"Fake ECU";
   request.entry_mode = L"ft";
+  request.skip_signature_verification = true;
   request.executable_directory = directory;
   request.hardware_backend = "ZLG / ZCANPRO (ZCAN)";
   request.target_description =
@@ -283,6 +286,7 @@ void test_flash_controller_success() {
             capture->job.profile.tx_id == 0x701 &&
             capture->job.profile.rx_id == 0x761 &&
             capture->job.entry_mode == L"ft" &&
+            capture->job.skip_signature_verification &&
             capture->job.security_dll ==
                 std::filesystem::path(L"security.dll") &&
             std::filesystem::exists(trace_path),

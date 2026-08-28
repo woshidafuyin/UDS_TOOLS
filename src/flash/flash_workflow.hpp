@@ -18,6 +18,7 @@ namespace uds {
 struct FlashJob {
   FlashProfile profile;
   std::wstring entry_mode{L"app"};
+  bool skip_signature_verification{};
   std::filesystem::path executable_directory;
   std::filesystem::path driver_file;
   std::filesystem::path app_file;

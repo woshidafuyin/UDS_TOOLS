@@ -15,6 +15,7 @@
 #include <QAbstractScrollArea>
 #include <QAbstractSpinBox>
 #include <QCloseEvent>
+#include <QCheckBox>
 #include <QColor>
 #include <QComboBox>
 #include <QCoreApplication>
@@ -811,6 +812,8 @@ void MainWindow::connectActions() {
           &MainWindow::startProbeFromUi);
   connect(ui_->startFlashButton, &QPushButton::clicked, this,
           &MainWindow::startFlashFromUi);
+  connect(ui_->skipAppSignatureVerificationCheckBox, &QCheckBox::toggled,
+          this, [this] { updateSignatureVerificationControls(); });
   connect(ui_->stopButton, &QPushButton::clicked, this, [this] {
     if (flash_running_) {
       flash_stop_requested_ = controller_bridge_->requestFlashStop();
@@ -1261,6 +1264,8 @@ void MainWindow::applySelectedProfile(int device_index) {
   const auto& profile = profiles[profile_index];
   const auto geely_p416 =
       profile.flow_id == QStringLiteral("geely_p416");
+  ui_->skipAppSignatureVerificationCheckBox->setChecked(false);
+  updateSignatureVerificationControls();
   ui_->driverPathLabel->setText(QStringLiteral("Driver 文件"));
   ui_->appPathLabel->setText(
       geely_p416 ? QStringLiteral("APP VBF 文件")
@@ -1614,6 +1619,21 @@ bool MainWindow::selectedProfileSupportsAppTmpPackage() const {
   return valid && profile_index >= 0 &&
          static_cast<std::size_t>(profile_index) < profiles.size() &&
          profiles[profile_index].supports_app_tmp_package;
+}
+
+void MainWindow::updateSignatureVerificationControls() {
+  bool valid{};
+  const auto profile_index = selectedProfileIndex(&valid);
+  const auto& profiles = controller_bridge_->profileOptions();
+  const auto lp_arf = valid && profile_index >= 0 &&
+                      static_cast<std::size_t>(profile_index) < profiles.size() &&
+                      profiles[profile_index].flow_id == QStringLiteral("lp_arf");
+  auto* skip = ui_->skipAppSignatureVerificationCheckBox;
+  skip->setVisible(lp_arf);
+  const auto verification_enabled = !(lp_arf && skip->isChecked());
+  ui_->appVerifyPathLabel->setEnabled(verification_enabled);
+  ui_->appVerifyPathLineEdit->setEnabled(verification_enabled);
+  ui_->appVerifyBrowseButton->setEnabled(verification_enabled);
 }
 
 void MainWindow::updateAppPackagePresentation(bool report_error) {
@@ -2083,6 +2103,9 @@ void MainWindow::startFlashFromUi() {
     return;
   }
   const auto entry_mode = ui_->entryModeComboBox->currentData().toString();
+  const auto skip_signature_verification =
+      profile.flow_id == QStringLiteral("lp_arf") &&
+      ui_->skipAppSignatureVerificationCheckBox->isChecked();
   const auto needs_app =
       entry_mode != QStringLiteral("cal");
   const auto embedded_tmp =
@@ -2097,6 +2120,7 @@ void MainWindow::startFlashFromUi() {
     return;
   }
   if (needs_app && profile.supports_app_tmp_package && !embedded_tmp &&
+      !skip_signature_verification &&
       fullPath(ui_->appVerifyPathLineEdit).isEmpty()) {
     QMessageBox::warning(
         this, QStringLiteral("缺少APP验签文件"),
@@ -2104,7 +2128,7 @@ void MainWindow::startFlashFromUi() {
     return;
   }
   const auto needs_app_verification =
-      (needs_app && !embedded_tmp) ||
+      (needs_app && !embedded_tmp && !skip_signature_verification) ||
       (profile.profile_id == QStringLiteral("chery_t22") &&
        entry_mode == QStringLiteral("cal"));
   const auto needs_cal =
@@ -2158,6 +2182,12 @@ void MainWindow::startFlashFromUi() {
         "提示：已选择BOOT→APP入口；使用当前设备物理诊断ID，跳过APP态0203/85/28，"
         "正式刷写全程保持0x520/500ms唤醒。"));
   }
+  if (skip_signature_verification) {
+    appendUiLog(
+        QStringLiteral(
+            "警告：LP-ARF 已勾选跳过APP签名验签；本次不会发送 31 01 60 00 和 31 01 60 01，APP下载后的 31 01 02 03 保持执行。"),
+        UiLogTone::Pending);
+  }
   if (entry_mode == QStringLiteral("cal")) {
     appendUiLog(QStringLiteral(
         "提示：CAL模式将按CANoe顺序执行 Driver + CAL，APP文件不会下载。"));
@@ -2189,7 +2219,7 @@ void MainWindow::startFlashFromUi() {
        fullPath(ui_->driverVerifyPathLineEdit),
        fullPath(ui_->appVerifyPathLineEdit),
        fullPath(ui_->calVerifyPathLineEdit),
-       fullPath(ui_->seedKeyDllPathLineEdit));
+       fullPath(ui_->seedKeyDllPathLineEdit), skip_signature_verification);
 }
 
 void MainWindow::updateEnabledState() {

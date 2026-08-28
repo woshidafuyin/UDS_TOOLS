@@ -50,7 +50,8 @@ signals:
                       const QString& driver_verify_path,
                       const QString& app_verify_path,
                       const QString& cal_verify_path,
-                      const QString& seed_key_dll_path);
+                      const QString& seed_key_dll_path,
+                      bool skip_signature_verification);
 protected:
   void closeEvent(QCloseEvent* event) override;
   bool eventFilter(QObject* watched, QEvent* event) override;
@@ -112,6 +113,7 @@ private:
   void restoreDefaultFlashFile(FlashFileField field);
   void restoreDefaultDiagnosticId(bool restore_tx);
   void updateAppPackagePresentation(bool report_error = false);
+  void updateSignatureVerificationControls();
   [[nodiscard]] bool selectedProfileSupportsAppTmpPackage() const;
   [[nodiscard]] int selectedProfileIndex(bool* valid = nullptr) const;
   [[nodiscard]] bool hasRadarSelector() const;

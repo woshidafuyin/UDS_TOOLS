@@ -363,7 +363,7 @@ int main(int argc, char* argv[]) {
       bridge.startFlash(0, {}, QStringLiteral("ft"), 1, 2, 0x703, 0x763,
                         QStringLiteral("driver.s19"),
                         QStringLiteral("app.s19"), {}, {}, {}, {},
-                        QStringLiteral("security.dll"));
+                        QStringLiteral("security.dll"), true);
     });
     QTimer::singleShot(3000, &application, [&] {
       timed_out = true;
@@ -382,6 +382,7 @@ int main(int argc, char* argv[]) {
               flash_capture->job.profile.ft_tx_id == 0x701 &&
               flash_capture->job.profile.ft_rx_id == 0x761 &&
               flash_capture->job.entry_mode == L"ft" &&
+              flash_capture->job.skip_signature_verification &&
               flash_capture->job.driver_file ==
                   std::filesystem::path(L"driver.s19"),
           "Qt flash bridge did not assemble the FlashJob with the "

@@ -1736,6 +1736,8 @@ int main(int argc, char* argv[]) {
       application.processEvents();
       auto* app_verify_label = window.findChild<QLabel*>(
           QStringLiteral("appVerifyPathLabel"));
+      auto* skip_arf_signature = window.findChild<QCheckBox*>(
+          QStringLiteral("skipAppSignatureVerificationCheckBox"));
       check(!radar->isHidden() && radar->count() == 4 &&
                 radar->itemText(0) == QStringLiteral("设备 0（0x772 / 0x77A）") &&
                 radar->itemText(1) == QStringLiteral("设备 1（0x773 / 0x77B）") &&
@@ -1760,9 +1762,10 @@ int main(int argc, char* argv[]) {
                 app_path->text().contains(QStringLiteral("ARC2.36BC3")) &&
                 c857_seed_key->text().contains(
                     QStringLiteral("lingpao_SeednKey")) &&
-                app_verify_label &&
-                app_verify_label->text() ==
-                    QStringLiteral("APP 校验文件"),
+                 app_verify_label &&
+                 app_verify_label->text() ==
+                     QStringLiteral("APP 校验文件") &&
+                 skip_arf_signature && skip_arf_signature->isHidden(),
             "ARC merged four-target UI or preset resources mismatch");
       check(!tx_id->isReadOnly() && !rx_id->isReadOnly() && tx_id_label &&
                 rx_id_label &&
@@ -1869,8 +1872,10 @@ int main(int argc, char* argv[]) {
                         ->text() == QStringLiteral("详情") &&
                 c857_seed_key->text().contains(
                     QStringLiteral("lingpao_SeednKey")) &&
-                app_verify_label &&
-                app_verify_label->text() == QStringLiteral("APP 验签（内置）"),
+                 app_verify_label &&
+                 app_verify_label->text() == QStringLiteral("APP 验签（内置）") &&
+                 skip_arf_signature && !skip_arf_signature->isHidden() &&
+                 !skip_arf_signature->isChecked(),
             "LP-ARF UI endpoint, entry names or resources mismatch");
       check_file_panel_is_stable(true);
 
@@ -1880,18 +1885,34 @@ int main(int argc, char* argv[]) {
                           nullptr, nullptr);
       int arf_flash_request_count{};
       QString arf_app_verify_path;
+      bool arf_skip_signature{};
       QObject::connect(
           &window, &uds::ui::qt::MainWindow::flashRequested, &window,
           [&](int, const QString&, const QString&, unsigned, unsigned, quint32,
               quint32, const QString&, const QString&, const QString&,
-              const QString&, const QString& app_verify_path) {
+              const QString&, const QString& app_verify_path, const QString&,
+              const QString&, bool skip_signature_verification) {
             ++arf_flash_request_count;
             arf_app_verify_path = app_verify_path;
+            arf_skip_signature = skip_signature_verification;
           });
       start_flash->click();
       application.processEvents();
-      check(arf_flash_request_count == 1 && arf_app_verify_path.isEmpty(),
-            "LP-ARF embedded TMP summary leaked into app_verify_path");
+      check(arf_flash_request_count == 1 && arf_app_verify_path.isEmpty() &&
+                !arf_skip_signature,
+            "LP-ARF default request did not preserve normal signature verification");
+      skip_arf_signature->setChecked(true);
+      application.processEvents();
+      check(!app_verify_label->isEnabled() &&
+                !window.findChild<QLineEdit*>(
+                           QStringLiteral("appVerifyPathLineEdit"))->isEnabled() &&
+                !window.findChild<QPushButton*>(
+                           QStringLiteral("appVerifyBrowseButton"))->isEnabled(),
+            "LP-ARF signature bypass did not disable verification-file controls");
+      start_flash->click();
+      application.processEvents();
+      check(arf_flash_request_count == 2 && arf_skip_signature,
+            "LP-ARF checked signature bypass was not forwarded to the request");
 
       checkpoint("profile-ui");
       run_ui_monkey_test(application, window, projects, devices, entries,

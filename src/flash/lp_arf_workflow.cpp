@@ -102,7 +102,8 @@ void LpArfWorkflow::run(
 
   LpArfArtifacts artifacts;
   try {
-    artifacts = load_lp_arf_artifacts(app_path, certificate_path);
+    artifacts = load_lp_arf_artifacts(
+        app_path, certificate_path, job.skip_signature_verification);
   } catch (const std::exception& error) {
     throw std::runtime_error(
         std::string("LP-ARF file preflight failed before CAN access: ") +
@@ -117,16 +118,18 @@ void LpArfWorkflow::run(
 
   const auto app_crc = lingpao_radar_crc32(images.app.data);
   const auto app_hash = sha256(images.app.data);
+  const auto verification_layout = job.skip_signature_verification
+      ? std::string("; signature-verification=SKIPPED by operator; 6000/6001 disabled; ")
+      : "; certificate=1322 bytes loaded; binding verdict is delegated to ECU "
+        "31 01 60 00 per CANoe baseline; certificate-source=" +
+            std::string(artifacts.certificate_embedded ? "TMP embedded" :
+                                                       "external file") +
+            "; ";
   const auto layout =
       "APP=" + hex_u32(images.app.address) + "/" +
       hex_u32(static_cast<std::uint32_t>(images.app.data.size())) +
       ", CRC32=" + hex_u32(app_crc) + ", SHA-256=" + to_hex(app_hash) +
-      "; certificate=1322 bytes loaded; binding verdict is delegated to ECU "
-      "31 01 60 00 per CANoe baseline; "
-      "certificate-source=" +
-      std::string(artifacts.certificate_embedded ? "TMP embedded" :
-                                                   "external file") +
-      "; "
+      verification_layout +
       "Driver=disabled by CANoe baseline";
   if (callbacks.log) callbacks.log("LP-ARF package preflight complete: " + layout);
   report(callbacks, "File preflight", "PASS", layout);
@@ -156,11 +159,17 @@ void LpArfWorkflow::run(
   }
   report(callbacks, "SeedKey preflight", "PASS",
          "FFFD13DE->C0828573 and FFFD03D0->1407370F");
-  report(callbacks, "Acceptance boundary", "WARN",
-         "Unified ARF entry covers A12/B11 ARF2.31 and ARF6.31; select one "
-         "project-appropriate TMP package or APP/certificate input. The "
-         "certificate is sent as-is and ECU 31 01 60 00 is authoritative; "
-         "C++ bench acceptance remains separate for each ECU variant");
+  report(
+      callbacks, "Acceptance boundary", "WARN",
+      job.skip_signature_verification
+          ? "Operator enabled LP-ARF signature-verification bypass: ECU "
+            "31 01 60 00/6001 will not be sent; use only with a Boot that "
+            "explicitly removed certificate verification. APP 0203 remains "
+            "enabled; C++ bench acceptance remains separate for each variant"
+          : "Unified ARF entry covers A12/B11 ARF2.31 and ARF6.31; select one "
+            "project-appropriate TMP package or APP/certificate input. The "
+            "certificate is sent as-is and ECU 31 01 60 00 is authoritative; "
+            "C++ bench acceptance remains separate for each ECU variant");
 
   if (!job.can_bus_provider) {
     throw std::runtime_error("CAN bus provider is not configured");
@@ -203,7 +212,7 @@ void LpArfWorkflow::run(
           callbacks.progress(percent, line);
         }
       },
-      keygen);
+      keygen, {}, job.skip_signature_verification);
   try {
     flow.run(images, entry_mode, stop);
   } catch (...) {

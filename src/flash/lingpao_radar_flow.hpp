@@ -51,6 +51,7 @@ struct LingpaoRadarSpec {
   std::size_t certificate_length{1322};
   bool pls_programming_final_on_app{true};
   bool send_raw_boot_transition{true};
+  bool skip_signature_verification{};
   bool supports_pls_entry{true};
   std::uint32_t raw_boot_transition_tx_id{};
   std::optional<std::uint32_t> periodic_wakeup_id;

@@ -37,13 +37,15 @@ SRecordSegment load_external_app(const std::filesystem::path& path) {
           load_srecord_window(path, kLpArfAppAddress, kLpArfAppLength)};
 }
 
-void require_valid_package(const LeapmotorTmpPackage& package) {
+void require_valid_package(const LeapmotorTmpPackage& package,
+                           bool certificate_required) {
   if (package.app.address != kLpArfAppAddress ||
       package.app.data.size() != kLpArfAppLength) {
     throw std::runtime_error(
         "LP-ARF TMP APP must resolve to 000C0000/180000");
   }
-  if (package.certificate.size() != kLpArfCertificateLength) {
+  if (certificate_required &&
+      package.certificate.size() != kLpArfCertificateLength) {
     throw std::runtime_error(
         "LP-ARF TMP certificate must be exactly 1322 bytes");
   }
@@ -53,27 +55,32 @@ void require_valid_package(const LeapmotorTmpPackage& package) {
 
 LpArfArtifacts load_lp_arf_artifacts(
     const std::filesystem::path& app_path,
-    const std::filesystem::path& certificate_path) {
+    const std::filesystem::path& certificate_path,
+    bool skip_signature_verification) {
   if (lowercase_extension(app_path) == L".tmp") {
-    if (!certificate_path.empty()) {
+    if (!skip_signature_verification && !certificate_path.empty()) {
       throw std::runtime_error(
           "LP-ARF TMP already embeds its certificate; clear the external APP verification file");
     }
     auto package = load_leapmotor_tmp(app_path);
-    require_valid_package(package);
+    require_valid_package(package, !skip_signature_verification);
+    if (skip_signature_verification) package.certificate.clear();
     return {{{}, {package.app.address, std::move(package.app.data)},
              std::move(package.certificate)},
             true};
   }
 
   auto app = load_external_app(app_path);
+  if (skip_signature_verification) {
+    return {{{}, {app.address, std::move(app.data)}, {}}, false};
+  }
   if (certificate_path.empty()) {
     throw std::runtime_error(
         "select the APP verification ASC/TMP for the selected S19/SREC/BIN");
   }
   if (lowercase_extension(certificate_path) == L".tmp") {
     auto package = load_leapmotor_tmp(certificate_path);
-    require_valid_package(package);
+    require_valid_package(package, true);
     return {{{}, {app.address, std::move(app.data)},
              std::move(package.certificate)},
             false};
@@ -84,7 +91,7 @@ LpArfArtifacts load_lp_arf_artifacts(
           false};
 }
 
-LingpaoRadarSpec lp_arf_radar_spec() {
+LingpaoRadarSpec lp_arf_radar_spec(bool skip_signature_verification) {
   // The ARF6.31 CANoe Download() intentionally leaves the Driver 34/36/37
   // and 0202 verification block commented.  Keep the driver fields empty so
   // the shared core cannot accidentally import LP-ARC's Driver phase.
@@ -97,6 +104,7 @@ LingpaoRadarSpec lp_arf_radar_spec() {
   // 0x759 and must be received through the APP transport.
   spec.pls_programming_final_on_app = true;
   spec.send_raw_boot_transition = false;
+  spec.skip_signature_verification = skip_signature_verification;
   return spec;
 }
 
@@ -108,10 +116,12 @@ LpArfFlow::LpArfFlow(
     UdsClient& physical, UdsClient& app_functional,
     UdsClient& pls_functional, IsoTpSession& physical_transport,
     IsoTpSession& pls_transport, IsoTpSession& functional_transport, Log log,
-    KeyGenerator key_generator, LpArfTiming timing)
+    KeyGenerator key_generator, LpArfTiming timing,
+    bool skip_signature_verification)
     : LingpaoRadarFlow(physical, app_functional, pls_functional,
                        physical_transport, pls_transport,
                        functional_transport, std::move(log),
-                       std::move(key_generator), lp_arf_radar_spec(), timing) {}
+                       std::move(key_generator),
+                       lp_arf_radar_spec(skip_signature_verification), timing) {}
 
 } // namespace uds
