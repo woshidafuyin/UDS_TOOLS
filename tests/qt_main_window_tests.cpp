@@ -1763,7 +1763,13 @@ int main(int argc, char* argv[]) {
                     QStringLiteral("lingpao_SeednKey")) &&
                  app_verify_label &&
                  app_verify_label->text() ==
-                     QStringLiteral("APP 校验文件"),
+                     QStringLiteral("APP 校验文件") &&
+                 window.findChild<QLineEdit*>(
+                     QStringLiteral("appVerifyPathLineEdit"))
+                     ->property("fullPath")
+                     .toString()
+                     .endsWith(QStringLiteral(".asc"),
+                               Qt::CaseInsensitive),
             "ARC merged four-target UI or preset resources mismatch");
       check(!tx_id->isReadOnly() && !rx_id->isReadOnly() && tx_id_label &&
                 rx_id_label &&

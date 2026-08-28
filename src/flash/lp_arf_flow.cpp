@@ -68,7 +68,8 @@ LpArfArtifacts load_lp_arf_artifacts(
 
   auto app = load_external_app(app_path);
   if (certificate_path.empty()) {
-    return {{{}, {app.address, std::move(app.data)}, {}}, false};
+    throw std::runtime_error(
+        "LP-ARF S19/SREC/BIN requires a 1322-byte ASC or TMP certificate");
   }
   if (lowercase_extension(certificate_path) == L".tmp") {
     auto package = load_leapmotor_tmp(certificate_path);
@@ -96,9 +97,9 @@ LingpaoRadarSpec lp_arf_radar_spec() {
   // 0x759 and must be received through the APP transport.
   spec.pls_programming_final_on_app = true;
   spec.send_raw_boot_transition = false;
-  spec.allow_empty_certificate = true;
+  spec.allow_empty_certificate = false;
   spec.certificate_response_policy =
-      CertificateResponsePolicy::observe_and_continue;
+      CertificateResponsePolicy::require_positive;
   return spec;
 }
 

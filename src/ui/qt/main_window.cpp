@@ -1698,8 +1698,9 @@ void MainWindow::updateAppPackagePresentation(bool report_error) {
   verification->setProperty(kEmbeddedVerificationProperty, false);
   ui_->appPathLineEdit->setProperty(kPackageValidProperty, true);
   ui_->appVerifyPathLabel->setText(
-      lp_arf ? QStringLiteral("APP 验签文件（可选）")
-             : QStringLiteral("APP 校验文件"));
+      lp_arf
+          ? QStringLiteral("APP 验签文件")
+          : QStringLiteral("APP 校验文件"));
   ui_->appVerifyBrowseButton->setText(QStringLiteral("浏览"));
   verification->setStyleSheet({});
 
@@ -2170,7 +2171,6 @@ void MainWindow::startFlashFromUi() {
     return;
   }
   const auto entry_mode = ui_->entryModeComboBox->currentData().toString();
-  const auto lp_arf = profile.flow_id == QStringLiteral("lp_arf");
   const auto needs_app =
       entry_mode != QStringLiteral("cal");
   const auto embedded_tmp =
@@ -2185,7 +2185,6 @@ void MainWindow::startFlashFromUi() {
     return;
   }
   if (needs_app && profile.supports_app_tmp_package && !embedded_tmp &&
-      !lp_arf &&
       fullPath(ui_->appVerifyPathLineEdit).isEmpty()) {
     QMessageBox::warning(
         this, QStringLiteral("缺少APP验签文件"),
@@ -2193,7 +2192,7 @@ void MainWindow::startFlashFromUi() {
     return;
   }
   const auto needs_app_verification =
-      (needs_app && !embedded_tmp && !lp_arf) ||
+      (needs_app && !embedded_tmp) ||
       (profile.profile_id == QStringLiteral("chery_t22") &&
        entry_mode == QStringLiteral("cal"));
   const auto needs_cal =

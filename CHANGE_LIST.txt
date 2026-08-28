@@ -20,8 +20,8 @@ UDS 通用刷写工具 Change List
 - SHA-256：4A7E87ECC57A041C9A188B95E0D1269A2D77367B82CC3E7C050CFBA23FBACECB
 
 本次正式主程序：CH_FLASH_tools.exe
-- 文件大小：1,679,360 bytes
-- SHA-256：09D6B85FE0554FE6AD9AF8753F49CD012DCE2F485F1337BDE4BD849011796FC2
+- 文件大小：1,678,848 bytes
+- SHA-256：056AD53FA8DC21378BC787565D476FBE26C505511ABB3A843B2024F15C6D55A7
 
 比较方法：
 - 使用相对路径和 SHA-256 比较文件，不用文件名、大小或时间戳代替内容判断。
@@ -67,6 +67,14 @@ UDS 通用刷写工具 Change List
 - 请求本身的 ISO-TP 发送、FlowControl 或报文组装失败仍属于传输失败，不会被“跳过验签”策略掩盖。
 - 修复迟到的 `7F 31 13` 残留在接收队列、随后被 `2E F1 98` 误判为 FlowControl 并报 `ISO-TP flow control rejected` 的问题。
 - 新增肯定响应、最终 NRC、无响应、`NRC 0x78` 后最终响应，以及 `6000` NRC 不污染后续多帧 `F198` 的离线回归测试；全部 8 项 CTest 通过。真实 ECU 刷写仍需台架复验。
+
+0.5 零跑 LP-ARC / LP-ARF 恢复CANoe正常流程严格验签
+
+- 本条取代0.4中的LP-ARF非阻断策略：LP-ARC和LP-ARF均不再允许空Certificate进入刷写流程。
+- LP-ARC恢复Profile默认1322字节ASC；LP-ARF的TMP必须内置1322字节Certificate，S19/SREC/BIN必须搭配1322字节ASC或TMP验签文件。
+- 两个项目均依次发送`31 01 60 00 + Certificate`和`31 01 60 01`，严格要求`71 01 60 00 04`和`71 01 60 01 04`肯定响应。
+- `6000/6001`收到NRC、超时或状态不符立即终止，不再采用observe-and-continue；ISO-TP发送和FlowControl失败仍按传输失败处理。
+- 本次对齐CANoe正常`Download()`流程，不把CANoe故障注入、跳步或数据破坏Test Case暴露为交付刷写功能；真实ECU一致性仍需同硬件、同文件A/B台架复验。
 
 1. 新增“诊断报文”页
 

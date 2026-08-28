@@ -134,12 +134,11 @@ void RadarS19Workflow::run(
       hex_u32(images.app.address) + "/" +
       hex_u32(static_cast<std::uint32_t>(images.app.data.size())) +
       ", CRC32=" + hex_u32(app_crc) +
-      "; certificate=1322 bytes";
+      "; certificate=1322 bytes; 6000/6001 require positive responses";
   if (callbacks.log) {
     callbacks.log(project_name_ + " S19 auto-analysis complete: " + layout);
   }
   report(callbacks, "File preflight", "PASS", layout);
-
   const auto keygen =
       [broker, security_dll, variant = job.profile.security_variant](
           std::span<const std::uint8_t> seed, unsigned level) {

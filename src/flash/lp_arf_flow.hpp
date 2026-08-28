@@ -24,7 +24,6 @@ struct LpArfArtifacts {
 //   TMP              -> embedded APP + embedded certificate
 //   S19/SREC/BIN+ASC -> selected APP + external certificate
 //   S19/SREC/BIN+TMP -> selected APP + parsed package certificate
-//   S19/SREC/BIN     -> selected APP with no external certificate payload
 // This is deliberately UI-independent so every ARF workflow shares the same
 // package parsing policy. Certificate authenticity and APP binding are left
 // to the ECU's unchanged 6000/6001 routines.

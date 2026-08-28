@@ -56,12 +56,10 @@ struct LingpaoRadarSpec {
   std::size_t certificate_length{1322};
   bool pls_programming_final_on_app{true};
   bool send_raw_boot_transition{true};
-  // LP-ARF permits an empty CertificateDownload payload when the selected
-  // Boot does not require an external S19 certificate. Other flows retain
-  // the exact certificate-length requirement by default.
+  // Reserved for explicitly approved project variants. The production
+  // LP-ARC and LP-ARF specs keep this false to match CANoe normal Download().
   bool allow_empty_certificate{};
-  // LP-ARF consumes and records both certificate routine responses without
-  // using them as a continue/fail gate. Other flows require a positive reply.
+  // Production LP-ARC and LP-ARF require positive certificate responses.
   CertificateResponsePolicy certificate_response_policy{
       CertificateResponsePolicy::require_positive};
   bool supports_pls_entry{true};

@@ -109,15 +109,12 @@ void LpArfWorkflow::run(
 
   const auto app_crc = lingpao_radar_crc32(images.app.data);
   const auto app_hash = sha256(images.app.data);
-  const auto verification_layout = images.certificate.empty()
-      ? std::string(
-            "; certificate=not provided; unchanged 31 01 60 00/6001 sequence "
-            "will use an empty CertificateDownload payload; ")
-      : "; certificate=1322 bytes loaded; binding verdict is delegated to ECU "
-        "31 01 60 00 per CANoe baseline; certificate-source=" +
-            std::string(artifacts.certificate_embedded ? "TMP embedded" :
-                                                       "external file") +
-            "; ";
+  const auto verification_layout =
+      "; certificate=1322 bytes loaded; 31 01 60 00 and 31 01 60 01 "
+      "require CANoe-baseline positive responses; certificate-source=" +
+      std::string(artifacts.certificate_embedded ? "TMP embedded" :
+                                                   "external file") +
+      "; ";
   const auto layout =
       "APP=" + hex_u32(images.app.address) + "/" +
       hex_u32(static_cast<std::uint32_t>(images.app.data.size())) +
@@ -135,12 +132,10 @@ void LpArfWorkflow::run(
   report(
       callbacks, "Acceptance boundary", "WARN",
       "Unified ARF entry covers A12/B11 ARF2.31 and ARF6.31. The flashing "
-      "service sequence is unchanged and always sends 31 01 60 00 followed "
-      "by 31 01 60 01; an omitted S19 certificate produces an empty 6000 "
-      "payload. LP-ARF observes, logs, and consumes both routine responses "
-      "within bounded windows, but positive, negative, or no response does "
-      "not gate continuation. Transport send failures remain fatal. C++ "
-      "bench acceptance remains separate for each ECU variant");
+      "service sequence requires a 1322-byte embedded or external "
+      "Certificate, sends 31 01 60 00 followed by 31 01 60 01, and requires "
+      "the expected positive response for both routines. C++ bench "
+      "acceptance remains separate for each ECU variant");
 
   if (!job.can_bus_provider) {
     throw std::runtime_error("CAN bus provider is not configured");
