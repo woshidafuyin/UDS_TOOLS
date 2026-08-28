@@ -355,10 +355,10 @@ int main(int argc, char* argv[]) {
       check(replaced.success && stored.open(QIODevice::ReadOnly) &&
                 stored.readAll() == QByteArray("NEW_RESOURCE", 12) &&
                 QFileInfo(replaced.stored_path).fileName() == "new.s19" &&
-                !QFileInfo::exists(configured) && QFileInfo::exists(selected) &&
+                QFileInfo::exists(configured) && QFileInfo::exists(selected) &&
                 QFileInfo::exists(preserved_tmp) &&
                 QFileInfo::exists(unrelated_s19),
-            "Replacement removed an unrelated resource file");
+            "Replacement removed an existing resource file");
       stored.close();
 
       const auto next_selected =
@@ -370,13 +370,14 @@ int main(int argc, char* argv[]) {
       next_input.close();
       const auto next = uds::ui::qt::replaceConfiguredResourceFile(
           next_selected, configured,
-          QDir(sandbox.path()).filePath("resources"), replaced.stored_path);
+          QDir(sandbox.path()).filePath("resources"));
       QFile next_stored(QDir(resources).filePath("next.s19"));
       check(next.success && next_stored.open(QIODevice::ReadOnly) &&
                 next_stored.readAll() == QByteArray("NEXT_RESOURCE", 13) &&
-                !QFileInfo::exists(stored_path) &&
+                QFileInfo::exists(configured) &&
+                QFileInfo::exists(stored_path) &&
                 QFileInfo::exists(next_selected),
-            "Second selection did not remove the previous managed file");
+            "Second selection removed a previous resource file");
       next_stored.close();
 
       check(QFileInfo::exists(preserved_tmp) &&
@@ -1794,33 +1795,46 @@ int main(int argc, char* argv[]) {
       check(tx_id->text() == QStringLiteral("0x770") &&
                 rx_id->text() == QStringLiteral("0x778"),
             "Double-clicking Rx ID did not restore only the target default");
+      {
+        QSettings isolated_target_settings;
+        isolated_target_settings.remove(
+            QStringLiteral("selectors/profile_state/lp_arc"));
+      }
+      radar->setCurrentIndex(0);
+      application.processEvents();
       entries->setCurrentIndex(entries->findData(QStringLiteral("ft")));
       application.processEvents();
       check(entries->currentData().toString() == QStringLiteral("ft") &&
                 entries->currentText() == QStringLiteral("FT"),
             "ARC FT entry selection mismatch");
 
-      // Switching between devices of the same project must preserve the
-      // explicit FT selection instead of rebuilding the combo at APP.
+      // Each target has independent operator state. A mode chosen for ARC
+      // target 0 must not leak to target 3, and returning restores target 0.
       radar->setCurrentIndex(3);
       application.processEvents();
-      check(entries->currentData().toString() == QStringLiteral("ft"),
-            "ARC device switch silently reset FT entry mode to APP");
+      check(entries->currentData().toString() == QStringLiteral("app"),
+            "ARC target 0 FT mode leaked into target 3");
       radar->setCurrentIndex(0);
       application.processEvents();
       check(entries->currentData().toString() == QStringLiteral("ft"),
-            "ARC second device switch did not preserve FT entry mode");
+            "Returning to ARC target 0 did not restore its FT entry mode");
 
-      // The same rule applies when changing projects: preserve the selected
-      // semantic mode when the destination Profile supports it.
+      // Entry mode belongs to the selected Profile/target. A mode chosen for
+      // ARC must not leak into ARF, while returning to ARC must restore ARC's
+      // own selection.
+      {
+        QSettings isolated_mode_settings;
+        isolated_mode_settings.remove(
+            QStringLiteral("selectors/profile_state/lp_arf"));
+      }
       devices->setCurrentIndex(find_text(devices, QStringLiteral("ARF")));
       application.processEvents();
-      check(entries->currentData().toString() == QStringLiteral("ft"),
-            "LP project switch silently reset the supported FT mode to APP");
+      check(entries->currentData().toString() == QStringLiteral("app"),
+            "ARC FT mode leaked into the independent ARF Profile");
       devices->setCurrentIndex(find_text(devices, QStringLiteral("ARC")));
       application.processEvents();
       check(entries->currentData().toString() == QStringLiteral("ft"),
-            "LP reverse project switch did not preserve FT entry mode");
+            "Returning to ARC did not restore ARC's FT entry mode");
 
       entries->setCurrentIndex(entries->findData(QStringLiteral("app")));
       application.processEvents();
@@ -1892,6 +1906,138 @@ int main(int argc, char* argv[]) {
       application.processEvents();
       check(arf_flash_request_count == 1 && arf_app_verify_path.isEmpty(),
             "LP-ARF embedded TMP summary leaked into app_verify_path");
+
+      // Full A -> B -> A regression: the vendor remembers its project, the
+      // project remembers its target, and mode/diagnostic-ID overrides remain
+      // isolated by Profile/target even when the middle Profile does not
+      // support FT.
+      const auto geely_state_vendor =
+          find_text(projects, QStringLiteral("吉利"));
+      const auto baic_state_vendor =
+          find_text(projects, QStringLiteral("北汽"));
+      check(geely_state_vendor >= 0 && baic_state_vendor >= 0,
+            "Geely/BAIC vendors missing for selector-state regression");
+      projects->setCurrentIndex(geely_state_vendor);
+      application.processEvents();
+      const auto p611 = find_text(devices, QStringLiteral("P611"));
+      check(p611 >= 0, "Geely P611 missing for selector-state regression");
+      devices->setCurrentIndex(p611);
+      application.processEvents();
+      entries->setCurrentIndex(entries->findData(QStringLiteral("ft")));
+      tx_id->setText(QStringLiteral("0x123"));
+      rx_id->setText(QStringLiteral("0x456"));
+      QMetaObject::invokeMethod(tx_id, "editingFinished",
+                                Qt::DirectConnection);
+      QMetaObject::invokeMethod(rx_id, "editingFinished",
+                                Qt::DirectConnection);
+
+      projects->setCurrentIndex(baic_state_vendor);
+      application.processEvents();
+      const auto bqb41 = find_text(devices, QStringLiteral("BQB41"));
+      check(bqb41 >= 0, "BAIC BQB41 missing for selector-state regression");
+      devices->setCurrentIndex(bqb41);
+      application.processEvents();
+      check(radar->count() == 4,
+            "BAIC BQB41 targets missing for selector-state regression");
+      radar->setCurrentIndex(2);
+      application.processEvents();
+      check(entries->currentData().toString() == QStringLiteral("app"),
+            "Geely FT mode leaked into BAIC BQB41");
+
+      projects->setCurrentIndex(geely_state_vendor);
+      application.processEvents();
+      check(devices->currentText() == QStringLiteral("P611") &&
+                entries->currentData().toString() == QStringLiteral("ft") &&
+                tx_id->text() == QStringLiteral("0x123") &&
+                rx_id->text() == QStringLiteral("0x456"),
+            "Geely P611 project/mode/diagnostic IDs were not restored after "
+            "BAIC");
+
+      projects->setCurrentIndex(baic_state_vendor);
+      application.processEvents();
+      check(devices->currentText() == QStringLiteral("BQB41") &&
+                radar->currentIndex() == 2 &&
+                entries->currentData().toString() == QStringLiteral("app") &&
+                tx_id->text() == QStringLiteral("0x74A") &&
+                rx_id->text() == QStringLiteral("0x7CA"),
+            "BAIC BQB41 project/target/default state was not restored");
+
+      // Exercise every configured vendor/project/target with an A -> B -> A
+      // transition. This turns selector isolation into a catalog-wide contract
+      // instead of relying on a few hand-picked Profiles.
+      QStringList vendor_names;
+      for (int vendor = 0; vendor < projects->count(); ++vendor) {
+        vendor_names.push_back(projects->itemText(vendor));
+      }
+      int selector_state_case{};
+      for (const auto& vendor_name : vendor_names) {
+        projects->setCurrentIndex(find_text(projects, vendor_name));
+        application.processEvents();
+        QStringList project_names;
+        for (int project = 0; project < devices->count(); ++project) {
+          project_names.push_back(devices->itemText(project));
+        }
+        for (const auto& project_name : project_names) {
+          projects->setCurrentIndex(find_text(projects, vendor_name));
+          application.processEvents();
+          devices->setCurrentIndex(find_text(devices, project_name));
+          application.processEvents();
+          const auto target_count = radar->count();
+          for (int target = 0; target < target_count; ++target) {
+            projects->setCurrentIndex(find_text(projects, vendor_name));
+            application.processEvents();
+            devices->setCurrentIndex(find_text(devices, project_name));
+            application.processEvents();
+            radar->setCurrentIndex(target);
+            application.processEvents();
+
+            auto mode_index = entries->findData(QStringLiteral("ft"));
+            if (mode_index < 0) {
+              mode_index = entries->findData(QStringLiteral("cal"));
+            }
+            if (mode_index < 0) mode_index = entries->currentIndex();
+            entries->setCurrentIndex(mode_index);
+            const auto expected_mode = entries->currentData().toString();
+            const auto expected_tx =
+                QStringLiteral("0x%1")
+                    .arg(0x500 + selector_state_case, 0, 16)
+                    .toUpper();
+            const auto expected_rx =
+                QStringLiteral("0x%1")
+                    .arg(0x600 + selector_state_case, 0, 16)
+                    .toUpper();
+            tx_id->setText(expected_tx);
+            rx_id->setText(expected_rx);
+            QMetaObject::invokeMethod(tx_id, "editingFinished",
+                                      Qt::DirectConnection);
+            QMetaObject::invokeMethod(rx_id, "editingFinished",
+                                      Qt::DirectConnection);
+
+            const auto anchor_vendor =
+                vendor_name == QStringLiteral("北汽")
+                    ? QStringLiteral("吉利")
+                    : QStringLiteral("北汽");
+            projects->setCurrentIndex(find_text(projects, anchor_vendor));
+            application.processEvents();
+            projects->setCurrentIndex(find_text(projects, vendor_name));
+            application.processEvents();
+
+            const auto state_error =
+                "Catalog-wide selector state was not isolated for " +
+                vendor_name.toStdString() + "/" + project_name.toStdString() +
+                "/" + std::to_string(target);
+            check(devices->currentText() == project_name &&
+                      radar->currentIndex() == target &&
+                      entries->currentData().toString() == expected_mode &&
+                      tx_id->text() == expected_tx &&
+                      rx_id->text() == expected_rx,
+                  state_error.c_str());
+            ++selector_state_case;
+          }
+        }
+      }
+      check(selector_state_case >= 22,
+            "Catalog-wide selector-state matrix did not cover all Profiles");
 
       checkpoint("profile-ui");
       run_ui_monkey_test(application, window, projects, devices, entries,
@@ -1977,9 +2123,21 @@ int main(int argc, char* argv[]) {
               settings.value(QStringLiteral("hardware/channel/vector"))
                       .toUInt() == 2U,
           "Qt channels leaked between CAN driver backends");
-    check(settings.value(QStringLiteral("selectors/entry_mode")).toString() ==
-              QStringLiteral("ft"),
-          "Qt entry selection was not saved");
+    const auto chuneng_right_mode =
+        settings
+            .value(QStringLiteral(
+                "selectors/profile_state/chuneng_331_left_rear/right_rear/"
+                "entry_mode"))
+            .toString();
+    const auto chuneng_left_mode =
+        settings
+            .value(QStringLiteral(
+                "selectors/profile_state/chuneng_331_left_rear/left_rear/"
+                "entry_mode"))
+            .toString();
+    check(chuneng_right_mode == QStringLiteral("ft") ||
+              chuneng_left_mode == QStringLiteral("ft"),
+          "Qt entry selection was not saved by Profile/target");
     check(settings.value(QStringLiteral("selectors/repeat_count")).toInt() == 3,
           "Qt generic flash repeat count was not saved");
     check(settings.value(QStringLiteral(

@@ -219,6 +219,25 @@ QString canVendorDisplayName(CanVendor vendor) {
                            static_cast<int>(can_vendor_name(vendor).size()));
 }
 
+QString settingsKeyComponent(const QString& value) {
+  return QString::fromLatin1(QUrl::toPercentEncoding(value));
+}
+
+QString vendorProjectSettingsKey(const QString& vendor) {
+  return QStringLiteral("selectors/vendor_projects/%1")
+      .arg(settingsKeyComponent(vendor));
+}
+
+QString projectDeviceSettingsGroup(const QString& vendor,
+                                   const QString& project) {
+  return QStringLiteral("selectors/project_devices/%1/%2")
+      .arg(settingsKeyComponent(vendor), settingsKeyComponent(project));
+}
+
+QString profileStateSettingsGroup(const QString& profile_target_key) {
+  return QStringLiteral("selectors/profile_state/%1").arg(profile_target_key);
+}
+
 } // namespace
 
 MainWindow::MainWindow(QWidget* parent)
@@ -903,19 +922,24 @@ void MainWindow::connectActions() {
           });
   connect(ui_->txIdLineEdit, &QLineEdit::editingFinished, this,
           [this] {
+            saveActiveProfileState();
             syncVersionContext();
             syncBusMonitorContext();
             syncDiagnosticRequestContext();
           });
   connect(ui_->rxIdLineEdit, &QLineEdit::editingFinished, this,
           [this] {
+            saveActiveProfileState();
             syncVersionContext();
             syncBusMonitorContext();
             syncDiagnosticRequestContext();
           });
   connect(ui_->entryModeComboBox,
           QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-          [this] { saveComboSelections(); });
+          [this] {
+            saveActiveProfileState();
+            saveComboSelections();
+          });
   connect(ui_->repeatCountSpinBox,
           QOverload<int>::of(&QSpinBox::valueChanged), this,
           [this] { saveComboSelections(); });
@@ -1119,8 +1143,6 @@ void MainWindow::populateDeviceOptions(int vendor_index) {
   if (vendor_index < 0) return;
   const auto profile_indexes =
       ui_->projectComboBox->itemData(vendor_index).toList();
-  QSignalBlocker blocker(ui_->deviceComboBox);
-  ui_->deviceComboBox->clear();
   const auto& profiles = controller_bridge_->profileOptions();
   QMap<QString, QVariantList> projects;
   for (const auto& value : profile_indexes) {
@@ -1132,18 +1154,29 @@ void MainWindow::populateDeviceOptions(int vendor_index) {
     }
     projects[profiles[profile_index].project_name].push_back(profile_index);
   }
-  for (auto project = projects.cbegin(); project != projects.cend(); ++project) {
-    ui_->deviceComboBox->addItem(project.key(), project.value());
-  }
-  blocker.unblock();
-  if (ui_->deviceComboBox->count() > 0) {
-    auto project_index = 0;
-    if (restoring_combo_selections_) {
-      QSettings settings;
-      const auto saved_project_name =
+  auto project_index = 0;
+  {
+    QSignalBlocker blocker(ui_->deviceComboBox);
+    ui_->deviceComboBox->clear();
+    for (auto project = projects.cbegin(); project != projects.cend();
+         ++project) {
+      ui_->deviceComboBox->addItem(project.key(), project.value());
+    }
+    if (ui_->deviceComboBox->count() == 0) return;
+
+    QSettings settings;
+    const auto vendor_name = ui_->projectComboBox->itemText(vendor_index);
+    auto saved_project_name =
+        settings.value(vendorProjectSettingsKey(vendor_name)).toString();
+    const auto saved_profile_id =
+        restoring_combo_selections_
+            ? settings.value(QStringLiteral("selectors/profile_id")).toString()
+            : QString{};
+    if (saved_project_name.isEmpty() && restoring_combo_selections_) {
+      saved_project_name =
           settings.value(QStringLiteral("selectors/project_name")).toString();
-      const auto saved_profile_id =
-          settings.value(QStringLiteral("selectors/profile_id")).toString();
+    }
+    if (!saved_profile_id.isEmpty()) {
       for (int index = 0; index < ui_->deviceComboBox->count(); ++index) {
         const auto candidates = ui_->deviceComboBox->itemData(index).toList();
         const auto contains_saved_profile = std::any_of(
@@ -1155,17 +1188,21 @@ void MainWindow::populateDeviceOptions(int vendor_index) {
                      static_cast<std::size_t>(profile_index) < profiles.size() &&
                      profiles[profile_index].profile_id == saved_profile_id;
             });
-        if ((!saved_project_name.isEmpty() &&
-             ui_->deviceComboBox->itemText(index) == saved_project_name) ||
-            contains_saved_profile) {
+        if (contains_saved_profile) {
           project_index = index;
           break;
         }
       }
+    } else if (!saved_project_name.isEmpty()) {
+      const auto saved_project_index =
+          ui_->deviceComboBox->findText(saved_project_name);
+      if (saved_project_index >= 0) project_index = saved_project_index;
     }
     ui_->deviceComboBox->setCurrentIndex(project_index);
-    populateTargetOptions(project_index);
   }
+  // The device signal was blocked while rebuilding the list, so apply the
+  // selected project exactly once here.
+  populateTargetOptions(project_index);
 }
 
 void MainWindow::populateTargetOptions(int project_index) {
@@ -1199,30 +1236,36 @@ void MainWindow::populateTargetOptions(int project_index) {
   }
 
   auto target_index = 0;
-  if (restoring_combo_selections_) {
-    QSettings settings;
-    const auto saved_profile_id =
+  QSettings settings;
+  const auto device_group = projectDeviceSettingsGroup(
+      ui_->projectComboBox->currentText(), ui_->deviceComboBox->currentText());
+  auto saved_profile_id =
+      settings.value(device_group + QStringLiteral("/profile_id")).toString();
+  auto saved_target_id =
+      settings.value(device_group + QStringLiteral("/target_id")).toString();
+  if (saved_profile_id.isEmpty() && restoring_combo_selections_) {
+    saved_profile_id =
         settings.value(QStringLiteral("selectors/profile_id")).toString();
-    const auto saved_target_id =
+    saved_target_id =
         settings.value(QStringLiteral("selectors/target/%1")
                            .arg(saved_profile_id))
             .toString();
-    for (int index = 0; index < ui_->radarComboBox->count(); ++index) {
-      const auto selection = ui_->radarComboBox->itemData(index).toMap();
-      bool valid{};
-      const auto profile_index =
-          selection.value(QStringLiteral("profile_index")).toInt(&valid);
-      if (!valid || profile_index < 0 ||
-          static_cast<std::size_t>(profile_index) >= profiles.size() ||
-          profiles[profile_index].profile_id != saved_profile_id) {
-        continue;
-      }
-      if (saved_target_id.isEmpty() ||
-          selection.value(QStringLiteral("target_id")).toString() ==
-              saved_target_id) {
-        target_index = index;
-        break;
-      }
+  }
+  for (int index = 0; index < ui_->radarComboBox->count(); ++index) {
+    const auto selection = ui_->radarComboBox->itemData(index).toMap();
+    bool valid{};
+    const auto profile_index =
+        selection.value(QStringLiteral("profile_index")).toInt(&valid);
+    if (!valid || profile_index < 0 ||
+        static_cast<std::size_t>(profile_index) >= profiles.size() ||
+        profiles[profile_index].profile_id != saved_profile_id) {
+      continue;
+    }
+    if (saved_target_id.isEmpty() ||
+        selection.value(QStringLiteral("target_id")).toString() ==
+            saved_target_id) {
+      target_index = index;
+      break;
     }
   }
   if (ui_->radarComboBox->count() > 0) {
@@ -1234,21 +1277,12 @@ void MainWindow::populateTargetOptions(int project_index) {
 
 void MainWindow::applySelectedProfile(int device_index) {
   if (device_index < 0) return;
+  saveActiveProfileState();
   // File overrides belong to the running window only. Save the paths shown
   // for the previously active profile/target before rebuilding the fields.
   // This map is deliberately not backed by QSettings: a new process must
   // always start from the Profile's resources defaults.
   saveRuntimeFileSelection();
-  // A target/project change rebuilds the list because capabilities may differ,
-  // but it must not silently discard a mode that the user explicitly chose.
-  // Keep the semantic value (app/ft/cal/...) and restore it when the newly
-  // selected profile supports the same mode; otherwise use that profile's
-  // declared default.
-  const auto previous_entry_mode =
-      ui_->entryModeComboBox->currentData().toString();
-  const auto preserve_previous_entry =
-      !last_applied_entry_default_.isEmpty() &&
-      previous_entry_mode != last_applied_entry_default_;
   bool valid{};
   const auto profile_index = selectedProfileIndex(&valid);
   const auto& profiles = controller_bridge_->profileOptions();
@@ -1312,28 +1346,6 @@ void MainWindow::applySelectedProfile(int device_index) {
   const auto entry_index =
       ui_->entryModeComboBox->findData(profile.default_entry_mode);
   ui_->entryModeComboBox->setCurrentIndex(entry_index < 0 ? 0 : entry_index);
-  if (preserve_previous_entry && !previous_entry_mode.isEmpty()) {
-    const auto previous_entry_index =
-        ui_->entryModeComboBox->findData(previous_entry_mode);
-    if (previous_entry_index >= 0) {
-      ui_->entryModeComboBox->setCurrentIndex(previous_entry_index);
-    }
-  }
-  if (restoring_combo_selections_) {
-    QSettings settings;
-    const auto saved_profile_id =
-        settings.value(QStringLiteral("selectors/profile_id")).toString();
-    if (saved_profile_id == profile.profile_id) {
-      const auto saved_entry_mode =
-          settings.value(QStringLiteral("selectors/entry_mode")).toString();
-      const auto saved_entry_index =
-          ui_->entryModeComboBox->findData(saved_entry_mode);
-      if (saved_entry_index >= 0) {
-        ui_->entryModeComboBox->setCurrentIndex(saved_entry_index);
-      }
-    }
-  }
-  last_applied_entry_default_ = profile.default_entry_mode;
   showPath(ui_->driverPathLineEdit, profile.driver_path);
   showPath(ui_->appPathLineEdit, profile.app_path);
   showPath(ui_->calPathLineEdit, profile.cal_path);
@@ -1349,6 +1361,7 @@ void MainWindow::applySelectedProfile(int device_index) {
   ui_->rxIdLineEdit->setReadOnly(false);
   applySelectedRadar(false);
   restoreRuntimeFileSelection();
+  restoreCurrentProfileState();
   updateAppPackagePresentation(false);
   activateSelectedLogTarget();
   // Keep every generic file row stable while switching projects.
@@ -1364,6 +1377,73 @@ void MainWindow::applySelectedProfile(int device_index) {
                   .arg(ui_->txIdLineEdit->text(),
                        ui_->rxIdLineEdit->text())
                   .arg(QString::number(profile.functional_id, 16).toUpper()));
+}
+
+void MainWindow::saveActiveProfileState() const {
+  if (active_profile_state_key_.isEmpty()) return;
+
+  QSettings settings;
+  settings.beginGroup(profileStateSettingsGroup(active_profile_state_key_));
+  const auto entry_mode = ui_->entryModeComboBox->currentData().toString();
+  if (!entry_mode.isEmpty()) {
+    settings.setValue(QStringLiteral("entry_mode"), entry_mode);
+  }
+  bool tx_valid{}, rx_valid{};
+  const auto tx_text = ui_->txIdLineEdit->text().trimmed();
+  const auto rx_text = ui_->rxIdLineEdit->text().trimmed();
+  tx_text.toUInt(&tx_valid, 0);
+  rx_text.toUInt(&rx_valid, 0);
+  if (tx_valid) settings.setValue(QStringLiteral("tx_id"), tx_text);
+  if (rx_valid) settings.setValue(QStringLiteral("rx_id"), rx_text);
+  settings.endGroup();
+  settings.sync();
+}
+
+void MainWindow::restoreCurrentProfileState() {
+  const auto profile_state_key = selectedLogTargetKey();
+  active_profile_state_key_ = profile_state_key;
+  if (profile_state_key.isEmpty()) return;
+
+  QSettings settings;
+  const auto state_group = profileStateSettingsGroup(profile_state_key);
+  auto saved_entry_mode =
+      settings.value(state_group + QStringLiteral("/entry_mode")).toString();
+
+  // Migrate the former single global mode only for the Profile that owned it.
+  if (saved_entry_mode.isEmpty() && restoring_combo_selections_) {
+    bool valid{};
+    const auto profile_index = selectedProfileIndex(&valid);
+    const auto& profiles = controller_bridge_->profileOptions();
+    if (valid && profile_index >= 0 &&
+        static_cast<std::size_t>(profile_index) < profiles.size() &&
+        settings.value(QStringLiteral("selectors/profile_id")).toString() ==
+            profiles[profile_index].profile_id) {
+      saved_entry_mode =
+          settings.value(QStringLiteral("selectors/entry_mode")).toString();
+    }
+  }
+
+  const auto entry_index =
+      ui_->entryModeComboBox->findData(saved_entry_mode);
+  if (entry_index >= 0) {
+    QSignalBlocker blocker(ui_->entryModeComboBox);
+    ui_->entryModeComboBox->setCurrentIndex(entry_index);
+  }
+
+  const auto restore_id = [&settings, &state_group](const QString& name,
+                                                    QLineEdit* editor) {
+    const auto saved =
+        settings.value(state_group + QLatin1Char('/') + name).toString();
+    bool valid{};
+    saved.toUInt(&valid, 0);
+    if (valid) editor->setText(saved);
+  };
+  restore_id(QStringLiteral("tx_id"), ui_->txIdLineEdit);
+  restore_id(QStringLiteral("rx_id"), ui_->rxIdLineEdit);
+
+  // Store a migrated value under the new per-Profile/target key so all future
+  // switches are independent of the legacy global selector.
+  saveActiveProfileState();
 }
 
 void MainWindow::saveRuntimeFileSelection() {
@@ -1501,9 +1581,9 @@ bool MainWindow::storeSelectedFlashFile(FlashFileField field,
     }
   }
   const auto resources_root = QDir(QCoreApplication::applicationDirPath())
-                                  .filePath(QStringLiteral("resources"));
+                                   .filePath(QStringLiteral("resources"));
   const auto result = replaceConfiguredResourceFile(
-      selected, default_path, resources_root, fullPath(editor));
+      selected, default_path, resources_root);
   if (!result.success) {
     QMessageBox::warning(this, QStringLiteral("替换默认资源失败"), result.error);
     appendUiLog(QStringLiteral("%1默认资源替换失败：%2")
@@ -1517,16 +1597,6 @@ bool MainWindow::storeSelectedFlashFile(FlashFileField field,
   appendUiLog(QStringLiteral("%1已复制到默认资源目录（保留原文件名）：%2 → %3")
                   .arg(log_name, QDir::toNativeSeparators(selected),
                        QDir::toNativeSeparators(result.stored_path)));
-  if (!result.removed_path.isEmpty()) {
-    appendUiLog(QStringLiteral("已删除%1默认目录中的同后缀旧文件：%2")
-                    .arg(log_name,
-                         QDir::toNativeSeparators(result.removed_path)));
-  }
-  if (!result.cleanup_warning.isEmpty()) {
-    appendUiLog(result.cleanup_warning, UiLogTone::Pending);
-    QMessageBox::warning(this, QStringLiteral("旧资源清理未完成"),
-                         result.cleanup_warning);
-  }
   return true;
 }
 
@@ -1569,7 +1639,7 @@ void MainWindow::restoreDefaultFlashFile(FlashFileField field) {
 
   if (!default_path.isEmpty() && !QFileInfo(default_path).isFile()) {
     const auto message =
-        QStringLiteral("Profile原默认%1已被更新文件替换并清理，无法恢复：%2")
+        QStringLiteral("Profile原默认%1文件不存在，无法恢复：%2")
             .arg(field_name, QDir::toNativeSeparators(default_path));
     appendUiLog(message, UiLogTone::Pending);
     QMessageBox::warning(this, QStringLiteral("原默认资源已不存在"), message);
@@ -1773,6 +1843,7 @@ void MainWindow::restoreDefaultDiagnosticId(bool restore_tx) {
   auto* editor = restore_tx ? ui_->txIdLineEdit : ui_->rxIdLineEdit;
   editor->setText(QStringLiteral("0x%1").arg(
       QString::number(default_id, 16).toUpper()));
+  saveActiveProfileState();
   appendUiLog(QStringLiteral("已恢复当前设备默认 %1：%2")
                   .arg(restore_tx ? QStringLiteral("Tx ID")
                                   : QStringLiteral("Rx ID"),
@@ -1999,17 +2070,24 @@ void MainWindow::saveComboSelections() const {
                     ui_->projectComboBox->currentText());
   settings.setValue(QStringLiteral("selectors/project_name"),
                     ui_->deviceComboBox->currentText());
+  settings.setValue(
+      vendorProjectSettingsKey(ui_->projectComboBox->currentText()),
+      ui_->deviceComboBox->currentText());
   // Keep the old key as a vendor alias so existing installations retain their
   // last selection across this UI-only hierarchy migration.
   settings.setValue(QStringLiteral("selectors/project"),
                     ui_->projectComboBox->currentText());
   settings.setValue(QStringLiteral("selectors/profile_id"),
                     profiles[profile_index].profile_id);
+  const auto device_group = projectDeviceSettingsGroup(
+      ui_->projectComboBox->currentText(), ui_->deviceComboBox->currentText());
+  settings.setValue(device_group + QStringLiteral("/profile_id"),
+                    profiles[profile_index].profile_id);
+  settings.setValue(device_group + QStringLiteral("/target_id"),
+                    selectedTargetId());
   settings.setValue(
       canChannelSettingsKey(default_can_vendor()),
       ui_->vectorChannelComboBox->currentData());
-  settings.setValue(QStringLiteral("selectors/entry_mode"),
-                    ui_->entryModeComboBox->currentData());
   settings.setValue(QStringLiteral("selectors/repeat_count"),
                     ui_->repeatCountSpinBox->value());
   if (hasRadarSelector()) {
@@ -2630,6 +2708,9 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
+  saveActiveProfileState();
+  saveRuntimeFileSelection();
+  saveComboSelections();
   if (!probe_running_ && !flash_running_ && !bus_monitor_running_) {
     event->accept();
     return;

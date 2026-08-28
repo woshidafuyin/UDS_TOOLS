@@ -104,6 +104,8 @@ private:
   void populateTargetOptions(int device_index);
   void applySelectedProfile(int device_index);
   void applySelectedRadar(bool log_change);
+  void saveActiveProfileState() const;
+  void restoreCurrentProfileState();
   void saveRuntimeFileSelection();
   void restoreRuntimeFileSelection();
   [[nodiscard]] QString configuredDefaultFlashFile(FlashFileField field) const;
@@ -159,12 +161,12 @@ private:
   bool bus_monitor_running_{};
   bool restoring_combo_selections_{};
   int flash_progress_{};
-  QString last_applied_entry_default_;
   QString latest_report_path_;
   std::unique_ptr<QFile> execution_log_file_;
   QActionGroup* can_backend_group_{};
   QHash<QString, QList<UiLogEntry>> target_log_entries_;
   QHash<QString, RuntimeFileSelection> runtime_file_selections_;
+  QString active_profile_state_key_;
   QString active_file_selection_key_;
   QString active_log_target_key_;
   bool execution_log_follow_tail_{true};

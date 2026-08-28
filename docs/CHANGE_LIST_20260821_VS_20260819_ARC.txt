@@ -47,7 +47,7 @@ UDS 通用刷写工具 Change List
 
 - 新增 `geely_p417.ini`、`geely_p611.ini`，在厂商“吉利”下提供 P416、P417、P611 / ARS1.31L 三个项目选择。
 - P417、P611 完整复用 P416 的 CAN 配置、APP/PLS 双入口、SeedKey、版本读取 DID、服务顺序和 VBF 参数处理，不再保留 P611 ESS DFI 覆盖。
-- 三个项目分别使用 `resources/geely_p416`、`resources/geely_p417`、`resources/geely_p611`；浏览选择刷写文件后，原子替换当前项目 Profile 所指向的默认资源文件，项目间互不覆盖。
+- 三个项目分别使用 `resources/geely_p416`、`resources/geely_p417`、`resources/geely_p611`；浏览选择刷写文件后，按原文件名原子复制到当前项目 Profile 的默认资源目录，保留默认文件、历史选择文件和外部源文件，项目间互不覆盖。
 - 当前默认 ESS VBF 的 DFI 为 `0x00`，因此三个项目的 ESS `RequestDownload` 均为 `34 00 44 ...`。
 - 已增加 Profile/独立资源、ESS DFI、默认资源替换、TX/RX 日志颜色和 Qt 项目切换回归；这些属于离线验证，不代表 P417/P611 真机刷写通过。
 
@@ -192,3 +192,15 @@ UDS 通用刷写工具 Change List
 - LSMR 目标明确标记 `pending_validation=true`；本次没有连接 CAN/ECU，不声明 LSMR 实刷 PASS。
 - Release x86/x64 构建成功，CTest 9/9 PASS；RSMR/LSMR SeedKey 已知向量在构建目录和 dist 均 PASS。
 - 当前 dist：343 个文件、228,681,478 bytes；`keygen_broker.exe` SHA-256 `7C4071E35A7E4A1AFB5BC5DB92BC66E2E413A9D4984590CBC8994B0D9A396BF0`。
+
+七、2026-08-28 项目切换状态隔离
+----------------------------------------
+
+- 厂商分别记忆自身上次选择的项目；离开并返回厂商时不再回到排序首项。
+- 项目分别记忆自身上次选择的设备/目标；多设备项目离开并返回时恢复原设备。
+- 刷写模式按 `Profile/目标` 独立保存；FT、CAL、APP+CAL 不再串入其他项目，也不会经过不支持该模式的项目后丢失。
+- 用户修改的 Tx ID、Rx ID 按 `Profile/目标` 独立保存；双击恢复默认值后同步更新该目标状态。
+- 启动时优先按稳定 Profile ID 恢复，并兼容迁移旧版全局刷写模式与长安旧厂商名称。
+- 厂商切换期间屏蔽设备下拉框的重建信号，Profile 只应用一次，不再重复写状态或重复追加选择日志。
+- Qt UI 回归增加全目录状态矩阵：遍历所有厂商、项目和设备/目标执行 A→B→A，核验项目、设备、模式和 Tx/Rx 相互隔离。
+- 本项 Release 构建成功，CTest 8/8 PASS；未连接 CAN、未发送 UDS、未执行 ECU 刷写。

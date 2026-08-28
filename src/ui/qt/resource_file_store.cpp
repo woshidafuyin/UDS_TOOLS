@@ -31,7 +31,7 @@ bool samePath(const QString& left, const QString& right) {
 
 ResourceFileReplaceResult replaceConfiguredResourceFile(
     const QString& selected_path, const QString& configured_default_path,
-    const QString& resources_root, const QString& previous_stored_path) {
+    const QString& resources_root) {
   ResourceFileReplaceResult result;
   const QFileInfo selected(selected_path);
   if (!selected.isFile() || !selected.isReadable()) {
@@ -65,13 +65,6 @@ ResourceFileReplaceResult replaceConfiguredResourceFile(
   }
 
   const auto selected_absolute = canonicalOrAbsolute(selected_path);
-  const auto previous = canonicalOrAbsolute(
-      previous_stored_path.trimmed().isEmpty() ? configured_default_path
-                                                : previous_stored_path);
-  const QFileInfo previous_info(previous);
-  const auto previous_is_managed =
-      isInside(previous, root) &&
-      samePath(previous_info.absolutePath(), destination_directory);
   if (!samePath(selected_absolute, destination)) {
     QSaveFile output(destination);
     if (!output.open(QIODevice::WriteOnly)) {
@@ -106,21 +99,6 @@ ResourceFileReplaceResult replaceConfiguredResourceFile(
       result.error = QStringLiteral("提交默认资源文件失败：%1")
                          .arg(QDir::toNativeSeparators(destination));
       return result;
-    }
-  }
-
-  const auto suffix_matches =
-      !selected.suffix().isEmpty() &&
-      previous_info.suffix().compare(selected.suffix(), Qt::CaseInsensitive) ==
-          0;
-  if (previous_is_managed && suffix_matches &&
-      !samePath(previous, destination) && previous_info.isFile()) {
-    if (QFile::remove(previous)) {
-      result.removed_path = previous;
-    } else {
-      result.cleanup_warning =
-          QStringLiteral("新文件已复制，但同后缀旧文件无法删除：%1")
-              .arg(QDir::toNativeSeparators(previous));
     }
   }
 
