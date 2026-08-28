@@ -1,7 +1,8 @@
 # UDS 通用刷写工具
 
-更新日期：2026-08-26
+更新日期：2026-08-28
 当前正式程序：`CH_FLASH_tools.exe`
+当前代码分支：`main`
 
 ## 1. 文档定位
 
@@ -11,8 +12,8 @@
 
 ## 2. 当前交付组成
 
-- 21 个可执行项目 Profile；
-- 18 个已注册 Workflow ID；
+- 22 个可执行项目 Profile；
+- 17 个已注册 Workflow ID；
 - 4 类 CAN 硬件后端：Vector XL、ZLG/ZCAN、TOSUN/TSMaster、Kvaser；
 - 4 个用户功能页：刷写作业、版本读取、诊断报文、总线监听；
 - 统一主程序 `CH_FLASH_tools.exe`；
@@ -48,9 +49,10 @@
 
 - 支持浏览和选择 Driver、Driver 校验、APP、APP 校验、CAL、SeedKey 等项目声明的输入；
 - 支持 S19/SREC、ASC/HEX 文本、VBF 和 CBF 1.0；
-- 在访问 CAN 前检查必需文件、格式、大小、地址窗口、数据段、Hash、签名、CRC 和项目专用约束；
-- 预检失败时不开始 UDS 下载；
-- 文件解析成功只表示能够提取数据，仍必须通过对应 Workflow 的完整项目约束。
+- 在访问 CAN 前，由当前项目 Workflow 检查必需文件、可读取性、基础结构以及该项目明确声明的约束；不同项目的预检范围不同；
+- 地址窗口、数据段、大小、CRC、Hash、签名或文件绑定关系，仅在对应 Workflow 明确要求时作为本地门禁，不作为所有项目统一的强制规则；
+- 对由 ECU/Boot 判定验签或完整性的项目，本地只完成继续刷写所必需的文件解析和布局提取，不代替 ECU 给出真实性、绑定关系或最终验收结论；
+- 必需文件缺失或基础结构无法解析时不开始 UDS 下载；文件解析成功只表示工具能够提取刷写数据，不等于 ECU 接受或台架验收通过。
 
 ### 4.3 能否刷写与正式刷写
 
@@ -83,7 +85,7 @@
 ## 6. 一键版本读取
 
 - 版本读取页自动跟随刷写页的厂商、项目、设备、后端、通道和当前 Tx/Rx ID；
-- 21 个可执行 Profile 均配置 `[version_check]`，当前合计 142 个读取项；
+- 22 个可执行 Profile 均配置 `[version_check]`，当前合计 168 个读取项；
 - 每项由 Profile 配置请求、正响应前缀、解码器、期望值和必读属性，不在界面中按项目复制 DID 逻辑；
 - 读取前显示 DID、请求、含义和必读属性，读取后显示成功/错误、ASCII 或解析值及原始 UDS 通信；
 - 支持 ASCII、十六进制、犀重结构化版本、计数 ASCII、BCD+ASCII 零件号和计数零件号列表解码；
@@ -176,14 +178,23 @@
 | 时代新安 HJZJ FMR | `shidaixinan_hjzj_fmr.ini` / `shidaixinan_hjzj_fmr` | APP、FT |
 | 时代新安 天王星、木星2代、庆铃 FMR | 独立 Profile / 复用 HJZJ Workflow | 独立端点和资源 |
 | 零跑 ARC | `lp_arc.ini` / `lp_arc` | 四设备；APP、FT |
-| 零跑 ARF | `lp_arf.ini` / `lp_arf` | APP、FT（PLS→APP）；TMP单包或S19/SREC/BIN配套ASC/TMP |
+| 零跑 ARF | `lp_arf.ini` / `lp_arf` | APP、FT（PLS→APP）；TMP 单包自动解析，或 S19/SREC/BIN 搭配可选 ASC/TMP Certificate；`6000/6001` 发送后不等待响应 |
 | 吉利 P416 | `geely_p416.ini` / `geely_p416` | SBL、APP、ESS VBF；项目 NM 和专用传输；按所选 VBF 元数据刷写，不以文件哈希或固定块布局白名单阻断 |
 | 吉利 P417 | `geely_p417.ini` / `geely_p416` | 完整复用 P416 端点、入口、服务顺序和 VBF 参数；使用独立 `resources/geely_p417` 目录 |
 | 吉利 P611 | `geely_p611.ini` / `geely_p416` | 完整复用 P416 端点、入口、服务顺序和 VBF 参数；使用独立 `resources/geely_p611` 目录 |
 | 北汽 N61AB | `baic_n61ab.ini` / `baic_n61ab` | Classic CAN；归档 CAPL、Driver/APP S19 与 SeedKey 已接入；正常 APP Download |
 | 北汽 BQB41 | `baic_bqb41.ini` / `baic_bqb41` | CAN FD；四设备；成功 BLF 流程与已知答案验证的 SeedKey 已接入；Driver/APP需手动选择 |
 
-## 11. 楚能 ARC331 专项说明
+## 11. 零跑 LP-ARF 专项说明
+
+- `lp_arf` 是 A12/B11 ARF2.31 与 ARF6.31 的统一入口，支持 APP 和 FT（PLS→APP）；各 ECU 变体的资源来源、实车结论和台架验收仍分别管理；
+- 选择 `.tmp` 时自动解析其中的 APP、地址、长度、声明 CRC32 和内置 Certificate；本地要求 TMP 基础结构完整且能提取刷写数据，但不以本地 CRC 复算、APP SHA-256、Certificate 真实性或 APP/Certificate 绑定关系阻断刷写，这些结论交由 ECU/Boot 判定；
+- 选择 S19/SREC/BIN 时，APP 验签文件为可选：可搭配外部 ASC/TMP Certificate，也可不上传；未上传时 `31 01 60 00` 使用空 Certificate 数据，刷写服务顺序不改变；
+- 刷写流程始终依次发送 `31 01 60 00` 和 `31 01 60 01`。LP-ARF 对这两个例程采用 send-only：日志保留 TX 记录，但不接收、等待或要求 `71 01 60 00`、`71 01 60 01` 正响应，也不以其 NRC、超时或尾字节 `04` 判定流程失败；
+- send-only 仅适用于 LP-ARF 的 `6000/6001` 两个验签例程；会话、安全访问、擦除、下载、传输、完整性检查、复位等其余步骤仍按原 Workflow 处理响应，其他项目不受影响；
+- 当前 C++ LP-ARF 默认不发送可选原始切换帧 `03 FB A5 00 00 00 00 00`；Profile、离线测试或 CANoe 参考资料一致，只能证明配置和流程基线，不能替代各 ECU 变体的真实刷写验收。
+
+## 12. 楚能 ARC331 专项说明
 
 - 当前目标为右后 `0x72C/0x72D` 和左后 `0x72E/0x72F`，目标切换同步影响探测、版本读取、刷写、监听过滤、日志和报告；
 - CBF 输入必须为 Driver CBF + APP CBF；S-record 输入必须为 Driver S19/SREC + Driver ASC + APP S19/SREC + APP ASC；禁止两种来源混搭；
@@ -193,7 +204,7 @@
 - Boot 恢复引擎属于内部受控能力。正式发布构建默认关闭 `UDS_EXPOSE_ARC331_BOOT_RECOVERY`，普通 dist 下拉框不显示 Boot 恢复入口；
 - 恢复态处理必须使用单独显式启用的受控构建和台架操作，不应把普通 APP 重试当作恢复方案。
 
-## 12. 配置、日志和生成目录
+## 13. 配置、日志和生成目录
 
 - `profiles`、经过运行时筛选的 `resources` 和 `drivers` 是发布内容；
 - `Configuration` 保存当前用户的界面和硬件选择，由程序运行时创建；
@@ -203,7 +214,7 @@
 - 干净发布包不携带开发机历史 `Configuration`、`logs`、`.partial`、`validation`、台架探针、内部流程文档、厂商头文件/导入库、未使用的参考工程、构建目录或 Python 缓存；
 - 清理发布包不会清理源码目录或公共盘资料。
 
-## 12. 构建、验证与证据边界
+## 14. 构建、验证与证据边界
 
 - 构建命令：`scripts\build.ps1 -Config Release -DistPath dist`；
 - 当前离线 CTest 共 8 项：核心、P416、CAN 适配、厂商 API 边界、厂商清单、应用状态、Qt 探测桥接和 Qt 主窗口；
@@ -212,7 +223,7 @@
 - 某一项目、某一设备或某一模式的 PASS 不自动证明另一设备、FT/CAL、其他后端或相似项目通过；
 - 正式交付主程序和压缩包应以 SHA-256 绑定，校验值记录在压缩包旁的 `.sha256.txt` 文件中。
 
-## 13. 文档入口
+## 15. 文档入口
 
 - `README.md`：当前版本完整功能说明；
 - `CHANGE_LIST.txt`：仅记录相对公共盘 8.19 正式包的变化；
