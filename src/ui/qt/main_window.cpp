@@ -1,5 +1,6 @@
 #include "ui/qt/main_window.hpp"
 #include "ui/qt/resource_file_store.hpp"
+#include "ui/qt/ui_log_message_parser.hpp"
 
 #include "core/flash_data.hpp"
 #include "drivers/can/can_bus_provider.hpp"
@@ -83,15 +84,15 @@ std::optional<std::uint8_t> nrcFromLogLine(const QString& message) {
   // Raw UDS lines emitted by older flows may not yet carry an NRC label.  A
   // negative response is valid only when 7F is the first UDS payload byte;
   // never scan inside a positive response's Seed, DID value or signature.
-  if (!message.trimmed().startsWith(QStringLiteral("RX ["),
-                                    Qt::CaseInsensitive)) {
+  const auto parsed = parseUiLogMessage(message);
+  if (parsed.direction != LogDirection::Rx) {
     return std::nullopt;
   }
   static const QRegularExpression raw_negative(
       QStringLiteral(
-          R"(^\s*RX\s*\[[^\]]+\]\s+7F\s+[0-9A-Fa-f]{2}\s+([0-9A-Fa-f]{2})(?=\s|$|\|))"),
+          R"(^\s*7F\s+[0-9A-Fa-f]{2}\s+([0-9A-Fa-f]{2})(?=\s|$|\|))"),
       QRegularExpression::CaseInsensitiveOption);
-  match = raw_negative.match(message);
+  match = raw_negative.match(parsed.payload);
   if (!match.hasMatch()) return std::nullopt;
   bool ok{};
   const auto value = match.captured(1).toUInt(&ok, 16);
@@ -101,9 +102,9 @@ std::optional<std::uint8_t> nrcFromLogLine(const QString& message) {
 
 std::optional<UdsRoutineResult> failedRoutineFromLogLine(
     const QString& message) {
+  const auto parsed = parseUiLogMessage(message);
   const auto response_line =
-      message.trimmed().startsWith(QStringLiteral("RX ["),
-                                   Qt::CaseInsensitive) ||
+      parsed.direction == LogDirection::Rx ||
       message.contains(QStringLiteral("响应")) ||
       message.contains(QStringLiteral("response"), Qt::CaseInsensitive);
   if (!response_line) return std::nullopt;
@@ -2461,9 +2462,8 @@ void MainWindow::appendUiLog(const QString& message, UiLogTone tone) {
                                           Qt::CaseInsensitive))) {
     tone = UiLogTone::Failure;
   }
-  const auto display_line = QStringLiteral("[%1] %2")
-                                .arg(now.toString(QStringLiteral("HH:mm:ss")),
-                                     displayed_message);
+  const auto display_timestamp =
+      QStringLiteral("[%1]").arg(now.toString(QStringLiteral("HH:mm:ss")));
   if (active_log_target_key_.isEmpty()) {
     active_log_target_key_ = selectedLogTargetKey();
     if (active_log_target_key_.isEmpty()) {
@@ -2471,14 +2471,9 @@ void MainWindow::appendUiLog(const QString& message, UiLogTone tone) {
     }
   }
   auto& target_entries = target_log_entries_[active_log_target_key_];
-  UiLogDirection direction = UiLogDirection::None;
-  const auto trimmed_message = displayed_message.trimmed();
-  if (trimmed_message.startsWith(QStringLiteral("TX ["))) {
-    direction = UiLogDirection::Tx;
-  } else if (trimmed_message.startsWith(QStringLiteral("RX ["))) {
-    direction = UiLogDirection::Rx;
-  }
-  target_entries.push_back(UiLogEntry{display_line, tone, direction});
+  target_entries.push_back(UiLogEntry{display_timestamp, displayed_message,
+                                      tone,
+                                      parseUiLogMessage(displayed_message)});
   constexpr qsizetype kMaximumUiLogLinesPerTarget = 5000;
   while (target_entries.size() > kMaximumUiLogLinesPerTarget) {
     target_entries.removeFirst();
@@ -2519,24 +2514,25 @@ void MainWindow::scheduleExecutionLogTailFollow() {
 }
 
 void MainWindow::appendUiLogEntryToView(const UiLogEntry& entry) {
-  QTextCharFormat format;
-  if (entry.direction == UiLogDirection::Tx) {
-    format.setForeground(QColor(QStringLiteral("#7189AE")));
-  } else if (entry.direction == UiLogDirection::Rx) {
-    format.setForeground(QColor(QStringLiteral("#5F927F")));
-  }
+  QTextCharFormat timestamp_format;
+  timestamp_format.setForeground(QColor(QStringLiteral("#6B7280")));
+
+  QTextCharFormat normal_format;
+  normal_format.setForeground(QColor(QStringLiteral("#263238")));
+
+  QTextCharFormat semantic_format = normal_format;
   switch (entry.tone) {
   case UiLogTone::Success:
-    format.setForeground(QColor(QStringLiteral("#16803C")));
-    format.setFontWeight(QFont::Bold);
+    semantic_format.setForeground(QColor(QStringLiteral("#16803C")));
+    semantic_format.setFontWeight(QFont::Bold);
     break;
   case UiLogTone::Failure:
-    format.setForeground(QColor(QStringLiteral("#C62828")));
-    format.setFontWeight(QFont::Bold);
+    semantic_format.setForeground(QColor(QStringLiteral("#C62828")));
+    semantic_format.setFontWeight(QFont::Bold);
     break;
   case UiLogTone::Pending:
-    format.setForeground(QColor(QStringLiteral("#A85D00")));
-    format.setFontWeight(QFont::Bold);
+    semantic_format.setForeground(QColor(QStringLiteral("#A85D00")));
+    semantic_format.setFontWeight(QFont::Bold);
     break;
   case UiLogTone::Normal:
     break;
@@ -2545,8 +2541,31 @@ void MainWindow::appendUiLogEntryToView(const UiLogEntry& entry) {
   auto cursor = ui_->logPlainTextEdit->textCursor();
   cursor.movePosition(QTextCursor::End);
   if (!ui_->logPlainTextEdit->document()->isEmpty()) cursor.insertBlock();
-  if (entry.tone != UiLogTone::Normal) cursor.setBlockCharFormat(format);
-  cursor.insertText(entry.text, format);
+  cursor.insertText(entry.timestamp, timestamp_format);
+  cursor.insertText(QStringLiteral(" "), normal_format);
+
+  if (entry.parsed.direction == LogDirection::None) {
+    cursor.insertText(entry.message, semantic_format);
+  } else {
+    if (!entry.parsed.leadingPrefix.isEmpty()) {
+      cursor.insertText(entry.parsed.leadingPrefix, timestamp_format);
+      cursor.insertText(QStringLiteral(" "), normal_format);
+    }
+
+    QTextCharFormat direction_format = semantic_format;
+    if (entry.tone == UiLogTone::Normal) {
+      direction_format.setForeground(QColor(
+          entry.parsed.direction == LogDirection::Tx
+              ? QStringLiteral("#1565C0")
+              : QStringLiteral("#00897B")));
+      direction_format.setFontWeight(QFont::Bold);
+    }
+    cursor.insertText(entry.parsed.directionAndCanId, direction_format);
+    if (!entry.parsed.payload.isEmpty()) {
+      cursor.insertText(QStringLiteral(" "), normal_format);
+      cursor.insertText(entry.parsed.payload, semantic_format);
+    }
+  }
   ui_->logPlainTextEdit->setTextCursor(cursor);
 }
 

@@ -4,6 +4,8 @@
 #include <QList>
 #include <QMainWindow>
 
+#include "ui/qt/ui_log_message_parser.hpp"
+
 #include <memory>
 
 class QCloseEvent;
@@ -73,16 +75,11 @@ private:
     Failure,
   };
 
-  enum class UiLogDirection {
-    None,
-    Tx,
-    Rx,
-  };
-
   struct UiLogEntry {
-    QString text;
+    QString timestamp;
+    QString message;
     UiLogTone tone{UiLogTone::Normal};
-    UiLogDirection direction{UiLogDirection::None};
+    ParsedUiLogMessage parsed;
   };
 
   struct RuntimeFileSelection {

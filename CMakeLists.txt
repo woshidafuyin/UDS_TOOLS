@@ -314,6 +314,8 @@ if(UDS_BUILD_QT_UI AND CMAKE_SIZEOF_VOID_P EQUAL 8)
       src/ui/qt/startup_window_presenter.cpp
       src/ui/qt/startup_window_presenter.hpp
       src/ui/qt/main_window.cpp
+      src/ui/qt/ui_log_message_parser.cpp
+      src/ui/qt/ui_log_message_parser.hpp
       src/ui/qt/resource_file_store.cpp
       src/ui/qt/main_window.hpp
       src/ui/qt/main_window.ui
@@ -574,6 +576,8 @@ if(TARGET uds_tool_qt)
     src/ui/qt/startup_window_presenter.cpp
     src/ui/qt/startup_window_presenter.hpp
     src/ui/qt/main_window.cpp
+    src/ui/qt/ui_log_message_parser.cpp
+    src/ui/qt/ui_log_message_parser.hpp
     src/ui/qt/resource_file_store.cpp
     src/ui/qt/main_window.hpp
     src/ui/qt/main_window.ui

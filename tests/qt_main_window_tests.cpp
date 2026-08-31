@@ -4,12 +4,14 @@
 #include "ui/qt/bus_monitor_page.hpp"
 #include "ui/qt/controller_bridge.hpp"
 #include "ui/qt/resource_file_store.hpp"
+#include "ui/qt/ui_log_message_parser.hpp"
 #include "ui/qt/version_confirmation_page.hpp"
 
 #include <QAction>
 #include <QActionGroup>
 #include <QApplication>
 #include <QCheckBox>
+#include <QColor>
 #include <QComboBox>
 #include <QDir>
 #include <QFile>
@@ -70,6 +72,25 @@ int find_text(const QComboBox* combo, const QString& text) {
     if (combo->itemText(index) == text) return index;
   }
   return -1;
+}
+
+QTextBlock find_log_block(const QTextDocument* document,
+                          const QString& needle) {
+  for (auto block = document->begin(); block.isValid(); block = block.next()) {
+    if (block.text().contains(needle)) return block;
+  }
+  return {};
+}
+
+QTextCharFormat log_fragment_format(const QTextBlock& block,
+                                    const QString& needle) {
+  for (auto iterator = block.begin(); !iterator.atEnd(); ++iterator) {
+    const auto fragment = iterator.fragment();
+    if (fragment.isValid() && fragment.text().contains(needle)) {
+      return fragment.charFormat();
+    }
+  }
+  return {};
 }
 
 QString target_id(const QComboBox* combo, int index) {
@@ -957,18 +978,101 @@ int main(int argc, char* argv[]) {
              "Execution log did not persist UI messages");
       auto* bridge = window.findChild<uds::ui::qt::ControllerBridge*>();
       check(bridge, "Controller bridge missing for TX/RX color test");
+      const auto parsed_prefixed = uds::ui::qt::parseUiLogMessage(
+          QStringLiteral("[设备1] [第2/3次] TX [0x72E] 36 A5 FF"));
+      check(parsed_prefixed.direction == uds::ui::qt::LogDirection::Tx &&
+                parsed_prefixed.leadingPrefix ==
+                    QStringLiteral("[设备1] [第2/3次]") &&
+                parsed_prefixed.roundPrefix == QStringLiteral("[第2/3次]") &&
+                parsed_prefixed.directionAndCanId ==
+                    QStringLiteral("TX [0x72E]") &&
+                parsed_prefixed.payload == QStringLiteral("36 A5 FF"),
+            "Structured UI log parser lost a device/round prefix or TX fields");
+      check(uds::ui::qt::parseUiLogMessage(
+                QStringLiteral("说明文字：TX=0x72E；RX=0x72F"))
+                .direction == uds::ui::qt::LogDirection::None,
+            "Structured UI log parser misclassified descriptive prose");
+
       bridge->logMessage(QStringLiteral("TX [0x716] 34 00 44"));
       bridge->logMessage(QStringLiteral("RX [0x616] 74 20 08 00"));
+      bridge->logMessage(
+          QStringLiteral("[第2/3次] TX [0x72E] 36 A5 FF"));
+      bridge->logMessage(
+          QStringLiteral("[设备1] [第2/3次] RX [0x72F] 76 A5"));
+      bridge->logMessage(
+          QStringLiteral("[第2/3次] RX [0x72F] 7F 10 7E"));
+      bridge->logMessage(
+          QStringLiteral("说明文字：TX=0x72E；RX=0x72F"));
       application.processEvents();
-      auto rx_block = log_view->document()->lastBlock();
-      auto tx_block = rx_block.previous();
-      check(tx_block.text().contains(QStringLiteral("TX [")) &&
-                tx_block.begin().fragment().charFormat().foreground().color() ==
-                    QColor(QStringLiteral("#7189AE")) &&
-                rx_block.text().contains(QStringLiteral("RX [")) &&
-                rx_block.begin().fragment().charFormat().foreground().color() ==
-                    QColor(QStringLiteral("#5F927F")),
-            "TX and RX log entries do not use distinct muted colors");
+      const auto tx_block =
+          find_log_block(log_view->document(), QStringLiteral("34 00 44"));
+      const auto rx_block =
+          find_log_block(log_view->document(), QStringLiteral("74 20 08 00"));
+      const auto round_tx_block =
+          find_log_block(log_view->document(), QStringLiteral("36 A5 FF"));
+      const auto device_rx_block =
+          find_log_block(log_view->document(), QStringLiteral("76 A5"));
+      const auto negative_rx_block = find_log_block(
+          log_view->document(), QStringLiteral("7F 10 7E"));
+      const auto prose_block = find_log_block(
+          log_view->document(), QStringLiteral("说明文字：TX=0x72E"));
+      check(tx_block.isValid() && rx_block.isValid() &&
+                round_tx_block.isValid() && device_rx_block.isValid() &&
+                negative_rx_block.isValid() && prose_block.isValid(),
+            "TX/RX rich-text test messages are missing");
+
+      const auto tx_format =
+          log_fragment_format(tx_block, QStringLiteral("TX [0x716]"));
+      const auto rx_format =
+          log_fragment_format(rx_block, QStringLiteral("RX [0x616]"));
+      const auto tx_payload_format =
+          log_fragment_format(tx_block, QStringLiteral("34 00 44"));
+      const auto round_format =
+          log_fragment_format(round_tx_block, QStringLiteral("[第2/3次]"));
+      const auto round_tx_format = log_fragment_format(
+          round_tx_block, QStringLiteral("TX [0x72E]"));
+      const auto device_rx_format = log_fragment_format(
+          device_rx_block, QStringLiteral("RX [0x72F]"));
+      const auto negative_direction_format = log_fragment_format(
+          negative_rx_block, QStringLiteral("RX [0x72F]"));
+      const auto negative_payload_format = log_fragment_format(
+          negative_rx_block, QStringLiteral("7F 10 7E"));
+      const auto prose_format = log_fragment_format(
+          prose_block, QStringLiteral("说明文字：TX=0x72E"));
+
+      check(tx_format.foreground().color() ==
+                    QColor(QStringLiteral("#1565C0")) &&
+                tx_format.fontWeight() == QFont::Bold &&
+                rx_format.foreground().color() ==
+                    QColor(QStringLiteral("#00897B")) &&
+                rx_format.fontWeight() == QFont::Bold &&
+                tx_payload_format.foreground().color() ==
+                    QColor(QStringLiteral("#263238")),
+            "Plain TX/RX direction, CAN ID, or payload colors are incorrect");
+      check(round_format.foreground().color() ==
+                    QColor(QStringLiteral("#6B7280")) &&
+                round_tx_format.foreground().color() ==
+                    QColor(QStringLiteral("#1565C0")) &&
+                device_rx_format.foreground().color() ==
+                    QColor(QStringLiteral("#00897B")),
+            "Round/device-prefixed TX/RX messages lost segmented colors");
+      check(negative_direction_format.foreground().color() ==
+                    QColor(QStringLiteral("#C62828")) &&
+                negative_payload_format.foreground().color() ==
+                    QColor(QStringLiteral("#C62828")) &&
+                negative_direction_format.fontWeight() == QFont::Bold &&
+                prose_format.foreground().color() ==
+                    QColor(QStringLiteral("#263238")),
+            "NRC priority or descriptive-text misclassification is incorrect");
+
+      persisted.close();
+      check(persisted.open(QIODevice::ReadOnly),
+            "Execution log could not be reopened after rich-text rendering");
+      const auto persisted_after_rich_text = persisted.readAll();
+      check(persisted_after_rich_text.contains(
+                "[第2/3次] TX [0x72E] 36 A5 FF") &&
+                !persisted_after_rich_text.contains("#1565C0"),
+            "Rich-text rendering changed or decorated the persisted log");
       QString long_execution_log;
       for (int line = 0; line < 240; ++line) {
         long_execution_log +=
@@ -1001,7 +1105,8 @@ int main(int argc, char* argv[]) {
                 log_view->verticalScrollBar()->maximum(),
             "Execution log did not follow appended output after End");
       auto result_block = log_view->document()->lastBlock();
-      auto result_format = result_block.begin().fragment().charFormat();
+      auto result_format = log_fragment_format(
+          result_block, QStringLiteral("========== 刷写成功 =========="));
       check(result_block.text().contains(QStringLiteral("刷写成功")) &&
                 result_format.foreground().color() ==
                     QColor(QStringLiteral("#16803C")) &&
@@ -1014,7 +1119,8 @@ int main(int argc, char* argv[]) {
                 log_view->verticalScrollBar()->maximum(),
             "Execution log did not keep following consecutive output");
       result_block = log_view->document()->lastBlock();
-      result_format = result_block.begin().fragment().charFormat();
+      result_format = log_fragment_format(
+          result_block, QStringLiteral("========== 刷写失败 =========="));
       check(result_block.text().contains(QStringLiteral("刷写失败")) &&
                 result_format.foreground().color() ==
                     QColor(QStringLiteral("#C62828")) &&
@@ -1057,8 +1163,8 @@ int main(int argc, char* argv[]) {
             "NRC flash failure handler is not invokable");
       auto nrc_reason_block =
           log_view->document()->lastBlock().previous().previous();
-      auto nrc_reason_format =
-          nrc_reason_block.begin().fragment().charFormat();
+      auto nrc_reason_format = log_fragment_format(
+          nrc_reason_block, QStringLiteral("NRC 0x31"));
       check(nrc_reason_block.text().contains(
                 QStringLiteral("NRC 0x31 RequestOutOfRange")) &&
                 nrc_reason_block.text().contains(
@@ -1087,7 +1193,8 @@ int main(int argc, char* argv[]) {
                           "40 7B 8D 3E 7F 1A CB"))),
             "Security seed log injection failed");
       result_block = log_view->document()->lastBlock();
-      result_format = result_block.begin().fragment().charFormat();
+      result_format =
+          log_fragment_format(result_block, QStringLiteral("67 11"));
       check(result_block.text().contains(QStringLiteral("67 11")) &&
                 !result_block.text().contains(QStringLiteral("NRC 0xCB")) &&
                 result_format.foreground().color() !=
@@ -1099,7 +1206,8 @@ int main(int argc, char* argv[]) {
                       QStringLiteral("RX [0x72F] 71 01 02 03 05"))),
             "Routine 0203 warning log injection failed");
       result_block = log_view->document()->lastBlock();
-      result_format = result_block.begin().fragment().charFormat();
+      result_format = log_fragment_format(
+          result_block, QStringLiteral("71 01 02 03 05"));
       check(result_block.text().contains(
                 QStringLiteral("71 01 02 03 05")) &&
                 !result_block.text().contains(
@@ -1114,7 +1222,8 @@ int main(int argc, char* argv[]) {
                       QStringLiteral("RX [0x72F] 71 01 02 02 05"))),
             "Routine failure log injection failed");
       result_block = log_view->document()->lastBlock();
-      result_format = result_block.begin().fragment().charFormat();
+      result_format = log_fragment_format(
+          result_block, QStringLiteral("71 01 02 02 05"));
       check(result_block.text().contains(
                 QStringLiteral("RoutineControl 0x0202")) &&
                 result_block.text().contains(
@@ -1135,7 +1244,8 @@ int main(int argc, char* argv[]) {
       check(invoke_probe_result(true),
             "Probe result handler is not invokable");
       result_block = log_view->document()->lastBlock();
-      result_format = result_block.begin().fragment().charFormat();
+      result_format =
+          log_fragment_format(result_block, QStringLiteral("● 在线："));
       check(result_block.text().contains(QStringLiteral("● 在线：")) &&
                 result_format.foreground().color() ==
                     QColor(QStringLiteral("#16803C")) &&
@@ -1144,7 +1254,8 @@ int main(int argc, char* argv[]) {
       check(invoke_probe_result(false),
             "Probe failure handler is not invokable");
       result_block = log_view->document()->lastBlock();
-      result_format = result_block.begin().fragment().charFormat();
+      result_format =
+          log_fragment_format(result_block, QStringLiteral("● 不在线："));
       check(result_block.text().contains(QStringLiteral("● 不在线：")) &&
                 result_format.foreground().color() ==
                     QColor(QStringLiteral("#C62828")) &&
