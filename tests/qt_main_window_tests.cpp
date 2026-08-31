@@ -1933,6 +1933,8 @@ int main(int argc, char* argv[]) {
       devices->setCurrentIndex(p611);
       application.processEvents();
       entries->setCurrentIndex(entries->findData(QStringLiteral("ft")));
+      repeat_count->setValue(7);
+      channels->setCurrentIndex(channels->findData(2U));
       tx_id->setText(QStringLiteral("0x123"));
       rx_id->setText(QStringLiteral("0x456"));
       QMetaObject::invokeMethod(tx_id, "editingFinished",
@@ -1950,6 +1952,8 @@ int main(int argc, char* argv[]) {
             "BAIC BQB41 targets missing for selector-state regression");
       radar->setCurrentIndex(2);
       application.processEvents();
+      repeat_count->setValue(8);
+      channels->setCurrentIndex(channels->findData(3U));
       check(entries->currentData().toString() == QStringLiteral("app"),
             "Geely FT mode leaked into BAIC BQB41");
 
@@ -1957,19 +1961,23 @@ int main(int argc, char* argv[]) {
       application.processEvents();
       check(devices->currentText() == QStringLiteral("P611") &&
                 entries->currentData().toString() == QStringLiteral("ft") &&
+                repeat_count->value() == 7 &&
+                channels->currentData().toUInt() == 2U &&
                 tx_id->text() == QStringLiteral("0x123") &&
                 rx_id->text() == QStringLiteral("0x456"),
-            "Geely P611 project/mode/diagnostic IDs were not restored after "
-            "BAIC");
+            "Geely P611 project/mode/repeat/channel/diagnostic IDs were not "
+            "restored after BAIC");
 
       projects->setCurrentIndex(baic_state_vendor);
       application.processEvents();
       check(devices->currentText() == QStringLiteral("BQB41") &&
                 radar->currentIndex() == 2 &&
                 entries->currentData().toString() == QStringLiteral("app") &&
+                repeat_count->value() == 8 &&
+                channels->currentData().toUInt() == 3U &&
                 tx_id->text() == QStringLiteral("0x74A") &&
                 rx_id->text() == QStringLiteral("0x7CA"),
-            "BAIC BQB41 project/target/default state was not restored");
+            "BAIC BQB41 project/target/repeat/channel state was not restored");
 
       // Exercise every configured vendor/project/target with an A -> B -> A
       // transition. This turns selector isolation into a catalog-wide contract
@@ -2015,6 +2023,12 @@ int main(int argc, char* argv[]) {
                 QStringLiteral("0x%1")
                     .arg(0x600 + selector_state_case, 0, 16)
                     .toUpper();
+            const auto expected_repeat = selector_state_case + 1;
+            const auto expected_channel =
+                static_cast<unsigned>((selector_state_case % 4) + 1);
+            repeat_count->setValue(expected_repeat);
+            channels->setCurrentIndex(
+                channels->findData(expected_channel));
             tx_id->setText(expected_tx);
             rx_id->setText(expected_rx);
             QMetaObject::invokeMethod(tx_id, "editingFinished",
@@ -2038,6 +2052,8 @@ int main(int argc, char* argv[]) {
             check(devices->currentText() == project_name &&
                       radar->currentIndex() == target &&
                       entries->currentData().toString() == expected_mode &&
+                      repeat_count->value() == expected_repeat &&
+                      channels->currentData().toUInt() == expected_channel &&
                       tx_id->text() == expected_tx &&
                       rx_id->text() == expected_rx,
                   state_error.c_str());
@@ -2072,6 +2088,14 @@ int main(int argc, char* argv[]) {
       const auto ft_entry = entries->findData(QStringLiteral("ft"));
       check(channel_four >= 0 && ft_entry >= 0,
             "Chuneng persisted selector choices are unavailable");
+      // Establish explicit per-backend values for this exact device before
+      // verifying backend switches. The catalog matrix may have already saved
+      // a different ZLG channel for the same target.
+      zlg_backend->trigger();
+      application.processEvents();
+      channels->setCurrentIndex(channels->findData(1U));
+      vector_backend->trigger();
+      application.processEvents();
       channels->setCurrentIndex(channel_four);
       entries->setCurrentIndex(ft_entry);
       repeat_count->setValue(3);
@@ -2092,11 +2116,17 @@ int main(int argc, char* argv[]) {
       channels->setCurrentIndex(channels->findData(3U));
       vector_backend->trigger();
       application.processEvents();
+      check(channels->currentData().toUInt() == 4U,
+            "Switching back to Vector did not restore this device's CH4");
       channels->setCurrentIndex(channels->findData(2U));
       zlg_backend->trigger();
       application.processEvents();
+      check(channels->currentData().toUInt() == 1U,
+            "A new device/backend channel did not start from CH1");
+      channels->setCurrentIndex(channels->findData(4U));
+      application.processEvents();
       check(channels->currentData().toUInt() == 4U,
-            "Switching CAN drivers did not restore the ZLG channel");
+            "ZLG device-scoped channel could not be selected");
       check(version_address->text().contains(QStringLiteral("ZLG")) &&
                 version_address->text().contains(QStringLiteral("CH4")),
             "Version page retained a stale backend/channel after switching to ZLG");
@@ -2124,14 +2154,23 @@ int main(int argc, char* argv[]) {
     check(settings.value(QStringLiteral("selectors/profile_id")).toString() ==
               QStringLiteral("chuneng_331_left_rear"),
           "Qt device selection was not saved by stable profile id");
-    check(settings.value(QStringLiteral("hardware/channel/zlg")).toUInt() ==
-              4U,
-          "Qt ZLG channel selection was not saved independently");
-    check(settings.value(QStringLiteral("hardware/channel/tosun")).toUInt() ==
-                  3U &&
-              settings.value(QStringLiteral("hardware/channel/vector"))
-                      .toUInt() == 2U,
-          "Qt channels leaked between CAN driver backends");
+    const auto scoped_value = [&settings](const QString& target,
+                                          const QString& name) {
+      return settings.value(
+          QStringLiteral("selectors/profile_state/chuneng_331_left_rear/%1/%2")
+              .arg(target, name));
+    };
+    const auto target_has_scoped_hardware = [&](const QString& target) {
+      return scoped_value(target, QStringLiteral("channel/zlg")).toUInt() ==
+                 4U &&
+             scoped_value(target, QStringLiteral("channel/tosun")).toUInt() ==
+                 3U &&
+             scoped_value(target, QStringLiteral("channel/vector")).toUInt() ==
+                 2U;
+    };
+    check(target_has_scoped_hardware(QStringLiteral("right_rear")) ||
+              target_has_scoped_hardware(QStringLiteral("left_rear")),
+          "Qt channels were not saved by Profile/target and backend");
     const auto chuneng_right_mode =
         settings
             .value(QStringLiteral(
@@ -2147,8 +2186,16 @@ int main(int argc, char* argv[]) {
     check(chuneng_right_mode == QStringLiteral("ft") ||
               chuneng_left_mode == QStringLiteral("ft"),
           "Qt entry selection was not saved by Profile/target");
-    check(settings.value(QStringLiteral("selectors/repeat_count")).toInt() == 3,
-          "Qt generic flash repeat count was not saved");
+    check(scoped_value(QStringLiteral("right_rear"),
+                       QStringLiteral("repeat_count")).toInt() == 3 ||
+              scoped_value(QStringLiteral("left_rear"),
+                           QStringLiteral("repeat_count")).toInt() == 3,
+          "Qt flash repeat count was not saved by Profile/target");
+    check(!settings.contains(QStringLiteral("selectors/repeat_count")) &&
+              !settings.contains(QStringLiteral("hardware/channel/vector")) &&
+              !settings.contains(QStringLiteral("hardware/channel/tosun")) &&
+              !settings.contains(QStringLiteral("hardware/channel/zlg")),
+          "Device state leaked back into legacy global settings");
     check(settings.value(QStringLiteral(
                              "selectors/target/longma_ars1_31"))
                   .toString() ==

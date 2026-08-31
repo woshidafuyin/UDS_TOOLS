@@ -391,17 +391,11 @@ MainWindow::MainWindow(QWidget* parent)
   }
   connectControllerActions();
   connectActions();
-  {
-    QSettings settings;
-    ui_->repeatCountSpinBox->setValue(
-        std::clamp(
-            settings
-                .value(QStringLiteral("selectors/repeat_count"),
-                       static_cast<int>(uds::app::kMinFlashRepeatCount))
-                .toInt(),
-            static_cast<int>(uds::app::kMinFlashRepeatCount),
-            static_cast<int>(uds::app::kMaxFlashRepeatCount)));
-  }
+  // Device-scoped state is restored after the selected Profile/target is
+  // known.  Starting from the safe minimum prevents another target's legacy
+  // global value from leaking into a newly selected device.
+  ui_->repeatCountSpinBox->setValue(
+      static_cast<int>(uds::app::kMinFlashRepeatCount));
   // The repeat count is an operator input.  Keep the spin-box editor writable
   // so a value can be typed directly as well as changed with its arrows.
   ui_->repeatCountSpinBox->setReadOnly(false);
@@ -915,6 +909,7 @@ void MainWindow::connectActions() {
   connect(ui_->vectorChannelComboBox,
           QOverload<int>::of(&QComboBox::currentIndexChanged), this,
           [this] {
+            saveActiveProfileState();
             saveComboSelections();
             syncVersionContext();
             syncDiagnosticRequestContext();
@@ -942,7 +937,10 @@ void MainWindow::connectActions() {
           });
   connect(ui_->repeatCountSpinBox,
           QOverload<int>::of(&QSpinBox::valueChanged), this,
-          [this] { saveComboSelections(); });
+          [this] {
+            saveActiveProfileState();
+            saveComboSelections();
+          });
 }
 
 void MainWindow::connectControllerActions() {
@@ -1278,10 +1276,9 @@ void MainWindow::populateTargetOptions(int project_index) {
 void MainWindow::applySelectedProfile(int device_index) {
   if (device_index < 0) return;
   saveActiveProfileState();
-  // File overrides belong to the running window only. Save the paths shown
-  // for the previously active profile/target before rebuilding the fields.
-  // This map is deliberately not backed by QSettings: a new process must
-  // always start from the Profile's resources defaults.
+  // Save the paths shown for the previously active Profile/target before
+  // rebuilding the fields. RuntimeFileSelection is also backed by QSettings
+  // so each device keeps its explicit operator overrides across restarts.
   saveRuntimeFileSelection();
   bool valid{};
   const auto profile_index = selectedProfileIndex(&valid);
@@ -1308,7 +1305,6 @@ void MainWindow::applySelectedProfile(int device_index) {
       geely_p416 ? QStringLiteral("SeedKey（内置）")
                  : QStringLiteral("SeedKey 算法库"));
   QSignalBlocker entry_mode_blocker(ui_->entryModeComboBox);
-  restoreCurrentBackendChannel(profile.channel);
   ui_->txIdLineEdit->setText(
       QStringLiteral("0x%1").arg(QString::number(profile.tx_id, 16).toUpper()));
   ui_->rxIdLineEdit->setText(
@@ -1395,6 +1391,16 @@ void MainWindow::saveActiveProfileState() const {
   rx_text.toUInt(&rx_valid, 0);
   if (tx_valid) settings.setValue(QStringLiteral("tx_id"), tx_text);
   if (rx_valid) settings.setValue(QStringLiteral("rx_id"), rx_text);
+  settings.setValue(QStringLiteral("repeat_count"),
+                    ui_->repeatCountSpinBox->value());
+  bool channel_valid{};
+  const auto channel =
+      ui_->vectorChannelComboBox->currentData().toUInt(&channel_valid);
+  if (channel_valid && channel > 0) {
+    settings.setValue(QStringLiteral("channel/%1")
+                          .arg(canVendorKey(default_can_vendor())),
+                      channel);
+  }
   settings.endGroup();
   settings.sync();
 }
@@ -1406,21 +1412,23 @@ void MainWindow::restoreCurrentProfileState() {
 
   QSettings settings;
   const auto state_group = profileStateSettingsGroup(profile_state_key);
+  bool legacy_owner{};
+  if (restoring_combo_selections_) {
+    bool valid{};
+    const auto profile_index = selectedProfileIndex(&valid);
+    const auto& profiles = controller_bridge_->profileOptions();
+    legacy_owner = valid && profile_index >= 0 &&
+                   static_cast<std::size_t>(profile_index) < profiles.size() &&
+                   settings.value(QStringLiteral("selectors/profile_id"))
+                           .toString() == profiles[profile_index].profile_id;
+  }
   auto saved_entry_mode =
       settings.value(state_group + QStringLiteral("/entry_mode")).toString();
 
   // Migrate the former single global mode only for the Profile that owned it.
-  if (saved_entry_mode.isEmpty() && restoring_combo_selections_) {
-    bool valid{};
-    const auto profile_index = selectedProfileIndex(&valid);
-    const auto& profiles = controller_bridge_->profileOptions();
-    if (valid && profile_index >= 0 &&
-        static_cast<std::size_t>(profile_index) < profiles.size() &&
-        settings.value(QStringLiteral("selectors/profile_id")).toString() ==
-            profiles[profile_index].profile_id) {
-      saved_entry_mode =
-          settings.value(QStringLiteral("selectors/entry_mode")).toString();
-    }
+  if (saved_entry_mode.isEmpty() && legacy_owner) {
+    saved_entry_mode =
+        settings.value(QStringLiteral("selectors/entry_mode")).toString();
   }
 
   const auto entry_index =
@@ -1440,6 +1448,27 @@ void MainWindow::restoreCurrentProfileState() {
   };
   restore_id(QStringLiteral("tx_id"), ui_->txIdLineEdit);
   restore_id(QStringLiteral("rx_id"), ui_->rxIdLineEdit);
+
+  auto repeat_count = static_cast<int>(uds::app::kMinFlashRepeatCount);
+  const auto repeat_key = state_group + QStringLiteral("/repeat_count");
+  if (settings.contains(repeat_key)) {
+    repeat_count = settings.value(repeat_key).toInt();
+  } else if (legacy_owner &&
+             settings.contains(QStringLiteral("selectors/repeat_count"))) {
+    // Migrate the former global value only to the Profile/target that was
+    // selected by the old release. Other devices retain the safe default 1.
+    repeat_count =
+        settings.value(QStringLiteral("selectors/repeat_count")).toInt();
+  }
+  repeat_count = std::clamp(
+      repeat_count, static_cast<int>(uds::app::kMinFlashRepeatCount),
+      static_cast<int>(uds::app::kMaxFlashRepeatCount));
+  {
+    QSignalBlocker blocker(ui_->repeatCountSpinBox);
+    ui_->repeatCountSpinBox->setValue(repeat_count);
+  }
+
+  restoreCurrentBackendChannel(currentProfileDefaultChannel());
 
   // Store a migrated value under the new per-Profile/target key so all future
   // switches are independent of the legacy global selector.
@@ -2022,30 +2051,53 @@ unsigned MainWindow::currentProfileDefaultChannel() const {
 }
 
 void MainWindow::saveCurrentBackendChannel() const {
+  if (active_profile_state_key_.isEmpty()) return;
   bool valid{};
   const auto channel =
       ui_->vectorChannelComboBox->currentData().toUInt(&valid);
   if (!valid || channel == 0) return;
   QSettings settings;
-  settings.setValue(canChannelSettingsKey(default_can_vendor()), channel);
+  settings.setValue(
+      profileStateSettingsGroup(active_profile_state_key_) +
+          QStringLiteral("/channel/%1")
+              .arg(canVendorKey(default_can_vendor())),
+      channel);
 }
 
 void MainWindow::restoreCurrentBackendChannel(
     unsigned profile_default_channel) {
   QSettings settings;
   const auto vendor = default_can_vendor();
-  const auto key = canChannelSettingsKey(vendor);
+  const auto key = profileStateSettingsGroup(selectedLogTargetKey()) +
+                   QStringLiteral("/channel/%1").arg(canVendorKey(vendor));
   auto fallback =
       vendor == CanVendor::Vector ? std::max(1U, profile_default_channel) : 1U;
-  // One-time migration of releases that stored a single global channel.
-  if (vendor == CanVendor::Vector && !settings.contains(key) &&
-      settings.contains(QStringLiteral("selectors/channel"))) {
-    const auto legacy =
-        settings.value(QStringLiteral("selectors/channel")).toUInt();
-    if (legacy > 0) fallback = legacy;
+  // Migrate a legacy backend-wide channel only to the Profile/target selected
+  // by the old release. Never let that value become another device's default.
+  if (!settings.contains(key) && restoring_combo_selections_) {
+    bool valid{};
+    const auto profile_index = selectedProfileIndex(&valid);
+    const auto& profiles = controller_bridge_->profileOptions();
+    const auto legacy_owner =
+        valid && profile_index >= 0 &&
+        static_cast<std::size_t>(profile_index) < profiles.size() &&
+        settings.value(QStringLiteral("selectors/profile_id")).toString() ==
+            profiles[profile_index].profile_id;
+    if (legacy_owner) {
+      const auto backend_key = canChannelSettingsKey(vendor);
+      if (settings.contains(backend_key)) {
+        const auto legacy = settings.value(backend_key).toUInt();
+        if (legacy > 0) fallback = legacy;
+      } else if (vendor == CanVendor::Vector &&
+                 settings.contains(QStringLiteral("selectors/channel"))) {
+        const auto legacy =
+            settings.value(QStringLiteral("selectors/channel")).toUInt();
+        if (legacy > 0) fallback = legacy;
+      }
+    }
   }
-  const auto channel = std::max(
-      1U, settings.value(key, fallback).toUInt());
+  const auto channel =
+      std::max(1U, settings.value(key, fallback).toUInt());
 
   QSignalBlocker blocker(ui_->vectorChannelComboBox);
   auto index = ui_->vectorChannelComboBox->findData(channel);
@@ -2087,11 +2139,6 @@ void MainWindow::saveComboSelections() const {
                     profiles[profile_index].profile_id);
   settings.setValue(device_group + QStringLiteral("/target_id"),
                     selectedTargetId());
-  settings.setValue(
-      canChannelSettingsKey(default_can_vendor()),
-      ui_->vectorChannelComboBox->currentData());
-  settings.setValue(QStringLiteral("selectors/repeat_count"),
-                    ui_->repeatCountSpinBox->value());
   if (hasRadarSelector()) {
     settings.setValue(
         QStringLiteral("selectors/target/%1")
