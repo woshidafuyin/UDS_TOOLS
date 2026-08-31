@@ -4,6 +4,7 @@
 #include "core/can_id_filter.hpp"
 #include "core/flash_data.hpp"
 #include "core/hex.hpp"
+#include "core/html_report.hpp"
 #include "core/isotp.hpp"
 #include "core/profile.hpp"
 #include "core/version_check_plan.hpp"
@@ -29,11 +30,14 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <ctime>
 #include <deque>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <regex>
+#include <set>
 #include <stdexcept>
 #include <stop_token>
 #include <string>
@@ -214,6 +218,129 @@ void test_asc_trace_can_bus() {
         "ASC trace operation directories are not classified");
   std::filesystem::remove(trace_path, ignored);
   std::filesystem::remove(blf_path, ignored);
+}
+
+void test_html_report_navigation_and_transfer_aggregation() {
+  char* requested_output_value{};
+  std::size_t requested_output_size{};
+  _dupenv_s(&requested_output_value, &requested_output_size,
+            "UDS_REPORT_VALIDATION_DIR");
+  const std::string requested_output =
+      requested_output_value ? requested_output_value : "";
+  std::free(requested_output_value);
+  const auto preserve = !requested_output.empty();
+  const auto directory = preserve
+                             ? std::filesystem::path(requested_output)
+                             : std::filesystem::temp_directory_path() /
+                                   "uds_html_report_navigation_test";
+  std::error_code ignored;
+  std::filesystem::remove_all(directory, ignored);
+  std::filesystem::create_directories(directory);
+  const auto asc1 = directory / "cycle_1.asc";
+  const auto blf1 = directory / "cycle_1.blf";
+  const auto asc2 = directory / "cycle_2.asc";
+  const auto blf2 = directory / "cycle_2.blf";
+  for (const auto& path : {asc1, blf1, asc2, blf2}) {
+    std::ofstream file(path, std::ios::binary);
+    file << "trace-evidence";
+  }
+
+  uds::HtmlReport report;
+  const auto started = std::chrono::system_clock::now();
+  auto at = [&](int milliseconds) {
+    return started + std::chrono::milliseconds(milliseconds);
+  };
+  report.add({at(0), "Flash target", "INFO", "Profile=synthetic; Repetitions=2"});
+  report.add({at(1), "Pre-flash qualification", "WARN",
+              "Status=WARN; optional post-flash version plan unavailable"});
+  report.add({at(2), "Flash cycle 1/2", "INFO", "Complete workflow started"});
+  report.add({at(3), "[第1/2次] 10 02 ProgrammingSession", "PASS", "50 02"});
+  report.add({at(4), "[第1/2次] 27 01 SecurityAccess seed", "PASS", "67 01"});
+  report.add({at(5), "[第1/2次] 34 APP RequestDownload", "PASS",
+              "address=0x1000; length=0x0008"});
+  report.add({at(20), "[第1/2次] 36 APP TransferData", "PASS",
+              "blocks=2"});
+  report.add({at(21), "[第1/2次] 37 APP RequestTransferExit", "PASS",
+              "77"});
+  report.add({at(22), "[第1/2次] APP Verification", "PASS", "verified"});
+  report.add({at(23), "[第1/2次] DependencyCheck", "PASS", "71 01"});
+  report.add({at(24), "[第1/2次] ECUReset", "PASS", "51 01"});
+  report.add({at(25), "Flash cycle 1/2", "PASS", "Complete workflow passed"});
+  report.add({at(30), "Flash cycle 2/2", "INFO", "Complete workflow started"});
+  report.add({at(31), "[第2/2次] 10 02 ProgrammingSession", "PASS", "50 02"});
+  report.add({at(32), "[第2/2次] 36 APP TransferData", "PASS", "blocks=1"});
+  report.add({at(33), "Flash cycle 2/2", "PASS", "Complete workflow passed"});
+  report.add({at(34), "ASC + BLF Trace cycle 1/2", "INFO",
+              "Cycle 1/2 raw ASC PASS: " + asc1.string() +
+                  "; raw BLF PASS: " + blf1.string()});
+  report.add({at(35), "ASC + BLF Trace cycle 2/2", "INFO",
+              "Cycle 2/2 raw ASC PASS: " + asc2.string() +
+                  "; raw BLF PASS: " + blf2.string()});
+
+  report.add_transcript({at(10), "Workflow", "INFO",
+                         "[第1/2次] 36 APP block 1/2"});
+  report.add_transcript({at(11), "Workflow", "INFO",
+                         "[第1/2次] TX [0x701] 36 FF 01 02 03 04 [6 bytes]"});
+  report.add_transcript({at(12), "Workflow", "INFO",
+                         "[第1/2次] RX [0x761] 7F 36 78 | NRC 0x78"});
+  report.add_transcript({at(13), "Workflow", "PASS",
+                         "[第1/2次] 36 APP block 1/2 PASS: 76 FF"});
+  report.add_transcript({at(14), "Workflow", "INFO",
+                         "[第1/2次] 36 APP block 2/2"});
+  report.add_transcript({at(15), "Workflow", "INFO",
+                         "[第1/2次] TX [0x701] 36 00 05 06 07 08 [6 bytes]"});
+  report.add_transcript({at(16), "Workflow", "PASS",
+                         "[第1/2次] 36 APP block 2/2 PASS: 76 00"});
+  report.add_transcript({at(17), "Workflow", "INFO",
+                         "RAW_SENTINEL_KEEP_ORDER"});
+  report.add_transcript({at(32), "Workflow", "PASS",
+                         "[第2/2次] 36 APP block 1/1 PASS: 76 01"});
+
+  const auto path = report.write(directory, "Synthetic Navigation Report");
+  std::ifstream input(path, std::ios::binary);
+  const std::string html((std::istreambuf_iterator<char>(input)),
+                         std::istreambuf_iterator<char>());
+  check(html.find("id='report-navigation'") != std::string::npos &&
+            html.find("id='summary'") != std::string::npos &&
+            html.find("id='configuration'") != std::string::npos &&
+            html.find("id='pre-flash-check'") != std::string::npos &&
+            html.find("id='app-transfer'") != std::string::npos &&
+            html.find("id='cycle-1'") != std::string::npos &&
+            html.find("id='cycle-1-app-transfer'") != std::string::npos &&
+            html.find("id='cycle-2-app-transfer'") != std::string::npos &&
+            html.find("id='trace-evidence'") != std::string::npos &&
+            html.find("id='raw-log'") != std::string::npos,
+        "HTML report omitted stable or per-cycle navigation anchors");
+  check(html.find("成功，但存在警告（PASS with warnings）") !=
+                std::string::npos &&
+            html.find("NOT_RUN'><span class='symbol'>&mdash;</span>未执行</span><span>4. Driver下载") !=
+                std::string::npos &&
+            html.find("FF → 00 回绕") != std::string::npos &&
+            html.find("展开全部数据块日志") != std::string::npos &&
+            html.find("RAW_SENTINEL_KEEP_ORDER") != std::string::npos,
+        "HTML report omitted warning result, transfer summary, or raw evidence");
+  check(html.find("<details class='transfer-log' open") == std::string::npos &&
+            html.find("<details class='raw-log-details' open") ==
+                std::string::npos &&
+            html.find("<script") == std::string::npos &&
+            html.find("cdn") == std::string::npos,
+        "HTML report details are not offline-safe or default-collapsed");
+
+  std::set<std::string> ids;
+  std::smatch match;
+  const std::regex id_pattern(R"(\sid='([^']+)')");
+  for (std::sregex_iterator it(html.begin(), html.end(), id_pattern), end;
+       it != end; ++it) {
+    check(ids.insert((*it)[1].str()).second,
+          "HTML report generated a duplicate id");
+  }
+  const std::regex href_pattern(R"(href='#([^']+)')");
+  for (std::sregex_iterator it(html.begin(), html.end(), href_pattern), end;
+       it != end; ++it) {
+    check(ids.contains((*it)[1].str()),
+          "HTML report navigation link has no target anchor");
+  }
+  if (!preserve) std::filesystem::remove_all(directory, ignored);
 }
 
 void test_bus_monitor_trace_session() {
@@ -3373,6 +3500,8 @@ int main() {
     };
     run("hex", test_hex);
     run("sha256", test_sha256);
+    run("html_report_navigation_and_transfer_aggregation",
+        test_html_report_navigation_and_transfer_aggregation);
     run("asc_trace_can_bus", test_asc_trace_can_bus);
     run("bus_monitor_trace_session", test_bus_monitor_trace_session);
     run("can_id_filter", test_can_id_filter);
