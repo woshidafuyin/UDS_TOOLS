@@ -1,11 +1,26 @@
 param(
   [ValidateSet('Debug','Release')][string]$Config='Release',
-  [string]$ReleaseName='UDS_Tool_Release.zip'
+  [string]$ReleaseName='UDS_Tool_Release.zip',
+  [string]$DistPath='',
+  [string]$BuildRoot='',
+  [string]$VisualStudioRoot='',
+  [string]$QtRoot='',
+  [string]$CMakePath=''
 )
 
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot)).TrimEnd('\')
-$dist=Join-Path $root 'dist'
+$dist=if([string]::IsNullOrWhiteSpace($DistPath)){
+  Join-Path $root 'dist'
+} elseif([IO.Path]::IsPathRooted($DistPath)){
+  [IO.Path]::GetFullPath($DistPath)
+} else {
+  [IO.Path]::GetFullPath((Join-Path $root $DistPath))
+}
+if($dist -eq $root -or
+   -not $dist.StartsWith($root + '\',[StringComparison]::OrdinalIgnoreCase)){
+  throw "DistPath must remain under the repository: $dist"
+}
 $releaseLeaf=[IO.Path]::GetFileName($ReleaseName)
 if($releaseLeaf -ne $ReleaseName -or
    -not $releaseLeaf.EndsWith('.zip',[StringComparison]::OrdinalIgnoreCase)){
@@ -13,7 +28,21 @@ if($releaseLeaf -ne $ReleaseName -or
 }
 $zip=Join-Path $root $releaseLeaf
 
-& "$PSScriptRoot\build.ps1" -Config $Config -DistPath $dist
+$buildArguments=@{
+  Config=$Config
+  DistPath=$dist
+}
+foreach($optionalArgument in @{
+  BuildRoot=$BuildRoot
+  VisualStudioRoot=$VisualStudioRoot
+  QtRoot=$QtRoot
+  CMakePath=$CMakePath
+}.GetEnumerator()){
+  if(-not [string]::IsNullOrWhiteSpace($optionalArgument.Value)){
+    $buildArguments[$optionalArgument.Key]=$optionalArgument.Value
+  }
+}
+& "$PSScriptRoot\build.ps1" @buildArguments
 if($LASTEXITCODE -ne 0){ throw "Build failed with exit code $LASTEXITCODE" }
 
 $forbidden=Get-ChildItem -LiteralPath $dist -Recurse -Force | Where-Object {
@@ -49,8 +78,7 @@ Get-ChildItem -LiteralPath $root -File -Filter 'UDS_Tool_Release*.zip*' |
     if(-not $candidate.StartsWith($root + '\',[StringComparison]::OrdinalIgnoreCase)){
       throw "Refusing to remove release outside project: $candidate"
     }
-    & cmake -E remove -f $candidate
-    if($LASTEXITCODE -ne 0){ throw "Failed to remove old release: $candidate" }
+    Remove-Item -LiteralPath $candidate -Force
   }
 
 Compress-Archive -Path "$dist\*" -DestinationPath $zip -CompressionLevel Optimal -Force

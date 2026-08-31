@@ -222,6 +222,8 @@
 
 ## 14. 构建、验证与证据边界
 
+- Windows 开发机可直接双击仓库根目录的 `one_click_deploy.cmd`，脚本会先检查环境，再构建 `dist` 并生成 `UDS_Tool_Release.zip`；缺少组件时会保留窗口并显示原因，不会自动联网下载或静默安装开发工具；
+- 仅检查当前电脑是否具备构建条件，可在命令行运行 `one_click_deploy.cmd check`；
 - 标准构建命令：`scripts\build.ps1 -Config Release -DistPath dist`；脚本以自身所在仓库为基准解析参数中的相对路径，因此通过正确的脚本路径调用时不受当前工作目录影响；
 - 构建脚本自动发现已安装的 Visual Studio C++ 工具、CMake 和 Qt 5.15.2 MSVC 64-bit，不依赖开发机绝对路径；换机后可先运行 `scripts\build.ps1 -ValidateEnvironmentOnly` 检查环境；
 - 自动发现失败时会明确提示缺失组件；特殊安装位置可分别通过 `-VisualStudioRoot`、`-CMakePath`、`-QtRoot` 指定，独立构建目录可通过 `-BuildRoot` 指定；
