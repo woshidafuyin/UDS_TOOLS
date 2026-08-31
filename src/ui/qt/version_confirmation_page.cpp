@@ -258,6 +258,8 @@ void VersionConfirmationPage::requestCheck() {
 }
 
 void VersionConfirmationPage::updateControls() {
+  check_button_->setText(running_ ? QStringLiteral("读取中")
+                                  : QStringLiteral("一键读取"));
   check_button_->setEnabled(configured_ && profile_index_ >= 0 && !running_ &&
                             !operation_busy_);
   stop_button_->setEnabled(running_);

@@ -12,7 +12,9 @@
 #include <array>
 #include <chrono>
 #include <filesystem>
+#include <iomanip>
 #include <mutex>
+#include <sstream>
 #include <stdexcept>
 #include <thread>
 
@@ -40,20 +42,42 @@ void progress(const VersionCheckCallbacks& callbacks, int percent,
   if (callbacks.onProgress) callbacks.onProgress(percent, line);
 }
 
-std::string status_text(VersionCheckStatus status) {
-  switch (status) {
-  case VersionCheckStatus::pass:
-    return "PASS";
-  case VersionCheckStatus::fail:
-    return "FAIL";
-  case VersionCheckStatus::warning:
-    return "WARN";
-  case VersionCheckStatus::info:
-    return "INFO";
-  case VersionCheckStatus::error:
-  default:
-    return "ERROR";
+std::string diagnostic_id(std::uint32_t id) {
+  std::ostringstream text;
+  text << "0x" << std::uppercase << std::hex << std::setfill('0')
+       << std::setw(id > 0x7FFU ? 8 : 3) << id;
+  return text.str();
+}
+
+std::string version_did(std::span<const std::uint8_t> request) {
+  if (request.size() < 3 || request[0] != 0x22) return {};
+  std::ostringstream text;
+  text << std::uppercase << std::hex << std::setfill('0') << std::setw(2)
+       << static_cast<unsigned>(request[1]) << std::setw(2)
+       << static_cast<unsigned>(request[2]);
+  return text.str();
+}
+
+std::string target_display_name(const VersionCheckRequest& request) {
+  const auto target = std::find_if(
+      request.profile.targets.cbegin(), request.profile.targets.cend(),
+      [&request](const FlashTargetProfile& candidate) {
+        return candidate.id == request.target_id;
+      });
+  if (target != request.profile.targets.cend() &&
+      !target->display_name.empty()) {
+    return utf8(target->display_name);
   }
+  return utf8(request.profile.device_name);
+}
+
+std::string elapsed_seconds(std::chrono::steady_clock::duration elapsed) {
+  const auto milliseconds =
+      std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+  std::ostringstream text;
+  text << std::fixed << std::setprecision(1)
+       << static_cast<double>(milliseconds) / 1000.0 << " s";
+  return text.str();
 }
 
 } // namespace
@@ -74,6 +98,7 @@ VersionCheckResult VersionCheckService::run(
     const VersionCheckRequest& request,
     const VersionCheckCallbacks& callbacks, std::stop_token stop) const {
   VersionCheckResult result;
+  const auto operation_started = std::chrono::steady_clock::now();
   try {
     const auto plan =
         load_version_check_plan(request.profile_path, request.target_id);
@@ -81,14 +106,18 @@ VersionCheckResult VersionCheckService::run(
       throw std::runtime_error("current profile has no version-check plan");
     }
     progress(callbacks, 0, "版本读取开始");
+    log(callbacks, "项目：" + utf8(request.profile.vendor_name) + " / " +
+                       utf8(request.profile.project_name) + " / " +
+                       target_display_name(request));
+    log(callbacks, "通道：CH" + std::to_string(request.channel) +
+                       " | TX " + diagnostic_id(request.tx_id) + " | RX " +
+                       diagnostic_id(request.rx_id));
     auto bus = bus_factory_(request);
     if (!bus) throw std::runtime_error("version-check bus factory returned null");
     if (!request.trace_file.empty()) {
       auto trace =
           std::make_shared<AscTraceWriter>(request.trace_file, request.channel);
-      if (trace->is_open()) {
-        log(callbacks, "ASC原始总线日志：" + utf8(request.trace_file.wstring()));
-      } else {
+      if (!trace->is_open()) {
         log(callbacks,
             "WARN：ASC日志创建失败，版本读取继续执行：" +
                 utf8(request.trace_file.wstring()));
@@ -96,7 +125,6 @@ VersionCheckResult VersionCheckService::run(
       bus = std::make_unique<TracingCanBus>(std::move(bus), std::move(trace));
     }
     bus->open();
-    log(callbacks, "PASS：版本读取CAN通道已打开");
 
     std::mutex precondition_error_mutex;
     std::string precondition_error;
@@ -117,7 +145,6 @@ VersionCheckResult VersionCheckService::run(
         bus->send(wakeup);
         std::this_thread::sleep_for(100ms);
       }
-      log(callbacks, "版本读取：已发送ARS1.31 0x400前置报文");
     } else if (plan.precondition == L"chuneng_520") {
       const CanFrame wakeup{
           0x520, {0, 0, 0, 0, 0, 0, 0, 0}, false, false, false};
@@ -152,8 +179,6 @@ VersionCheckResult VersionCheckService::run(
         check_precondition_sender();
         std::this_thread::sleep_for(10ms);
       }
-      log(callbacks,
-          "版本读取：楚能ARC331 0x520周期唤醒已启动（500 ms）");
     } else if (plan.precondition == L"xizhong_nm") {
       const auto nm_frame = xizhong_nm_wakeup_frame_for_flow(request.profile.flow);
       if (!nm_frame) {
@@ -229,7 +254,6 @@ VersionCheckResult VersionCheckService::run(
         check_precondition_sender();
         std::this_thread::sleep_for(20ms);
       }
-      log(callbacks, "版本读取：犀重网络唤醒完成");
     }
 
     IsoTpConfig transport_config{
@@ -240,9 +264,9 @@ VersionCheckResult VersionCheckService::run(
     transport_config.drain_receive_before_send =
         xizhong_supported_flow(request.profile.flow);
     IsoTpSession transport(*bus, transport_config);
-    UdsClient client(transport, [&](const std::string& line) {
-      log(callbacks, line);
-    }, stop);
+    // Raw TX/RX is retained by the ASC trace and returned item data. The
+    // execution log intentionally presents one concise decoded line per DID.
+    UdsClient client(transport, [](const std::string&) {}, stop);
 
     if (plan.session != 0) {
       check_precondition_sender();
@@ -263,9 +287,14 @@ VersionCheckResult VersionCheckService::run(
             " 失败；响应=" + to_hex(response.response) +
             "；原因=" + response.detail);
       }
+      log(callbacks,
+          "进入诊断会话成功（50 " +
+              to_hex(std::array<std::uint8_t, 1>{plan.session}) + "）");
     }
 
     bool required_ok = true;
+    unsigned success_count{};
+    unsigned failure_count{};
     result.items.reserve(plan.items.size());
     for (std::size_t index = 0; index < plan.items.size(); ++index) {
       check_stop(stop);
@@ -276,6 +305,7 @@ VersionCheckResult VersionCheckService::run(
       item_result.expected = item.expected;
       item_result.request_hex = to_hex(item.request);
       item_result.required = item.required;
+      std::string concise_result;
       const auto started = std::chrono::steady_clock::now();
       try {
         const auto response = client.request(item.request, 1000ms);
@@ -284,11 +314,13 @@ VersionCheckResult VersionCheckService::run(
           item_result.status =
               item.required ? VersionCheckStatus::error
                             : VersionCheckStatus::warning;
+          concise_result = response.detail.empty() ? "响应无效" : response.detail;
         } else if (response.response.size() < item.response_prefix.size() ||
                    !std::equal(item.response_prefix.begin(),
                                item.response_prefix.end(),
                                response.response.begin())) {
           item_result.status = VersionCheckStatus::error;
+          concise_result = "响应格式不匹配";
         } else {
           item_result.actual = decode_version_value(
               std::span<const std::uint8_t>(response.response)
@@ -303,6 +335,7 @@ VersionCheckResult VersionCheckService::run(
             item_result.status = VersionCheckStatus::pass;
           } else {
             item_result.status = VersionCheckStatus::fail;
+            concise_result = "与期望值不一致，实际=" + utf8(item_result.actual);
           }
         }
       } catch (const std::exception& error) {
@@ -311,6 +344,7 @@ VersionCheckResult VersionCheckService::run(
             item.required ? VersionCheckStatus::error
                           : VersionCheckStatus::warning;
         item_result.response_hex = error.what();
+        concise_result = error.what();
       }
       item_result.elapsed_ms = static_cast<unsigned>(
           std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -320,19 +354,29 @@ VersionCheckResult VersionCheckService::run(
           item_result.status != VersionCheckStatus::pass) {
         required_ok = false;
       }
-      log(callbacks, status_text(item_result.status) + "：" +
-                         utf8(item.name) + "；请求=" +
-                         item_result.request_hex + "；响应/原因=" +
-                         item_result.response_hex);
+      const auto did = version_did(item.request);
+      const auto label = (did.empty() ? std::string{} : did + " ") +
+                         utf8(item.name);
+      if (item_result.status == VersionCheckStatus::pass) {
+        ++success_count;
+        log(callbacks, label + "：" +
+                           (item_result.actual.empty()
+                                ? std::string("未解析到版本值")
+                                : utf8(item_result.actual)));
+      } else {
+        ++failure_count;
+        log(callbacks, label + "：读取失败（" + concise_result + "）");
+      }
       result.items.push_back(std::move(item_result));
       progress(callbacks,
                static_cast<int>(((index + 1) * 100) / plan.items.size()),
                "版本信息读取中");
     }
     result.success = required_ok;
-    result.message =
-        required_ok ? "读取完成：全部必读版本信息读取成功"
-                    : "读取失败：存在版本读取错误";
+    result.message = "版本读取完成：成功 " + std::to_string(success_count) +
+                     "，失败 " + std::to_string(failure_count) + "，耗时 " +
+                     elapsed_seconds(std::chrono::steady_clock::now() -
+                                     operation_started);
   } catch (const std::exception& error) {
     result.cancelled =
         stop.stop_requested() || error.what() == kCancelled;

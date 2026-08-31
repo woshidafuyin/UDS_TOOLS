@@ -1193,9 +1193,11 @@ int main(int argc, char* argv[]) {
             "Version-read UI handlers are not invokable");
       application.processEvents();
       check(progress_status->text() == QStringLiteral("最近一次刷写成功") &&
+                version_button->text() == QStringLiteral("读取中") &&
+                !version_button->isEnabled() &&
                 log_view->toPlainText().contains(
                     QStringLiteral("========== 开始版本读取 ==========")),
-            "Version-read progress overwrote the flash result or omitted its log boundary");
+            "Version-read progress did not show the running button state, overwrote the flash result, or omitted its log boundary");
       check(QMetaObject::invokeMethod(
                 &window, "handleVersionCheckFinished", Qt::DirectConnection,
                 Q_ARG(bool, false), Q_ARG(bool, false),
@@ -1203,11 +1205,14 @@ int main(int argc, char* argv[]) {
             "Version-read result handler is not invokable");
       application.processEvents();
       check(progress_status->text() == QStringLiteral("最近一次刷写成功") &&
+                version_button->text() == QStringLiteral("一键读取") &&
                 log_view->toPlainText().contains(
+                    QStringLiteral("读取失败：测试错误")) &&
+                !log_view->toPlainText().contains(
                     QStringLiteral("========== 版本读取失败 ==========")) &&
                 log_view->toPlainText().contains(
                     QStringLiteral("========== 刷写成功 ==========")),
-            "Failed version read hid the latest flash result or erased its log history");
+            "Concise failed version read hid the latest flash result, duplicated a boundary, or erased log history");
       check(QMetaObject::invokeMethod(
                 &window, "handleFlashFinished", Qt::DirectConnection,
                 Q_ARG(bool, false), Q_ARG(bool, false),

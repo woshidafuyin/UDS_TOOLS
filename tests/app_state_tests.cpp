@@ -325,7 +325,11 @@ void test_flash_controller_success() {
             report_text.find("完成时间：") != std::string::npos &&
             report_text.find("C++") == std::string::npos &&
             report_text.find("<th>%</th>") == std::string::npos &&
-            report_text.find("<th>Time</th>") != std::string::npos &&
+            report_text.find("id='report-navigation'") !=
+                std::string::npos &&
+            report_text.find("id='configuration'") != std::string::npos &&
+            report_text.find("id='raw-log'") != std::string::npos &&
+            report_text.find("<th>时间</th>") != std::string::npos &&
             std::regex_search(
                 report_text,
                 std::regex(R"(<td>\d{2}:\d{2}:\d{2}\.\d{3}</td>)")),
@@ -447,7 +451,7 @@ void test_flash_controller_repeat_count() {
                 std::string::npos &&
             report_text.find("complete_cycle_trace_cycle_0003_of_0003.blf") !=
                 std::string::npos &&
-            report_text.find("完整诊断与流程记录") != std::string::npos,
+            report_text.find("完整原始日志") != std::string::npos,
         "repeated flash report did not index every cycle trace or transcript");
   report_file.close();
   std::filesystem::remove_all(directory);
@@ -816,6 +820,9 @@ void test_version_check_service_success() {
   request.profile.padding = 0;
   request.profile.isotp_st_min = 0;
   request.profile.nominal_bitrate = 500000;
+  request.profile.vendor_name = L"测试厂商";
+  request.profile.project_name = L"测试项目";
+  request.profile.device_name = L"测试设备";
   request.channel = 1;
   request.tx_id = 0x700;
   request.rx_id = 0x708;
@@ -823,14 +830,33 @@ void test_version_check_service_success() {
       [](const uds::app::VersionCheckRequest&) {
         return std::make_unique<FakeVersionBus>();
       });
-  const auto result = service.run(request, {}, {});
+  std::vector<std::string> logs;
+  uds::app::VersionCheckCallbacks callbacks;
+  callbacks.onLog = [&](const std::string& line) { logs.push_back(line); };
+  const auto result = service.run(request, callbacks, {});
+  const auto logged = [&logs](std::string_view expected) {
+    return std::any_of(logs.cbegin(), logs.cend(), [&](const auto& line) {
+      return line.find(expected) != std::string::npos;
+    });
+  };
+  const auto raw_uds_leaked = std::any_of(
+      logs.cbegin(), logs.cend(), [](const auto& line) {
+        return line.starts_with("TX [") || line.starts_with("RX [") ||
+               line.find("请求=") != std::string::npos ||
+               line.find("响应/原因=") != std::string::npos;
+      });
   check(result.success && !result.cancelled && result.items.size() == 1 &&
              result.items[0].status ==
                  uds::app::VersionCheckStatus::pass &&
              result.items[0].actual == L"OK" &&
              result.items[0].expected.empty() &&
-             result.message == "读取完成：全部必读版本信息读取成功",
-        "version-check service did not complete a read-only ASCII item");
+             result.items[0].response_hex == "62 F1 89 4F 4B" &&
+             result.message.starts_with(
+                 "版本读取完成：成功 1，失败 0，耗时 ") &&
+             logged("项目：测试厂商 / 测试项目 / 测试设备") &&
+             logged("通道：CH1 | TX 0x700 | RX 0x708") &&
+             logged("F189 SoftwareVersion：OK") && !raw_uds_leaked,
+        "version-check service did not produce concise decoded logs while retaining raw result evidence");
   std::filesystem::remove_all(directory);
 }
 

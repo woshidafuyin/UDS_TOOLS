@@ -2665,12 +2665,6 @@ void MainWindow::handleVersionCheckFinished(bool success, bool cancelled,
   version_page_->finish(success, cancelled, message);
   const auto tone = success ? UiLogTone::Success : UiLogTone::Failure;
   appendUiLog(message, tone);
-  appendUiLog(cancelled
-                  ? QStringLiteral("========== 版本读取已停止 ==========")
-                  : success
-                        ? QStringLiteral("========== 版本读取成功 ==========")
-                        : QStringLiteral("========== 版本读取失败 =========="),
-              tone);
   updateEnabledState();
   updateStatusBar();
 }
