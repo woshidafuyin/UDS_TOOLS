@@ -25,6 +25,22 @@ function Resolve-CommandPath([string]$Name) {
   return ''
 }
 
+function Get-Sha256Hex([string]$Path) {
+  $stream=[IO.File]::OpenRead($Path)
+  try {
+    $sha=[Security.Cryptography.SHA256]::Create()
+    try {
+      return -join ($sha.ComputeHash($stream) | ForEach-Object {
+        $_.ToString('X2')
+      })
+    } finally {
+      $sha.Dispose()
+    }
+  } finally {
+    $stream.Dispose()
+  }
+}
+
 function Resolve-VisualStudioRoot([string]$RequestedRoot) {
   if(-not [string]::IsNullOrWhiteSpace($RequestedRoot)){
     $resolved=Resolve-InputPath $RequestedRoot $root
@@ -412,7 +428,7 @@ function Test-ChunengInputSet([string]$Location) {
     if(-not (Test-Path -LiteralPath $path)){
       throw "ChuNeng ARC331 active input is missing: $path"
     }
-    $actual=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+    $actual=Get-Sha256Hex $path
     if($actual -ne $expected[$path]){
       throw "ChuNeng ARC331 active input hash mismatch: $path"
     }

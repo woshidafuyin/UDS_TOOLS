@@ -30,8 +30,9 @@ exit /b 0
 
 :failed
 echo.
-echo [UDS Tool] Stopped. Read the error above, install the missing component,
-echo or run scripts\build.ps1 with -VisualStudioRoot, -CMakePath, or -QtRoot.
+echo [UDS Tool] Stopped. Read the specific error above.
+echo Close any running copy from dist before retrying. If a build tool is missing,
+echo install it or run scripts\build.ps1 with the path override shown above.
 echo.
 echo Press any key to close this window.
 pause >nul

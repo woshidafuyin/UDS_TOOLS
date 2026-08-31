@@ -10,6 +10,36 @@ param(
 
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot)).TrimEnd('\')
+
+function Get-Sha256Hex([string]$Path) {
+  $stream=[IO.File]::OpenRead($Path)
+  try {
+    return Get-StreamSha256Hex $stream
+  } finally {
+    $stream.Dispose()
+  }
+}
+
+function Get-StreamSha256Hex([IO.Stream]$Stream) {
+  $sha=[Security.Cryptography.SHA256]::Create()
+  try {
+    return -join ($sha.ComputeHash($Stream) | ForEach-Object {
+      $_.ToString('X2')
+    })
+  } finally {
+    $sha.Dispose()
+  }
+}
+
+function Get-RelativePath([string]$BasePath,[string]$TargetPath) {
+  $base=[IO.Path]::GetFullPath($BasePath).TrimEnd('\') + '\'
+  $target=[IO.Path]::GetFullPath($TargetPath)
+  if(-not $target.StartsWith($base,[StringComparison]::OrdinalIgnoreCase)){
+    throw "Path is outside the expected directory: $target"
+  }
+  return $target.Substring($base.Length)
+}
+
 $dist=if([string]::IsNullOrWhiteSpace($DistPath)){
   Join-Path $root 'dist'
 } elseif([IO.Path]::IsPathRooted($DistPath)){
@@ -20,6 +50,20 @@ $dist=if([string]::IsNullOrWhiteSpace($DistPath)){
 if($dist -eq $root -or
    -not $dist.StartsWith($root + '\',[StringComparison]::OrdinalIgnoreCase)){
   throw "DistPath must remain under the repository: $dist"
+}
+$runningFromDist=@(Get-Process -ErrorAction SilentlyContinue | ForEach-Object {
+  $processPath=''
+  try { $processPath=$_.Path } catch { return }
+  if($processPath -and
+     $processPath.StartsWith($dist + '\',[StringComparison]::OrdinalIgnoreCase)){
+    [PSCustomObject]@{ Name=$_.ProcessName; Id=$_.Id; Path=$processPath }
+  }
+})
+if($runningFromDist){
+  $details=($runningFromDist | ForEach-Object {
+    "$($_.Name) (PID $($_.Id)): $($_.Path)"
+  }) -join [Environment]::NewLine
+  throw "Cannot update dist because a delivered program is still running. Close it and retry:$([Environment]::NewLine)$details"
 }
 $releaseLeaf=[IO.Path]::GetFileName($ReleaseName)
 if($releaseLeaf -ne $ReleaseName -or
@@ -46,7 +90,7 @@ foreach($optionalArgument in @{
 if($LASTEXITCODE -ne 0){ throw "Build failed with exit code $LASTEXITCODE" }
 
 $forbidden=Get-ChildItem -LiteralPath $dist -Recurse -Force | Where-Object {
-  $relative=[IO.Path]::GetRelativePath($dist,$_.FullName)
+  $relative=Get-RelativePath $dist $_.FullName
   $relative -match '(^|\\)(logs|Configuration|validation|tools|__pycache__)(\\|$)' -or
   $relative -match '\.partial$' -or
   $relative -match '\.(h|lib|pdb|ilk|exp|obj|py|ps1|bat)$' -or
@@ -82,7 +126,7 @@ Get-ChildItem -LiteralPath $root -File -Filter 'UDS_Tool_Release*.zip*' |
   }
 
 Compress-Archive -Path "$dist\*" -DestinationPath $zip -CompressionLevel Optimal -Force
-$hash=(Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
+$hash=Get-Sha256Hex $zip
 $sidecar="$zip.sha256.txt"
 [IO.File]::WriteAllText(
   $sidecar,
@@ -96,20 +140,14 @@ try {
   $distFiles=@(Get-ChildItem -LiteralPath $dist -Recurse -File -Force)
   $distHashes=@{}
   foreach($file in $distFiles){
-    $relative=[IO.Path]::GetRelativePath($dist,$file.FullName).Replace('\','/')
-    $distHashes[$relative]=(Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
+    $relative=(Get-RelativePath $dist $file.FullName).Replace('\','/')
+    $distHashes[$relative]=Get-Sha256Hex $file.FullName
   }
   $zipHashes=@{}
   foreach($entry in $zipFiles){
     $stream=$entry.Open()
     try {
-      $sha=[Security.Cryptography.SHA256]::Create()
-      try {
-        $zipHashes[$entry.FullName.Replace('\','/')]=
-          [Convert]::ToHexString($sha.ComputeHash($stream))
-      } finally {
-        $sha.Dispose()
-      }
+      $zipHashes[$entry.FullName.Replace('\','/')]=Get-StreamSha256Hex $stream
     } finally {
       $stream.Dispose()
     }
