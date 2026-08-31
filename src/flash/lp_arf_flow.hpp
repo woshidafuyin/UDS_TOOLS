@@ -32,7 +32,9 @@ LpArfArtifacts load_lp_arf_artifacts(
     const std::filesystem::path& app_path,
     const std::filesystem::path& certificate_path = {});
 
-LingpaoRadarSpec lp_arf_radar_spec();
+LingpaoRadarSpec lp_arf_radar_spec(
+    std::uint32_t app_tx_id = 0x751,
+    std::uint32_t app_rx_id = 0x759);
 LpArfEntryMode resolve_lp_arf_entry_mode(std::wstring_view entry_mode);
 
 class LpArfFlow final : public LingpaoRadarFlow {
@@ -40,7 +42,10 @@ public:
   LpArfFlow(UdsClient& physical, UdsClient& app_functional,
             UdsClient& pls_functional, IsoTpSession& physical_transport,
             IsoTpSession& pls_transport, IsoTpSession& functional_transport,
-            Log log, KeyGenerator key_generator, LpArfTiming timing = {});
+            Log log, KeyGenerator key_generator,
+            std::uint32_t app_tx_id = 0x751,
+            std::uint32_t app_rx_id = 0x759,
+            LpArfTiming timing = {});
 };
 
 } // namespace uds

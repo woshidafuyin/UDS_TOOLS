@@ -4,6 +4,8 @@
 
 namespace uds {
 
+void validate_lp_arf_profile_contract(const FlashProfile& profile);
+
 class LpArfWorkflow final : public FlashWorkflow {
 public:
   std::wstring_view id() const noexcept override;

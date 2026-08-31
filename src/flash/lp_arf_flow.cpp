@@ -83,17 +83,19 @@ LpArfArtifacts load_lp_arf_artifacts(
           false};
 }
 
-LingpaoRadarSpec lp_arf_radar_spec() {
+LingpaoRadarSpec lp_arf_radar_spec(
+    std::uint32_t app_tx_id, std::uint32_t app_rx_id) {
   // The ARF6.31 CANoe Download() intentionally leaves the Driver 34/36/37
   // and 0202 verification block commented.  Keep the driver fields empty so
   // the shared core cannot accidentally import LP-ARC's Driver phase.
   LingpaoRadarSpec spec{
-      "LP-ARF", 0x751, 0x759, 0x701, 0x761, 0x7DF,
+      "LP-ARF", app_tx_id, app_rx_id, 0x701, 0x761, 0x7DF,
       kLpArfAppAddress, kLpArfAppLength, std::nullopt, std::nullopt,
       kLpArfBlockLength, kLpArfCertificateLength};
   // CANoe switches gResId to the APP response ID after transmitting 10 02.
   // When 0x761 first returns 7F 10 78, the final 50 02 therefore arrives on
-  // 0x759 and must be received through the APP transport.
+  // the configured APP response ID and must be received through the APP
+  // transport.
   spec.pls_programming_final_on_app = true;
   spec.send_raw_boot_transition = false;
   spec.allow_empty_certificate = true;
@@ -111,10 +113,12 @@ LpArfFlow::LpArfFlow(
     UdsClient& physical, UdsClient& app_functional,
     UdsClient& pls_functional, IsoTpSession& physical_transport,
     IsoTpSession& pls_transport, IsoTpSession& functional_transport, Log log,
-    KeyGenerator key_generator, LpArfTiming timing)
+    KeyGenerator key_generator, std::uint32_t app_tx_id,
+    std::uint32_t app_rx_id, LpArfTiming timing)
     : LingpaoRadarFlow(physical, app_functional, pls_functional,
                        physical_transport, pls_transport,
                        functional_transport, std::move(log),
-                       std::move(key_generator), lp_arf_radar_spec(), timing) {}
+                       std::move(key_generator),
+                       lp_arf_radar_spec(app_tx_id, app_rx_id), timing) {}
 
 } // namespace uds

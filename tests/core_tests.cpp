@@ -21,6 +21,7 @@
 #include "flash/longma_ars1_31_flow.hpp"
 #include "flash/lp_arc_flow.hpp"
 #include "flash/lp_arf_flow.hpp"
+#include "flash/lp_arf_workflow.hpp"
 #include "flash/shidaixinan_hjzj_fmr_flow.hpp"
 #include "flash/xizhong_rsmr_flow.hpp"
 #include "flash/xizhong_rsmr_workflow.hpp"
@@ -3127,6 +3128,11 @@ void test_lp_arf_protocol_and_resources() {
             spec.app_length == uds::kLpArfAppLength,
         "LP-ARF flow spec lost its APP-final transition route or imported an ARC-only phase");
 
+  const auto custom_id_spec = uds::lp_arf_radar_spec(0x701, 0x761);
+  check(custom_id_spec.app_tx_id == 0x701 &&
+            custom_id_spec.app_rx_id == 0x761,
+        "LP-ARF flow spec ignored configured APP diagnostic IDs");
+
   const auto root = source / "resources" / "lp_arf";
   const auto app = uds::load_single_srecord_segment(
       root / "APP" /
@@ -3180,6 +3186,30 @@ void test_lp_arf_protocol_and_resources() {
             workflow->report_title(profile).find("Leapmotor ARF") !=
                 std::string::npos,
         "LP-ARF workflow factory/report mapping mismatch");
+
+  auto custom_endpoint_profile = profile;
+  custom_endpoint_profile.tx_id = 0x701;
+  custom_endpoint_profile.rx_id = 0x761;
+  bool custom_endpoint_accepted = true;
+  try {
+    uds::validate_lp_arf_profile_contract(custom_endpoint_profile);
+  } catch (const std::runtime_error&) {
+    custom_endpoint_accepted = false;
+  }
+  check(custom_endpoint_accepted,
+        "LP-ARF custom APP 701/761 endpoint was rejected");
+
+  custom_endpoint_profile.tx_id = 0;
+  bool zero_endpoint_rejected = false;
+  try {
+    uds::validate_lp_arf_profile_contract(custom_endpoint_profile);
+  } catch (const std::runtime_error& error) {
+    zero_endpoint_rejected =
+        std::string(error.what()).find("non-zero configurable APP IDs") !=
+        std::string::npos;
+  }
+  check(zero_endpoint_rejected,
+        "LP-ARF accepted a zero APP diagnostic endpoint");
 }
 
 } // namespace

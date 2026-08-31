@@ -48,28 +48,33 @@ std::string LpArfWorkflow::report_title(const FlashProfile&) const {
   return "Leapmotor ARF Download Report";
 }
 
+void validate_lp_arf_profile_contract(const FlashProfile& profile) {
+  if (!profile.can_fd || profile.extended_id ||
+      profile.uds_fd || profile.uds_brs ||
+      profile.tx_id == 0 || profile.rx_id == 0 ||
+      profile.functional_id != 0x7DF ||
+      profile.ft_tx_id != 0x701 || profile.ft_rx_id != 0x761 ||
+      profile.ft_extended_id || profile.ft_uds_fd ||
+      profile.ft_uds_brs || profile.padding != 0x55 ||
+      profile.ft_padding != 0x55 ||
+      profile.nominal_bitrate != 500000 ||
+      profile.data_bitrate != 2000000 ||
+      profile.isotp_st_min != 0 ||
+      profile.security_level != 0x11 ||
+      profile.app_start != kLpArfAppAddress ||
+      profile.app_length != kLpArfAppLength ||
+      profile.driver_length != 0) {
+    throw std::runtime_error(
+        "LP-ARF requires a CAN-FD-capable 500k/2M channel with Classic UDS, "
+        "non-zero configurable APP IDs, PLS 701/761, functional 7DF, "
+        "padding 55 and STmin 0");
+  }
+}
+
 void LpArfWorkflow::run(
     const FlashJob& job, const FlashWorkflowCallbacks& callbacks,
     std::stop_token stop) {
-  if (!job.profile.can_fd || job.profile.extended_id ||
-      job.profile.uds_fd || job.profile.uds_brs ||
-      job.profile.tx_id != 0x751 || job.profile.rx_id != 0x759 ||
-      job.profile.functional_id != 0x7DF ||
-      job.profile.ft_tx_id != 0x701 || job.profile.ft_rx_id != 0x761 ||
-      job.profile.ft_extended_id || job.profile.ft_uds_fd ||
-      job.profile.ft_uds_brs || job.profile.padding != 0x55 ||
-      job.profile.ft_padding != 0x55 ||
-      job.profile.nominal_bitrate != 500000 ||
-      job.profile.data_bitrate != 2000000 ||
-      job.profile.isotp_st_min != 0 ||
-      job.profile.security_level != 0x11 ||
-      job.profile.app_start != kLpArfAppAddress ||
-      job.profile.app_length != kLpArfAppLength ||
-      job.profile.driver_length != 0) {
-    throw std::runtime_error(
-        "LP-ARF requires a CAN-FD-capable 500k/2M channel with Classic UDS, "
-        "APP 751/759, PLS 701/761, functional 7DF, padding 55 and STmin 0");
-  }
+  validate_lp_arf_profile_contract(job.profile);
   if (job.profile.power_control) {
     throw std::runtime_error(
         "LP-ARF uses external bench power; CANoe DOUT power control must be disabled");
@@ -182,7 +187,7 @@ void LpArfWorkflow::run(
           callbacks.progress(percent, line);
         }
       },
-      keygen);
+      keygen, job.profile.tx_id, job.profile.rx_id);
   try {
     flow.run(images, entry_mode, stop);
   } catch (...) {
