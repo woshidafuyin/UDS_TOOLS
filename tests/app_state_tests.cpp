@@ -276,6 +276,9 @@ void test_flash_controller_success() {
         "flash controller rejected a valid start");
   const auto result = completed.get();
   controller.wait();
+  capture->job.can_bus_provider.reset();
+  auto blf_trace_path = trace_path;
+  blf_trace_path.replace_extension(L".blf");
 
   check(result.success && !result.cancelled,
         "flash controller did not report success");
@@ -285,7 +288,9 @@ void test_flash_controller_success() {
             capture->job.entry_mode == L"ft" &&
             capture->job.security_dll ==
                 std::filesystem::path(L"security.dll") &&
-            std::filesystem::exists(trace_path),
+            std::filesystem::is_regular_file(trace_path) &&
+            std::filesystem::is_regular_file(blf_trace_path) &&
+            trace_path.stem() == blf_trace_path.stem(),
         "flash controller did not assemble FlashJob correctly");
   check(log_count == 1 && progress == 25 && audit_logs.size() == 10,
         "flash controller did not adapt workflow callbacks");
@@ -333,7 +338,6 @@ void test_flash_controller_success() {
   check(html_count == 2,
         "flash controller did not retain latest and historical reports");
   check(!state.is_active(), "flash controller did not release operation state");
-  capture->job.can_bus_provider.reset();
   std::filesystem::remove_all(directory);
 }
 
@@ -391,8 +395,8 @@ void test_flash_controller_repeat_count() {
   unsigned trace_log_count{};
   uds::app::OperationCallbacks callbacks;
   callbacks.onLog = [&](const std::string& line) {
-    if (line.find("raw ASC:") !=
-        std::string::npos) {
+    if (line.find("raw ASC PASS:") != std::string::npos &&
+        line.find("raw BLF PASS:") != std::string::npos) {
       ++trace_log_count;
     }
   };
@@ -405,15 +409,27 @@ void test_flash_controller_repeat_count() {
         "flash controller rejected repeated flash start");
   const auto result = completed.get();
   controller.wait();
+  capture->job.can_bus_provider.reset();
   const auto trace1 = directory / "complete_cycle_trace_cycle_0001_of_0003.asc";
   const auto trace2 = directory / "complete_cycle_trace_cycle_0002_of_0003.asc";
   const auto trace3 = directory / "complete_cycle_trace_cycle_0003_of_0003.asc";
+  auto blf1 = trace1;
+  auto blf2 = trace2;
+  auto blf3 = trace3;
+  blf1.replace_extension(L".blf");
+  blf2.replace_extension(L".blf");
+  blf3.replace_extension(L".blf");
   check(result.success && capture->run_count == 3 && progress == 100 &&
             trace_log_count == 3 && std::filesystem::is_regular_file(trace1) &&
             std::filesystem::is_regular_file(trace2) &&
             std::filesystem::is_regular_file(trace3) &&
+            std::filesystem::is_regular_file(blf1) &&
+            std::filesystem::is_regular_file(blf2) &&
+            std::filesystem::is_regular_file(blf3) &&
+            trace1.stem() == blf1.stem() && trace2.stem() == blf2.stem() &&
+            trace3.stem() == blf3.stem() &&
             result.message.find(L"3/3次") != std::wstring::npos,
-        "repeated flashing did not retain one raw ASC per complete cycle");
+        "repeated flashing did not retain one same-name ASC/BLF pair per complete cycle");
   std::ifstream report_file(result.report_path, std::ios::binary);
   const std::string report_text{std::istreambuf_iterator<char>(report_file),
                                 std::istreambuf_iterator<char>()};
@@ -425,10 +441,15 @@ void test_flash_controller_repeat_count() {
                 std::string::npos &&
             report_text.find("complete_cycle_trace_cycle_0003_of_0003.asc") !=
                 std::string::npos &&
+            report_text.find("complete_cycle_trace_cycle_0001_of_0003.blf") !=
+                std::string::npos &&
+            report_text.find("complete_cycle_trace_cycle_0002_of_0003.blf") !=
+                std::string::npos &&
+            report_text.find("complete_cycle_trace_cycle_0003_of_0003.blf") !=
+                std::string::npos &&
             report_text.find("完整诊断与流程记录") != std::string::npos,
         "repeated flash report did not index every cycle trace or transcript");
   report_file.close();
-  capture->job.can_bus_provider.reset();
   std::filesystem::remove_all(directory);
 }
 

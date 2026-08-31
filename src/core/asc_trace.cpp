@@ -234,8 +234,15 @@ void AscTraceWriter::writer_loop() noexcept {
 }
 
 TracingCanBus::TracingCanBus(std::unique_ptr<ICanBus> inner,
-                             std::shared_ptr<AscTraceWriter> trace)
-    : inner_(std::move(inner)), trace_(std::move(trace)) {
+                             std::shared_ptr<ICanTraceWriter> trace)
+    : TracingCanBus(std::move(inner),
+                    std::vector<std::shared_ptr<ICanTraceWriter>>{
+                        std::move(trace)}) {}
+
+TracingCanBus::TracingCanBus(
+    std::unique_ptr<ICanBus> inner,
+    std::vector<std::shared_ptr<ICanTraceWriter>> traces)
+    : inner_(std::move(inner)), traces_(std::move(traces)) {
   if (!inner_) throw std::invalid_argument("tracing CAN bus requires an inner bus");
 }
 
@@ -247,7 +254,9 @@ bool TracingCanBus::is_open() const noexcept { return inner_->is_open(); }
 
 void TracingCanBus::send(const CanFrame& frame) {
   inner_->send(frame);
-  if (trace_) trace_->write(CanTraceDirection::transmit, frame);
+  for (const auto& trace : traces_) {
+    if (trace) trace->write(CanTraceDirection::transmit, frame);
+  }
 }
 
 bool TracingCanBus::supports_batch_transmit() const noexcept {
@@ -260,16 +269,21 @@ void TracingCanBus::send_batch(std::span<const CanFrame> frames) {
     return;
   }
   inner_->send_batch(frames);
-  if (!trace_) return;
   for (const auto& frame : frames) {
-    trace_->write(CanTraceDirection::transmit, frame);
+    for (const auto& trace : traces_) {
+      if (trace) trace->write(CanTraceDirection::transmit, frame);
+    }
   }
 }
 
 std::optional<CanFrame> TracingCanBus::receive(
     std::chrono::milliseconds timeout) {
   auto frame = inner_->receive(timeout);
-  if (frame && trace_) trace_->write(CanTraceDirection::receive, *frame);
+  if (frame) {
+    for (const auto& trace : traces_) {
+      if (trace) trace->write(CanTraceDirection::receive, *frame);
+    }
+  }
   return frame;
 }
 

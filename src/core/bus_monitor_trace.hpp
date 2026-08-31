@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/can_bus.hpp"
+#include "core/asc_trace.hpp"
 
 #include <chrono>
 #include <cstddef>
@@ -22,11 +22,13 @@ struct BusMonitorTraceRecovery {
 // Owns one passive-monitor BLF trace from creation through finalization. The UI
 // supplies observed frames and a destination sink; BLF serialization, file
 // naming, flushing and interrupted-session recovery remain encapsulated here.
-class BusMonitorTraceSession final {
+class BusMonitorTraceSession final : public ICanTraceWriter {
 public:
   using SnapshotSink = std::function<bool(std::string_view)>;
 
   explicit BusMonitorTraceSession(std::filesystem::path directory);
+  BusMonitorTraceSession(std::filesystem::path directory,
+                         std::filesystem::path completed_path);
   ~BusMonitorTraceSession() noexcept;
 
   BusMonitorTraceSession(const BusMonitorTraceSession&) = delete;
@@ -35,6 +37,8 @@ public:
   [[nodiscard]] BusMonitorTraceRecovery recover_incomplete() noexcept;
   [[nodiscard]] bool start(unsigned channel) noexcept;
   void append(const CanFrame& frame) noexcept;
+  void write(CanTraceDirection direction,
+             const CanFrame& frame) noexcept override;
   void flush() noexcept;
   void stop() noexcept;
 
@@ -43,6 +47,7 @@ public:
   [[nodiscard]] bool export_snapshot(const SnapshotSink& sink) noexcept;
 
   [[nodiscard]] bool is_active() const noexcept;
+  [[nodiscard]] bool is_open() const noexcept override { return is_active(); }
   [[nodiscard]] std::size_t frame_count() const noexcept;
   [[nodiscard]] std::filesystem::path path() const;
   [[nodiscard]] std::string last_error() const;
@@ -61,6 +66,7 @@ private:
   void fail(std::string message) noexcept;
 
   std::filesystem::path directory_;
+  std::filesystem::path fixed_completed_path_;
   mutable std::mutex mutex_;
   std::filesystem::path path_;
   unsigned channel_{1};

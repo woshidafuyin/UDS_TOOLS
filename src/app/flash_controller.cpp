@@ -369,18 +369,18 @@ void FlashController::execute(FlashRequest request,
         tracing_provider = std::make_shared<TracingCanBusProvider>(
             bus_provider_, trace_path, request.channel);
         job.can_bus_provider = tracing_provider;
+        const auto blf_path = tracing_provider->blf_trace_path();
         const auto trace_detail =
-            tracing_provider->trace_is_open()
-                ? "Cycle " + std::to_string(active_cycle) + "/" +
-                      std::to_string(repeat_count) + " raw ASC: " +
-                      utf8_path(trace_path)
-                : "WARN: failed to create cycle " +
-                      std::to_string(active_cycle) + "/" +
-                      std::to_string(repeat_count) + " raw ASC: " +
-                      utf8_path(trace_path);
+            "Cycle " + std::to_string(active_cycle) + "/" +
+            std::to_string(repeat_count) + " raw ASC " +
+            (tracing_provider->asc_trace_is_open() ? "PASS: " : "FAIL: ") +
+            utf8_path(trace_path) + "; raw BLF " +
+            (tracing_provider->blf_trace_is_open() ? "PASS: " : "FAIL: ") +
+            utf8_path(blf_path);
         if (callbacks.onLog) callbacks.onLog(trace_detail);
         add_report(0,
-                   "ASC Trace cycle " + std::to_string(active_cycle) + "/" +
+                   "ASC + BLF Trace cycle " +
+                       std::to_string(active_cycle) + "/" +
                        std::to_string(repeat_count),
                    tracing_provider->trace_is_open() ? "INFO" : "WARN",
                    trace_detail);

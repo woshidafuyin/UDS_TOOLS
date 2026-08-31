@@ -136,10 +136,20 @@ BusMonitorTraceSession::BusMonitorTraceSession(
     std::filesystem::path directory)
     : directory_(std::move(directory)) {}
 
+BusMonitorTraceSession::BusMonitorTraceSession(
+    std::filesystem::path directory, std::filesystem::path completed_path)
+    : directory_(std::move(directory)),
+      fixed_completed_path_(std::move(completed_path)) {}
+
 BusMonitorTraceSession::~BusMonitorTraceSession() noexcept { stop(); }
 
 std::filesystem::path BusMonitorTraceSession::make_partial_path(
     unsigned channel) const {
+  if (!fixed_completed_path_.empty()) {
+    auto partial = fixed_completed_path_;
+    partial += L".partial";
+    return partial;
+  }
   const auto stem = "bus_monitor_" + timestamp_with_milliseconds() + "_CH" +
                     std::to_string(std::max(channel, 1U));
   auto path = directory_ / (stem + ".blf.partial");
@@ -284,6 +294,13 @@ void BusMonitorTraceSession::append(const CanFrame& frame) noexcept {
   } catch (...) {
     fail("unknown passive monitor BLF append error");
   }
+}
+
+void BusMonitorTraceSession::write(CanTraceDirection direction,
+                                   const CanFrame& frame) noexcept {
+  auto recorded = frame;
+  recorded.transmitted = direction == CanTraceDirection::transmit;
+  append(recorded);
 }
 
 void BusMonitorTraceSession::flush() noexcept {

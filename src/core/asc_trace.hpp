@@ -22,13 +22,21 @@ enum class CanTraceDirection {
   receive,
 };
 
+class ICanTraceWriter {
+public:
+  virtual ~ICanTraceWriter() = default;
+  [[nodiscard]] virtual bool is_open() const noexcept = 0;
+  virtual void write(CanTraceDirection direction,
+                     const CanFrame& frame) noexcept = 0;
+};
+
 // Shared Vector ASC serialization used by flashing, probe and version traces.
 [[nodiscard]] std::string format_asc_header(std::time_t wall_time);
 [[nodiscard]] std::string format_asc_record(
     double timestamp_seconds, unsigned channel,
     CanTraceDirection direction, const CanFrame& frame);
 
-class AscTraceWriter final {
+class AscTraceWriter final : public ICanTraceWriter {
 public:
   explicit AscTraceWriter(std::filesystem::path path,
                           unsigned channel = 1) noexcept;
@@ -37,11 +45,12 @@ public:
   AscTraceWriter(const AscTraceWriter&) = delete;
   AscTraceWriter& operator=(const AscTraceWriter&) = delete;
 
-  [[nodiscard]] bool is_open() const noexcept;
+  [[nodiscard]] bool is_open() const noexcept override;
   [[nodiscard]] const std::filesystem::path& path() const noexcept {
     return path_;
   }
-  void write(CanTraceDirection direction, const CanFrame& frame) noexcept;
+  void write(CanTraceDirection direction,
+             const CanFrame& frame) noexcept override;
 
 private:
   struct Record {
@@ -69,7 +78,9 @@ private:
 class TracingCanBus final : public ICanBus {
 public:
   TracingCanBus(std::unique_ptr<ICanBus> inner,
-                std::shared_ptr<AscTraceWriter> trace);
+                std::shared_ptr<ICanTraceWriter> trace);
+  TracingCanBus(std::unique_ptr<ICanBus> inner,
+                std::vector<std::shared_ptr<ICanTraceWriter>> traces);
 
   void open() override;
   void close() noexcept override;
@@ -81,7 +92,7 @@ public:
 
 private:
   std::unique_ptr<ICanBus> inner_;
-  std::shared_ptr<AscTraceWriter> trace_;
+  std::vector<std::shared_ptr<ICanTraceWriter>> traces_;
 };
 
 [[nodiscard]] std::filesystem::path make_asc_trace_path(

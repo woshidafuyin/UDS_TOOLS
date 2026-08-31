@@ -101,17 +101,27 @@ void test_asc_trace_can_bus() {
 
   const auto trace_path =
       std::filesystem::temp_directory_path() / "uds_asc_trace_test.asc";
+  const auto blf_path =
+      std::filesystem::temp_directory_path() / "uds_asc_trace_test.blf";
   std::error_code ignored;
   std::filesystem::remove(trace_path, ignored);
+  std::filesystem::remove(blf_path, ignored);
+  std::filesystem::remove(blf_path.wstring() + L".partial", ignored);
 
   auto inner = std::make_unique<MockBus>();
   auto* inner_view = inner.get();
   inner->rx.push_back(
       uds::CanFrame{0x18DAF1B7, {0x30, 0x00, 0x0A}, true, true, true});
   auto writer = std::make_shared<uds::AscTraceWriter>(trace_path, 2);
+  auto blf_writer = std::make_shared<uds::BusMonitorTraceSession>(
+      blf_path.parent_path(), blf_path);
   check(writer->is_open(), "ASC trace file could not be opened");
+  check(blf_writer->start(2), "paired BLF trace file could not be opened");
   {
-    uds::TracingCanBus bus(std::move(inner), writer);
+    uds::TracingCanBus bus(
+        std::move(inner),
+        std::vector<std::shared_ptr<uds::ICanTraceWriter>>{writer,
+                                                          blf_writer});
     bus.open();
     bus.send(uds::CanFrame{0x744, {0x10, 0x01}, false, false, false});
     const std::array fallback_batch{
@@ -128,6 +138,42 @@ void test_asc_trace_can_bus() {
           "tracing CAN bus changed the transmitted frame");
   }
   writer.reset();
+  check(blf_writer->frame_count() == 4,
+        "paired BLF trace did not receive the same four CAN frames as ASC");
+  std::string blf_snapshot;
+  check(blf_writer->export_snapshot(
+            [&blf_snapshot](std::string_view chunk) {
+              blf_snapshot.append(chunk);
+              return true;
+            }),
+        "paired BLF trace could not be inspected");
+  const auto blf_byte = [&blf_snapshot](std::size_t offset) {
+    return static_cast<std::uint8_t>(blf_snapshot.at(offset));
+  };
+  const auto blf_u32 = [&blf_byte](std::size_t offset) {
+    return static_cast<std::uint32_t>(blf_byte(offset)) |
+           (static_cast<std::uint32_t>(blf_byte(offset + 1)) << 8U) |
+           (static_cast<std::uint32_t>(blf_byte(offset + 2)) << 16U) |
+           (static_cast<std::uint32_t>(blf_byte(offset + 3)) << 24U);
+  };
+  constexpr std::size_t kPairedFirstObject = 144 + 16 + 16;
+  constexpr std::size_t kPairedFourthObject = kPairedFirstObject + 3 * 48;
+  constexpr std::size_t kPairedFourthPayload = kPairedFourthObject + 32;
+  check(blf_snapshot.starts_with("LOGG") &&
+            blf_u32(kPairedFirstObject + 12) == 1 &&
+            blf_byte(kPairedFirstObject + 32 + 2) == 1 &&
+            blf_u32(kPairedFirstObject + 32 + 4) == 0x744 &&
+            blf_byte(kPairedFirstObject + 32 + 8) == 0x10 &&
+            blf_u32(kPairedFourthObject + 12) == 100 &&
+            blf_byte(kPairedFourthPayload + 2) == 0 &&
+            blf_u32(kPairedFourthPayload + 4) ==
+                (0x80000000U | 0x18DAF1B7U) &&
+            blf_byte(kPairedFourthPayload + 20) == 0x30,
+        "paired BLF trace changed CAN direction, ID, frame type, or payload");
+  blf_writer->stop();
+  check(std::filesystem::is_regular_file(blf_path),
+        "paired BLF trace did not finalize with the ASC basename");
+  blf_writer.reset();
 
   std::ifstream input(trace_path, std::ios::binary);
   const std::string asc((std::istreambuf_iterator<char>(input)),
@@ -167,6 +213,7 @@ void test_asc_trace_can_bus() {
                     .filename() == L"diagnostic",
         "ASC trace operation directories are not classified");
   std::filesystem::remove(trace_path, ignored);
+  std::filesystem::remove(blf_path, ignored);
 }
 
 void test_bus_monitor_trace_session() {

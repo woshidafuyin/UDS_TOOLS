@@ -20,8 +20,8 @@ UDS 通用刷写工具 Change List
 - SHA-256：4A7E87ECC57A041C9A188B95E0D1269A2D77367B82CC3E7C050CFBA23FBACECB
 
 本次正式主程序：CH_FLASH_tools.exe
-- 文件大小：1,701,376 bytes
-- SHA-256：B126E682BFCD0E51E22FE9990AB35BA4DACA8B6180753A1A6091F7F06F0A1079
+- 文件大小：1,705,472 bytes
+- SHA-256：FCC11C17B5835AF139F55624E1C848C59349FCD337397DE4B17CB817CB1C16C9
 
 比较方法：
 - 使用相对路径和 SHA-256 比较文件，不用文件名、大小或时间戳代替内容判断。
@@ -43,7 +43,10 @@ UDS 通用刷写工具 Change List
 0. 日志按用途分目录
 
 - 界面运行日志写入 `logs/execution`，HTML 报告写入 `logs/reports`。
-- 单次操作 ASC 统一进入 `logs/traces`，并按 `probe`、`version`、`diagnostic`、`flash` 分类；持续总线监听仍写入 `logs/bus_monitor`。
+- 单次操作 Trace 统一进入 `logs/traces`，并按 `probe`、`version`、`diagnostic`、`flash` 分类；持续总线监听仍写入 `logs/bus_monitor`。
+- 正式刷写每一轮同时保存同基名 ASC 和 Vector BLF，两种格式由同一批 `CanFrame` 同步写入，保留相同的帧数、方向、CAN ID、帧类型和 Payload。
+- 重复刷写按完整轮次形成 `..._cycle_0001_of_0003.asc` / `..._cycle_0001_of_0003.blf` 成对证据，运行日志和 HTML 报告同时记录两个路径。
+- 新增双写回归，覆盖经典 CAN、CAN FD/BRS、标准/扩展 ID、TX/RX 和 Payload；离线 CTest 8/8 通过，不代表真实 ECU 刷写或台架验收通过。
 - “打开最新报告”和报告快捷按钮改为从 `logs/reports` 查找，不因目录调整失效。
 
 0.1 移除错误的吉利 P146 项目
