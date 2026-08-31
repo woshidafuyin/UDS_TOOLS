@@ -567,15 +567,6 @@ QProgressBar {
 QProgressBar::chunk {
   background: #2c7bc4;
 }
-QWidget#logColumnHeader {
-  background: #f6f8fb;
-  border: 1px solid #d8dee8;
-  border-bottom: none;
-}
-QWidget#logColumnHeader QLabel {
-  color: #394456;
-  font-weight: 600;
-}
 QPlainTextEdit#logPlainTextEdit {
   background: #ffffff;
   border: 1px solid #d8dee8;
@@ -698,23 +689,8 @@ QStatusBar {
   ui_->mainLayout->insertWidget(0, left_panel, 48);
   ui_->mainLayout->setStretch(1, 52);
 
-  auto* log_header = new QWidget(ui_->logGroupBox);
-  log_header->setObjectName(QStringLiteral("logColumnHeader"));
-  log_header->setFixedHeight(35);
-  auto* log_header_layout = new QHBoxLayout(log_header);
-  log_header_layout->setContentsMargins(12, 0, 12, 0);
-  log_header_layout->setSpacing(12);
-  auto* time_header = new QLabel(QStringLiteral("时间"), log_header);
-  time_header->setFixedWidth(106);
-  auto* direction_header = new QLabel(QStringLiteral("方向"), log_header);
-  direction_header->setFixedWidth(58);
-  log_header_layout->addWidget(time_header);
-  log_header_layout->addWidget(direction_header);
-  log_header_layout->addWidget(new QLabel(QStringLiteral("内容"), log_header),
-                               1);
   ui_->logLayout->setContentsMargins(10, 10, 10, 10);
   ui_->logLayout->setSpacing(0);
-  ui_->logLayout->insertWidget(0, log_header);
 }
 
 void MainWindow::installWheelMutationGuards() {
