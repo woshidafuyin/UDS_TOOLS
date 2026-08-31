@@ -222,7 +222,9 @@
 
 ## 14. 构建、验证与证据边界
 
-- 构建命令：`scripts\build.ps1 -Config Release -DistPath dist`；
+- 标准构建命令：`scripts\build.ps1 -Config Release -DistPath dist`；脚本以自身所在仓库为基准解析参数中的相对路径，因此通过正确的脚本路径调用时不受当前工作目录影响；
+- 构建脚本自动发现已安装的 Visual Studio C++ 工具、CMake 和 Qt 5.15.2 MSVC 64-bit，不依赖开发机绝对路径；换机后可先运行 `scripts\build.ps1 -ValidateEnvironmentOnly` 检查环境；
+- 自动发现失败时会明确提示缺失组件；特殊安装位置可分别通过 `-VisualStudioRoot`、`-CMakePath`、`-QtRoot` 指定，独立构建目录可通过 `-BuildRoot` 指定；
 - 当前离线 CTest 共 8 项：核心、P416、CAN 适配、厂商 API 边界、厂商清单、应用状态、Qt 探测桥接和 Qt 主窗口；
 - 离线测试覆盖 Profile/Workflow、文件预检、ISO-TP/UDS、Fake ECU、共享通道、监听、日志尾随、审计和 UI 状态等回归；
 - 构建成功、CTest PASS、历史报告、硬件探针、真实 CAN 通信和真实 ECU 完整刷写是不同证据层级；

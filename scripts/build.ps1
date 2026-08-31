@@ -1,27 +1,152 @@
 param(
   [ValidateSet('Debug','Release')][string]$Config='Release',
-  [string]$DistPath=''
+  [string]$DistPath='',
+  [string]$BuildRoot='',
+  [string]$VisualStudioRoot='',
+  [string]$QtRoot='',
+  [string]$CMakePath='',
+  [switch]$ValidateEnvironmentOnly
 )
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $PSScriptRoot
-$vsRoot='C:\Program Files\Microsoft Visual Studio\2022\Community'
+$requiredQtVersion='5.15.2'
+
+function Resolve-InputPath([string]$Path,[string]$BasePath) {
+  if([IO.Path]::IsPathRooted($Path)){
+    return [IO.Path]::GetFullPath($Path)
+  }
+  return [IO.Path]::GetFullPath((Join-Path $BasePath $Path))
+}
+
+function Resolve-CommandPath([string]$Name) {
+  $command=Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+  if($command){ return $command.Source }
+  return ''
+}
+
+function Resolve-VisualStudioRoot([string]$RequestedRoot) {
+  if(-not [string]::IsNullOrWhiteSpace($RequestedRoot)){
+    $resolved=Resolve-InputPath $RequestedRoot $root
+    if(Test-Path -LiteralPath (Join-Path $resolved 'Common7\Tools\VsDevCmd.bat')){
+      return $resolved
+    }
+    throw "Visual Studio C++ tools were not found under: $resolved"
+  }
+
+  $vswhereCandidates=@()
+  $vswhereFromPath=Resolve-CommandPath 'vswhere.exe'
+  if($vswhereFromPath){ $vswhereCandidates += $vswhereFromPath }
+  $programFilesX86=[Environment]::GetFolderPath('ProgramFilesX86')
+  if($programFilesX86){
+    $vswhereCandidates += Join-Path $programFilesX86 `
+      'Microsoft Visual Studio\Installer\vswhere.exe'
+  }
+  foreach($vswhere in $vswhereCandidates | Select-Object -Unique){
+    if(-not (Test-Path -LiteralPath $vswhere)){ continue }
+    $installation=& $vswhere -latest -products '*' `
+      -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+      -property installationPath 2>$null | Select-Object -First 1
+    if($installation -and
+       (Test-Path -LiteralPath (Join-Path $installation `
+                                      'Common7\Tools\VsDevCmd.bat'))){
+      return [IO.Path]::GetFullPath($installation)
+    }
+  }
+  throw 'Visual Studio with the MSVC x86/x64 C++ tools was not found. Install the C++ desktop workload or pass -VisualStudioRoot.'
+}
+
+function Resolve-CMakeExecutable([string]$RequestedPath,[string]$VsRoot) {
+  if(-not [string]::IsNullOrWhiteSpace($RequestedPath)){
+    $resolved=Resolve-InputPath $RequestedPath $root
+    if(Test-Path -LiteralPath $resolved -PathType Container){
+      $resolved=Join-Path $resolved 'cmake.exe'
+    }
+    if(Test-Path -LiteralPath $resolved -PathType Leaf){ return $resolved }
+    throw "CMake executable was not found: $resolved"
+  }
+  $fromPath=Resolve-CommandPath 'cmake.exe'
+  if($fromPath){ return $fromPath }
+  $bundled=Join-Path $VsRoot `
+    'Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
+  if(Test-Path -LiteralPath $bundled){ return $bundled }
+  throw 'CMake was not found in PATH or the selected Visual Studio installation. Pass -CMakePath.'
+}
+
+function Resolve-QtRoot([string]$RequestedRoot) {
+  $candidates=@()
+  if(-not [string]::IsNullOrWhiteSpace($RequestedRoot)){
+    $candidates += Resolve-InputPath $RequestedRoot $root
+  } else {
+    foreach($environmentRoot in @($env:QTDIR,$env:Qt5_DIR)){
+      if([string]::IsNullOrWhiteSpace($environmentRoot)){ continue }
+      $candidate=$environmentRoot
+      if((Split-Path -Leaf $candidate) -eq 'Qt5'){
+        $candidate=Split-Path -Parent (Split-Path -Parent `
+          (Split-Path -Parent $candidate))
+      }
+      $candidates += $candidate
+    }
+    foreach($toolName in @('qmake.exe','windeployqt.exe')){
+      $tool=Resolve-CommandPath $toolName
+      if($tool){ $candidates += Split-Path -Parent (Split-Path -Parent $tool) }
+    }
+    $qtBases=@((Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Qt'))
+    Get-PSDrive -PSProvider FileSystem | ForEach-Object {
+      $qtBases += Join-Path $_.Root 'Qt'
+    }
+    foreach($qtBase in $qtBases | Select-Object -Unique){
+      if(-not (Test-Path -LiteralPath $qtBase -PathType Container)){ continue }
+      Get-ChildItem -LiteralPath (Join-Path $qtBase $requiredQtVersion) `
+                    -Directory -Filter 'msvc*_64' -ErrorAction SilentlyContinue |
+        ForEach-Object { $candidates += $_.FullName }
+    }
+  }
+
+  foreach($candidate in $candidates | Where-Object { $_ } | Select-Object -Unique){
+    $resolved=[IO.Path]::GetFullPath($candidate)
+    $qmake=Join-Path $resolved 'bin\qmake.exe'
+    $deploy=Join-Path $resolved 'bin\windeployqt.exe'
+    if(-not (Test-Path -LiteralPath $qmake) -or
+       -not (Test-Path -LiteralPath $deploy)){ continue }
+    $version=(& $qmake -query QT_VERSION 2>$null | Out-String).Trim()
+    $spec=(& $qmake -query QMAKE_XSPEC 2>$null | Out-String).Trim()
+    if($version -eq $requiredQtVersion -and $spec -match 'msvc'){
+      return $resolved
+    }
+  }
+  throw "Qt $requiredQtVersion MSVC 64-bit was not found. Put qmake in PATH, set QTDIR, or pass -QtRoot."
+}
+
+$vsRoot=Resolve-VisualStudioRoot $VisualStudioRoot
 $vsDevCmd=Join-Path $vsRoot 'Common7\Tools\VsDevCmd.bat'
-$cmake='C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
+$cmake=Resolve-CMakeExecutable $CMakePath $vsRoot
 $ctest=Join-Path (Split-Path -Parent $cmake) 'ctest.exe'
-$qtRoot='C:\Qt\5.15.2\msvc2019_64'
+if(-not (Test-Path -LiteralPath $ctest)){
+  $ctest=Resolve-CommandPath 'ctest.exe'
+}
+$qtRoot=Resolve-QtRoot $QtRoot
 $qtBin=Join-Path $qtRoot 'bin'
 $windeployqt=Join-Path $qtBin 'windeployqt.exe'
-$x86Build=Join-Path $root 'build\nmake-x86'
-$x64Build=Join-Path $root 'build\nmake-x64'
+$resolvedBuildRoot=if([string]::IsNullOrWhiteSpace($BuildRoot)){
+  Join-Path $root 'build'
+} else {
+  Resolve-InputPath $BuildRoot $root
+}
+$x86Build=Join-Path $resolvedBuildRoot 'nmake-x86'
+$x64Build=Join-Path $resolvedBuildRoot 'nmake-x64'
 $x86Output=Join-Path $x86Build $Config
 $x64Output=Join-Path $x64Build $Config
 $qtExecutableName='CH_FLASH_tools.exe'
 $dist=if([string]::IsNullOrWhiteSpace($DistPath)){
   Join-Path $root 'dist'
 } else {
-  [System.IO.Path]::GetFullPath($DistPath)
+  Resolve-InputPath $DistPath $root
 }
 $redistRoot=Join-Path $vsRoot 'VC\Redist\MSVC'
+if(-not (Test-Path -LiteralPath $redistRoot -PathType Container)){
+  throw "MSVC redistributable directory was not found under: $vsRoot"
+}
 $crtDirectory=Get-ChildItem -LiteralPath $redistRoot -Directory |
   Sort-Object Name -Descending |
   ForEach-Object { Join-Path $_.FullName 'x64\Microsoft.VC143.CRT' } |
@@ -32,6 +157,29 @@ foreach($required in @($vsDevCmd,$cmake,$ctest,$windeployqt)){
   if(-not (Test-Path -LiteralPath $required)){ throw "Required build tool not found: $required" }
 }
 if(-not $crtDirectory){ throw 'MSVC x64 redistributable DLL directory was not found' }
+
+$resolvedRoot=[IO.Path]::GetFullPath($root).TrimEnd('\')
+$resolvedBuildRoot=[IO.Path]::GetFullPath($resolvedBuildRoot).TrimEnd('\')
+$resolvedDist=[IO.Path]::GetFullPath($dist).TrimEnd('\')
+foreach($scopedPath in @($resolvedBuildRoot,$resolvedDist)){
+  if($scopedPath -eq $resolvedRoot -or
+     -not $scopedPath.StartsWith($resolvedRoot + '\',
+                                [StringComparison]::OrdinalIgnoreCase)){
+    throw "Build and dist paths must remain under the repository: $scopedPath"
+  }
+}
+
+Write-Host "Repository : $resolvedRoot"
+Write-Host "Configuration: $Config"
+Write-Host "Visual Studio: $vsRoot"
+Write-Host "CMake     : $cmake"
+Write-Host "Qt         : $qtRoot"
+Write-Host "Build root : $resolvedBuildRoot"
+Write-Host "Dist       : $resolvedDist"
+if($ValidateEnvironmentOnly){
+  Write-Host 'Build environment validation: PASS'
+  return
+}
 
 function Copy-MsvcRuntime([string]$Destination) {
   Get-ChildItem -LiteralPath $crtDirectory -Filter '*.dll' -File |
@@ -49,6 +197,51 @@ function Invoke-VsCommand([ValidateSet('x86','x64')][string]$Arch,
     throw "$Description failed with exit code $LASTEXITCODE"
   }
 }
+
+function Reset-StaleCMakeCache([string]$BuildDirectory) {
+  $resolvedBuild=[IO.Path]::GetFullPath($BuildDirectory).TrimEnd('\')
+  if($resolvedBuild -eq $resolvedBuildRoot -or
+     -not $resolvedBuild.StartsWith($resolvedBuildRoot + '\',
+                                   [StringComparison]::OrdinalIgnoreCase)){
+    throw "Refusing to inspect a build directory outside BuildRoot: $resolvedBuild"
+  }
+  $cache=Join-Path $resolvedBuild 'CMakeCache.txt'
+  if(-not (Test-Path -LiteralPath $cache)){ return }
+  $cacheLines=Get-Content -LiteralPath $cache
+  $homeLine=$cacheLines | Where-Object {
+    $_ -like 'CMAKE_HOME_DIRECTORY:INTERNAL=*'
+  } | Select-Object -First 1
+  $generatorLine=$cacheLines | Where-Object {
+    $_ -like 'CMAKE_GENERATOR:INTERNAL=*'
+  } | Select-Object -First 1
+  $cachedHome=if($homeLine){ ($homeLine -split '=',2)[1] } else { '' }
+  $cachedGenerator=if($generatorLine){
+    ($generatorLine -split '=',2)[1]
+  } else { '' }
+  $normalizedHome=if($cachedHome){
+    [IO.Path]::GetFullPath($cachedHome).TrimEnd('\')
+  } else { '' }
+  if($normalizedHome -eq $resolvedRoot -and
+     $cachedGenerator -eq 'NMake Makefiles'){
+    return
+  }
+
+  Write-Host "Refreshing stale CMake cache: $resolvedBuild"
+  Remove-Item -LiteralPath $cache -Force
+  $cmakeFiles=Join-Path $resolvedBuild 'CMakeFiles'
+  if(Test-Path -LiteralPath $cmakeFiles){
+    Remove-Item -LiteralPath $cmakeFiles -Recurse -Force
+  }
+  foreach($generatedFile in @('Makefile','cmake_install.cmake')){
+    $path=Join-Path $resolvedBuild $generatedFile
+    if(Test-Path -LiteralPath $path){
+      Remove-Item -LiteralPath $path -Force
+    }
+  }
+}
+
+Reset-StaleCMakeCache $x86Build
+Reset-StaleCMakeCache $x64Build
 
 $x86Configure='"{0}" -S "{1}" -B "{2}" -G "NMake Makefiles" -DCMAKE_BUILD_TYPE={3} -DCMAKE_RUNTIME_OUTPUT_DIRECTORY="{4}" -DUDS_BUILD_QT_UI=OFF' -f $cmake,$root,$x86Build,$Config,$x86Output
 Invoke-VsCommand x86 $x86Configure 'CMake x86 configure'
@@ -81,8 +274,6 @@ if($LASTEXITCODE -ne 0){ throw 'Failed to synchronize build-output profiles' }
 $testCommand='"{0}" --test-dir "{1}" --output-on-failure' -f $ctest,$x64Build
 Invoke-VsCommand x64 $testCommand 'C++ tests'
 
-$resolvedRoot=[IO.Path]::GetFullPath($root).TrimEnd('\')
-$resolvedDist=[IO.Path]::GetFullPath($dist).TrimEnd('\')
 if($resolvedDist -eq $resolvedRoot -or
    -not $resolvedDist.StartsWith($resolvedRoot + '\',
                                 [StringComparison]::OrdinalIgnoreCase)){
