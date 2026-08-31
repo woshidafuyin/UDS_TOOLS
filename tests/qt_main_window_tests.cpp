@@ -1,5 +1,6 @@
 #include "app/flash_request.hpp"
 #include "ui/qt/main_window.hpp"
+#include "ui/qt/main_window_support.hpp"
 #include "ui/qt/startup_window_presenter.hpp"
 #include "ui/qt/bus_monitor_page.hpp"
 #include "ui/qt/controller_bridge.hpp"
@@ -51,6 +52,30 @@ namespace {
 
 void check(bool condition, const char* message) {
   if (!condition) throw std::runtime_error(message);
+}
+
+void check_main_window_support_contracts() {
+  using namespace uds::ui::qt::main_window_support;
+  const auto nrc = nrcFromLogLine(QStringLiteral("RX [0x761] 7F 22 31"));
+  check(nrc && *nrc == 0x31,
+        "split main-window support failed to parse a raw NRC");
+  check(!nrcFromLogLine(
+             QStringLiteral("RX [0x761] 62 F1 89 7F 22 31")),
+        "split main-window support scanned an NRC inside positive payload");
+
+  const auto failed = failedRoutineFromLogLine(
+      QStringLiteral("RX [0x761] 71 01 02 04 05"));
+  check(failed && failed->routine_id == 0x0204 && failed->status == 0x05,
+        "split main-window support lost failed-routine detection");
+  check(!failedRoutineFromLogLine(
+             QStringLiteral("RX [0x761] 71 01 02 03 05")),
+        "split main-window support changed the ARC331 0203 tolerance");
+
+  check(canVendorFromKey(canVendorKey(uds::CanVendor::Tosun)) ==
+                uds::CanVendor::Tosun &&
+            canChannelSettingsKey(uds::CanVendor::Zlg) ==
+                QStringLiteral("hardware/channel/zlg"),
+        "split main-window support changed CAN backend settings keys");
 }
 
 void send_wheel(QWidget* target, int angle_delta_y) {
@@ -302,6 +327,7 @@ void run_ui_monkey_test(QApplication& application,
 int main(int argc, char* argv[]) {
   try {
     checkpoint("startup");
+    check_main_window_support_contracts();
     QApplication application(argc, argv);
     QApplication::setOrganizationName(QStringLiteral("UDSToolsTests"));
     QApplication::setApplicationName(QStringLiteral("uds_tool_qt_state_test"));

@@ -141,7 +141,11 @@ add_library(uds_app STATIC
   src/app/flash_controller.cpp
   src/app/operation_state.cpp
   src/app/probe_controller.cpp
+  src/app/probe_plan.cpp
+  src/app/probe_preconditions.cpp
   src/app/probe_service.cpp
+  src/app/probe_session.cpp
+  src/app/probe_support.cpp
   src/app/version_check_controller.cpp
   src/app/version_check_service.cpp
   src/app/version_value_decoder.cpp
@@ -268,7 +272,11 @@ if(UDS_BUILD_QT_UI AND CMAKE_SIZEOF_VOID_P EQUAL 8)
       src/app/flash_controller.cpp
       src/app/operation_state.cpp
       src/app/probe_controller.cpp
+      src/app/probe_plan.cpp
+      src/app/probe_preconditions.cpp
       src/app/probe_service.cpp
+      src/app/probe_session.cpp
+      src/app/probe_support.cpp
       src/app/version_check_controller.cpp
       src/app/version_check_service.cpp
       src/app/version_value_decoder.cpp
@@ -314,6 +322,14 @@ if(UDS_BUILD_QT_UI AND CMAKE_SIZEOF_VOID_P EQUAL 8)
       src/ui/qt/startup_window_presenter.cpp
       src/ui/qt/startup_window_presenter.hpp
       src/ui/qt/main_window.cpp
+      src/ui/qt/main_window_actions.cpp
+      src/ui/qt/main_window_context.cpp
+      src/ui/qt/main_window_files.cpp
+      src/ui/qt/main_window_logging.cpp
+      src/ui/qt/main_window_operations.cpp
+      src/ui/qt/main_window_profiles.cpp
+      src/ui/qt/main_window_support.cpp
+      src/ui/qt/main_window_support.hpp
       src/ui/qt/ui_log_message_parser.cpp
       src/ui/qt/ui_log_message_parser.hpp
       src/ui/qt/resource_file_store.cpp
@@ -576,6 +592,14 @@ if(TARGET uds_tool_qt)
     src/ui/qt/startup_window_presenter.cpp
     src/ui/qt/startup_window_presenter.hpp
     src/ui/qt/main_window.cpp
+    src/ui/qt/main_window_actions.cpp
+    src/ui/qt/main_window_context.cpp
+    src/ui/qt/main_window_files.cpp
+    src/ui/qt/main_window_logging.cpp
+    src/ui/qt/main_window_operations.cpp
+    src/ui/qt/main_window_profiles.cpp
+    src/ui/qt/main_window_support.cpp
+    src/ui/qt/main_window_support.hpp
     src/ui/qt/ui_log_message_parser.cpp
     src/ui/qt/ui_log_message_parser.hpp
     src/ui/qt/resource_file_store.cpp

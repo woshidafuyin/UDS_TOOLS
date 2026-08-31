@@ -2,6 +2,7 @@
 #include "app/flash_request.hpp"
 #include "app/operation_state.hpp"
 #include "app/probe_controller.hpp"
+#include "app/probe_plan.hpp"
 #include "app/probe_service.hpp"
 #include "app/version_check_service.hpp"
 #include "app/version_value_decoder.hpp"
@@ -1149,6 +1150,83 @@ void test_probe_service_success() {
         "probe service progress must be the binary 0/100 verdict");
 }
 
+void test_probe_service_rejects_invalid_configuration_before_bus_access() {
+  int factory_calls{};
+  uds::app::ProbeService service(
+      [&factory_calls](const uds::app::ProbeRequest&) {
+        ++factory_calls;
+        return std::unique_ptr<uds::ICanBus>{};
+      });
+
+  auto invalid_mode = make_probe_request();
+  invalid_mode.entry_mode = L"factory";
+  const auto invalid_result = service.run(invalid_mode, {}, {});
+  check(!invalid_result.success && !invalid_result.cancelled &&
+            invalid_result.message == "在线探测配置无效" &&
+            factory_calls == 0,
+        "probe service opened CAN for an invalid entry mode");
+
+  auto missing_ft = make_probe_request();
+  missing_ft.entry_mode = L"ft";
+  const auto missing_ft_result = service.run(missing_ft, {}, {});
+  check(!missing_ft_result.success && !missing_ft_result.cancelled &&
+            missing_ft_result.message == "FT探测端点未配置" &&
+            factory_calls == 0,
+        "probe service opened CAN when FT support/endpoints were absent");
+}
+
+void test_probe_service_marks_custom_endpoint_without_changing_request() {
+  auto capture = std::make_shared<ProbeBusCapture>();
+  uds::app::ProbeService service(
+      [capture](const uds::app::ProbeRequest& request) {
+        check(request.tx_id == 0x612 && request.rx_id == 0x61A,
+              "probe plan changed a user-edited custom endpoint");
+        return std::make_unique<FakeProbeBus>(capture, request.rx_id, true);
+      });
+  auto request = make_probe_request();
+  request.tx_id = 0x612;
+  request.rx_id = 0x61A;
+
+  const auto result = service.run(request, {}, {});
+  check(result.success && !result.cancelled &&
+            result.message.find("自定义端点在线：响应 50 01") == 0 &&
+            capture->sent.size() == 1 &&
+            capture->sent.front().id == 0x612,
+        "probe service lost custom-endpoint identity or request routing");
+}
+
+void test_probe_plan_preserves_entry_specific_session_and_ft_target() {
+  auto generic = uds::app::probe_detail::resolve_probe_plan(make_probe_request());
+  check(generic.valid && generic.plan.session == 0x01 &&
+            generic.plan.probe_tx_id == 0x701 &&
+            generic.plan.attempt_count == 1,
+        "generic probe plan no longer uses one safe 10 01 attempt");
+
+  auto arc331_request = make_probe_request();
+  arc331_request.profile.flow = L"chuneng_arc331";
+  arc331_request.entry_mode = L"boot";
+  auto arc331 = uds::app::probe_detail::resolve_probe_plan(arc331_request);
+  check(arc331.valid && arc331.plan.boot_probe &&
+            arc331.plan.session == 0x03 && arc331.plan.chuneng_arc331,
+        "ARC331 BOOT probe plan lost its safe extended-session routing");
+
+  auto ft_request = make_probe_request();
+  ft_request.entry_mode = L"ft";
+  ft_request.profile.supports_ft_entry = true;
+  ft_request.profile.ft_tx_id = 0x715;
+  ft_request.profile.ft_rx_id = 0x71D;
+  ft_request.profile.targets = {
+      {L"secondary", L"Secondary", 0x760, 0x768, false, 0, {}, {}, {}, {},
+       {}, {}, {}, 0x714, 0x71C}};
+  ft_request.tx_id = 0x760;
+  ft_request.rx_id = 0x768;
+  auto ft = uds::app::probe_detail::resolve_probe_plan(ft_request);
+  check(ft.valid && ft.plan.ft_probe && ft.plan.session == 0x03 &&
+            ft.plan.request.tx_id == 0x714 &&
+            ft.plan.request.rx_id == 0x71C,
+        "probe plan ignored the selected target's FT endpoint");
+}
+
 void test_probe_service_ft_target_endpoint() {
   auto capture = std::make_shared<ProbeBusCapture>();
   uds::app::ProbeService service(
@@ -1625,6 +1703,46 @@ void test_probe_controller_stop() {
         "probe controller did not release state after cancellation");
 }
 
+void test_probe_controller_stop_during_periodic_wakeup() {
+  auto capture = std::make_shared<ProbeBusCapture>();
+  uds::app::ProbeService service(
+      [capture](const uds::app::ProbeRequest& request) {
+        return std::make_unique<FakeChunengProbeBus>(capture, request.rx_id);
+      });
+  uds::app::OperationState state;
+  uds::app::ProbeController controller(state, std::move(service));
+  std::promise<uds::app::ProbeResult> completion;
+  auto completed = completion.get_future();
+  uds::app::ProbeControllerCallbacks callbacks;
+  callbacks.onFinished = [&](uds::app::ProbeResult result) {
+    completion.set_value(std::move(result));
+  };
+
+  auto request = make_probe_request();
+  request.profile.flow = L"chuneng_arc331";
+  request.profile.tx_id = request.tx_id = 0x72E;
+  request.profile.rx_id = request.rx_id = 0x72F;
+  request.entry_mode = L"boot";
+  request.padding = 0x55;
+  check(controller.start(request, std::move(callbacks)),
+        "periodic-wakeup cancellation probe did not start");
+  while (!capture->opened.load()) std::this_thread::yield();
+  check(controller.request_stop(),
+        "periodic-wakeup cancellation request was rejected");
+  const auto result = completed.get();
+  controller.wait();
+  const auto unsafe_request = std::find_if(
+      capture->sent.cbegin(), capture->sent.cend(),
+      [](const uds::CanFrame& frame) {
+        return frame.data.size() >= 3 &&
+               (frame.data[1] == 0x31 ||
+                (frame.data[1] == 0x10 && frame.data[2] == 0x02));
+      });
+  check(!result.success && result.cancelled && !state.is_active() &&
+            unsafe_request == capture->sent.cend(),
+        "periodic wake-up cancellation leaked work or sent an unsafe request");
+}
+
 } // namespace
 
 int main() {
@@ -1642,6 +1760,9 @@ int main() {
     test_flash_controller_repeat_stops_on_first_failure();
     test_flash_controller_stop();
     test_probe_service_success();
+    test_probe_service_rejects_invalid_configuration_before_bus_access();
+    test_probe_service_marks_custom_endpoint_without_changing_request();
+    test_probe_plan_preserves_entry_specific_session_and_ft_target();
     test_probe_service_ft_target_endpoint();
     test_probe_service_shidaixinan_ft_endpoint_and_wakeup();
     test_probe_service_xizhong_nm_wakeup_and_retry();
@@ -1655,6 +1776,7 @@ int main() {
     test_probe_service_unexpected_response();
     test_probe_controller_success();
     test_probe_controller_stop();
+    test_probe_controller_stop_during_periodic_wakeup();
     test_version_check_service_success();
     test_diagnostic_request_service_success();
     test_version_check_service_lsmr_nm_wakeup();
