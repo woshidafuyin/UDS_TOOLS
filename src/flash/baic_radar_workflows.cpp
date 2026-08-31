@@ -1,5 +1,6 @@
 #include "flash/baic_radar_workflows.hpp"
 
+#include "core/diagnostic_endpoint.hpp"
 #include "core/flash_data.hpp"
 #include "core/isotp.hpp"
 #include "core/keygen_client.hpp"
@@ -62,19 +63,14 @@ void record(const FlashWorkflowCallbacks& callbacks, std::string step,
   }
 }
 
-bool endpoint_supported(BaicRadarProject project, std::uint32_t tx,
-                        std::uint32_t rx) {
-  if (project == BaicRadarProject::n61ab) {
-    return tx == 0x723 && rx == 0x72B;
-  }
-  constexpr std::array endpoints{
-      std::pair{0x749U, 0x7C9U}, std::pair{0x74CU, 0x7CCU},
-      std::pair{0x74AU, 0x7CAU}, std::pair{0x748U, 0x7C8U}};
-  return std::find(endpoints.begin(), endpoints.end(),
-                   std::pair{tx, rx}) != endpoints.end();
-}
-
 } // namespace
+
+void validate_baic_configurable_endpoint(
+    const FlashProfile& profile, BaicRadarProject project) {
+  const auto& spec = project_spec(project);
+  static_cast<void>(require_configurable_diagnostic_endpoint(
+      profile.tx_id, profile.rx_id, false, spec.label));
+}
 
 BaicRadarWorkflow::BaicRadarWorkflow(BaicRadarProject project)
     : project_(project) {}
@@ -95,11 +91,7 @@ void BaicRadarWorkflow::run(
     throw std::runtime_error(std::string(spec.label) +
                              " profile/workflow identity mismatch");
   }
-  if (!endpoint_supported(project_, job.profile.tx_id, job.profile.rx_id)) {
-    throw std::runtime_error(std::string(spec.label) +
-                             " diagnostic Tx/Rx endpoint is not in the "
-                             "CANoe source evidence");
-  }
+  validate_baic_configurable_endpoint(job.profile, project_);
   if (job.profile.functional_id != 0x7DF || job.profile.extended_id ||
       job.profile.power_control || job.profile.supports_ft_entry ||
       job.profile.supports_cal_download) {

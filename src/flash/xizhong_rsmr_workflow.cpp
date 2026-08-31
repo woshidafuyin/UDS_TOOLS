@@ -1,6 +1,7 @@
 #include "flash/xizhong_rsmr_workflow.hpp"
 
 #include "core/flash_data.hpp"
+#include "core/diagnostic_endpoint.hpp"
 #include "core/isotp.hpp"
 #include "core/keygen_client.hpp"
 #include "core/sha256.hpp"
@@ -23,8 +24,6 @@ struct XizhongRadarSpec {
   std::wstring_view workflow_id;
   std::string_view report_target;
   std::string_view identity;
-  std::uint32_t tx_id;
-  std::uint32_t rx_id;
   std::uint32_t ft_tx_id;
   std::uint32_t ft_rx_id;
   std::uint32_t nm_id;
@@ -33,11 +32,11 @@ struct XizhongRadarSpec {
 };
 
 constexpr XizhongRadarSpec kRsmrSpec{
-    L"xizhong_rsmr", "RSMR", "RSMR_AA", 0x18DAB7F1, 0x18DAF1B7,
-    0x701, 0x761, 0x18FFA025, {0x29, 0x98, 0x42, 0x58}, true};
+    L"xizhong_rsmr", "RSMR", "RSMR_AA", 0x701, 0x761,
+    0x18FFA025, {0x29, 0x98, 0x42, 0x58}, true};
 constexpr XizhongRadarSpec kLsmrSpec{
-    L"xizhong_lsmr", "LSMR", "LSMR_AA", 0x18DAB6F1, 0x18DAF1B6,
-    0x714, 0x71C, 0x18FFA0B6, {0x2A, 0x98, 0x42, 0x58}, false};
+    L"xizhong_lsmr", "LSMR", "LSMR_AA", 0x714, 0x71C,
+    0x18FFA0B6, {0x2A, 0x98, 0x42, 0x58}, false};
 
 const XizhongRadarSpec& radar_spec(XizhongRadarTarget target) noexcept {
   return target == XizhongRadarTarget::lsmr ? kLsmrSpec : kRsmrSpec;
@@ -93,6 +92,19 @@ std::string XizhongRadarWorkflow::report_title(const FlashProfile&) const {
          " Download Report";
 }
 
+void validate_xizhong_configurable_endpoint(
+    const FlashProfile& profile, XizhongRadarTarget target) {
+  const auto& spec = radar_spec(target);
+  static_cast<void>(require_configurable_diagnostic_endpoint(
+      profile.tx_id, profile.rx_id, true, "Xizhong RSMR/LSMR"));
+  if (profile.functional_id != 0x18DBFFF1 ||
+      profile.ft_tx_id != spec.ft_tx_id ||
+      profile.ft_rx_id != spec.ft_rx_id) {
+    throw std::runtime_error(
+        "犀重RSMR/LSMR功能寻址或FT端点与CANoe目标配置不匹配，尚未访问总线");
+  }
+}
+
 void XizhongRadarWorkflow::run(const FlashJob& job,
                                const FlashWorkflowCallbacks& callbacks,
                                std::stop_token stop) {
@@ -105,13 +117,7 @@ void XizhongRadarWorkflow::run(const FlashJob& job,
       !job.profile.uds_brs) {
     throw std::runtime_error("犀重要求29位CAN FD+BRS诊断配置");
   }
-  if (job.profile.tx_id != spec.tx_id || job.profile.rx_id != spec.rx_id ||
-      job.profile.functional_id != 0x18DBFFF1 ||
-      job.profile.ft_tx_id != spec.ft_tx_id ||
-      job.profile.ft_rx_id != spec.ft_rx_id) {
-    throw std::runtime_error(
-        "犀重RSMR/LSMR诊断端点与CANoe目标配置不匹配，尚未访问总线");
-  }
+  validate_xizhong_configurable_endpoint(job.profile, target_);
   if (job.profile.supports_ft_entry != spec.supports_ft_entry) {
     throw std::runtime_error(
         "犀重RSMR/LSMR产线入口能力与CANoe有效分支不匹配，尚未访问总线");

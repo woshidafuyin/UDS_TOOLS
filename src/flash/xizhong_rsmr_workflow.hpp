@@ -8,6 +8,9 @@ bool xizhong_rsmr_report_line(std::string_view line) noexcept;
 
 enum class XizhongRadarTarget { rsmr, lsmr };
 
+void validate_xizhong_configurable_endpoint(
+    const FlashProfile& profile, XizhongRadarTarget target);
+
 class XizhongRadarWorkflow final : public FlashWorkflow {
 public:
   explicit XizhongRadarWorkflow(XizhongRadarTarget target) noexcept;

@@ -19,6 +19,8 @@ namespace uds {
 
 inline constexpr std::uint32_t kGeelyP416AppTxId{0x716};
 inline constexpr std::uint32_t kGeelyP416AppRxId{0x616};
+inline constexpr std::uint32_t kGeelyP416SblTxId{0x716};
+inline constexpr std::uint32_t kGeelyP416SblRxId{0x616};
 inline constexpr std::uint32_t kGeelyP416AppFunctionalId{0x7FF};
 inline constexpr std::uint32_t kGeelyP416PlsTxId{0x701};
 inline constexpr std::uint32_t kGeelyP416PlsRxId{0x761};
@@ -69,7 +71,11 @@ public:
                 UdsClient& pls_physical, UdsClient& pls_functional,
                 IsoTpSession& raw_transport,
                 IsoTpSession& sbl_transition_transport, Log log,
-                GeelyP416Timing timing = {});
+                GeelyP416Timing timing = {},
+                std::uint32_t app_tx_id = kGeelyP416AppTxId,
+                std::uint32_t app_rx_id = kGeelyP416AppRxId,
+                std::uint32_t programming_tx_id = kGeelyP416SblTxId,
+                std::uint32_t programming_rx_id = 0x617);
 
   void run(const GeelyP416Images& images, GeelyP416EntryMode entry_mode,
            std::stop_token stop = {});
@@ -103,6 +109,10 @@ private:
   IsoTpSession& sbl_transition_transport_;
   Log log_;
   GeelyP416Timing timing_;
+  std::uint32_t app_tx_id_{};
+  std::uint32_t app_rx_id_{};
+  std::uint32_t programming_tx_id_{};
+  std::uint32_t programming_rx_id_{};
   std::stop_token stop_;
   std::atomic_bool wake_failed_{};
   bool core_programming_completed_{};

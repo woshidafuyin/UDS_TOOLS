@@ -3,6 +3,8 @@
 #include "core/hex.hpp"
 #include <algorithm>
 #include <array>
+#include <iomanip>
+#include <sstream>
 #include <stdexcept>
 #include <thread>
 #include <utility>
@@ -21,6 +23,12 @@ bool starts_with(std::span<const std::uint8_t> value,
                  std::span<const std::uint8_t> prefix) {
   return value.size() >= prefix.size() &&
          std::equal(prefix.begin(), prefix.end(), value.begin());
+}
+
+std::string endpoint(std::uint32_t tx_id, std::uint32_t rx_id) {
+  std::ostringstream output;
+  output << "0x" << std::uppercase << std::hex << tx_id << "/0x" << rx_id;
+  return output.str();
 }
 
 } // namespace
@@ -130,7 +138,9 @@ GeelyP416Flow::GeelyP416Flow(
     UdsClient& programming_physical, UdsClient& app_functional,
     UdsClient& pls_physical, UdsClient& pls_functional,
     IsoTpSession& raw_transport, IsoTpSession& sbl_transition_transport,
-    Log log, GeelyP416Timing timing)
+    Log log, GeelyP416Timing timing, std::uint32_t app_tx_id,
+    std::uint32_t app_rx_id, std::uint32_t programming_tx_id,
+    std::uint32_t programming_rx_id)
     : app_physical_(app_physical),
       sbl_transition_physical_(sbl_transition_physical),
       programming_physical_(programming_physical),
@@ -138,7 +148,9 @@ GeelyP416Flow::GeelyP416Flow(
       pls_physical_(pls_physical), pls_functional_(pls_functional),
       raw_transport_(raw_transport),
       sbl_transition_transport_(sbl_transition_transport),
-      log_(std::move(log)), timing_(timing) {}
+      log_(std::move(log)), timing_(timing), app_tx_id_(app_tx_id),
+      app_rx_id_(app_rx_id), programming_tx_id_(programming_tx_id),
+      programming_rx_id_(programming_rx_id) {}
 
 UdsResponse GeelyP416Flow::expect(
     UdsClient& client, std::span<const std::uint8_t> request,
@@ -181,17 +193,21 @@ void GeelyP416Flow::wait_for(std::chrono::milliseconds duration) const {
 void GeelyP416Flow::enter_from_app() {
   expect(app_functional_, std::array<std::uint8_t, 2>{0x3E, 0x00},
          std::array<std::uint8_t, 2>{0x7E, 0x00}, 2,
-         "APP->APP 3E 00 TesterPresent (0x7FF/0x616)");
+         "APP->APP 3E 00 TesterPresent (" +
+             endpoint(kGeelyP416AppFunctionalId, app_rx_id_) + ")");
   expect(app_physical_, std::array<std::uint8_t, 2>{0x10, 0x01},
          std::array<std::uint8_t, 2>{0x50, 0x01}, 4,
-         "APP->APP 10 01 DefaultSession (0x716/0x616)");
+         "APP->APP 10 01 DefaultSession (" +
+             endpoint(app_tx_id_, app_rx_id_) + ")");
   expect(app_physical_, std::array<std::uint8_t, 2>{0x10, 0x02},
          std::array<std::uint8_t, 2>{0x50, 0x02}, 6,
-         "APP->APP 10 02 ProgrammingSession (0x716/0x616)");
+         "APP->APP 10 02 ProgrammingSession (" +
+             endpoint(app_tx_id_, app_rx_id_) + ")");
   wait_for(timing_.transition_settle);
   expect(app_functional_, std::array<std::uint8_t, 2>{0x3E, 0x00},
          std::array<std::uint8_t, 2>{0x7E, 0x00}, 8,
-         "APP->APP post-transition 3E 00 (0x7FF/0x616)");
+         "APP->APP post-transition 3E 00 (" +
+             endpoint(kGeelyP416AppFunctionalId, app_rx_id_) + ")");
 }
 
 void GeelyP416Flow::enter_from_pls() {
@@ -210,7 +226,8 @@ void GeelyP416Flow::enter_from_pls() {
   wait_for(timing_.transition_settle);
   expect(app_functional_, std::array<std::uint8_t, 2>{0x3E, 0x00},
          std::array<std::uint8_t, 2>{0x7E, 0x00}, 8,
-         "PLS->APP post-transition 3E 00 (0x7FF/0x616)");
+         "PLS->APP post-transition 3E 00 (" +
+             endpoint(kGeelyP416AppFunctionalId, app_rx_id_) + ")");
 }
 
 void GeelyP416Flow::unlock() {
@@ -305,15 +322,14 @@ void GeelyP416Flow::program(const GeelyP416Images& images) {
          "31 01 03 01 Start SBL");
 
   auto& active_physical =
-      sbl_transition_transport_.last_rx_id() == kGeelyP416AppRxId
+      sbl_transition_transport_.last_rx_id() == app_rx_id_
           ? app_physical_
           : programming_physical_;
   if (log_) {
-    log_(38, sbl_transition_transport_.last_rx_id() == kGeelyP416AppRxId
-                 ? "SBL runtime endpoint selected from final response: "
-                   "0x716/0x616"
-                 : "SBL runtime endpoint selected from final response: "
-                   "0x716/0x617");
+    log_(38, "SBL runtime endpoint selected from final response: " +
+                 (sbl_transition_transport_.last_rx_id() == app_rx_id_
+                      ? endpoint(app_tx_id_, app_rx_id_)
+                      : endpoint(programming_tx_id_, programming_rx_id_)));
   }
 
   erase_file(active_physical, images.ess, 40, "ESS");

@@ -11,6 +11,7 @@
 #include "core/uds_client.hpp"
 #include "core/uds_nrc.hpp"
 #include "flash/baic_radar_flow.hpp"
+#include "flash/baic_radar_workflows.hpp"
 #include "flash/chery_ars1_33_flow.hpp"
 #include "flash/chery_ars1_31_app_flow.hpp"
 #include "flash/chery_ars1_31_app_flow.hpp"
@@ -1331,6 +1332,19 @@ void test_xizhong_rsmr_profile_and_resources() {
   check(std::filesystem::file_size(
             root / "CDD" / "EP32_V1.7.110.100.cdd") == 1186637,
         "Xizhong passing CDD provenance resource mismatch");
+
+  auto configurable_profile = profile;
+  configurable_profile.tx_id = 0x18DA01F1;
+  configurable_profile.rx_id = 0x18DAF101;
+  bool configurable_endpoint_accepted = true;
+  try {
+    uds::validate_xizhong_configurable_endpoint(
+        configurable_profile, uds::XizhongRadarTarget::rsmr);
+  } catch (const std::runtime_error&) {
+    configurable_endpoint_accepted = false;
+  }
+  check(configurable_endpoint_accepted,
+        "Xizhong RSMR rejected a valid configurable 29-bit APP endpoint");
 }
 
 void test_xizhong_lsmr_profile_and_resources() {
@@ -1365,6 +1379,29 @@ void test_xizhong_lsmr_profile_and_resources() {
             tester_present[0].frame.extended && !tester_present[0].frame.fd &&
             tester_present[1].frame.fd && tester_present[1].frame.brs,
         "Xizhong LSMR CAN frame contract mismatch");
+
+  auto configurable_profile = profile;
+  configurable_profile.tx_id = 0x18DA02F1;
+  configurable_profile.rx_id = 0x18DAF102;
+  bool configurable_endpoint_accepted = true;
+  try {
+    uds::validate_xizhong_configurable_endpoint(
+        configurable_profile, uds::XizhongRadarTarget::lsmr);
+  } catch (const std::runtime_error&) {
+    configurable_endpoint_accepted = false;
+  }
+  check(configurable_endpoint_accepted,
+        "Xizhong LSMR rejected a valid configurable 29-bit APP endpoint");
+  configurable_profile.ft_rx_id = 0;
+  bool invalid_ft_rejected = false;
+  try {
+    uds::validate_xizhong_configurable_endpoint(
+        configurable_profile, uds::XizhongRadarTarget::lsmr);
+  } catch (const std::runtime_error&) {
+    invalid_ft_rejected = true;
+  }
+  check(invalid_ft_rejected,
+        "Xizhong LSMR accepted an invalid target-specific FT endpoint");
 
   const auto workflow = uds::create_flash_workflow(L"xizhong_lsmr");
   uds::FlashJob job;
@@ -2021,6 +2058,36 @@ void test_baic_radar_protocol() {
       '1', '2', '3', '4', '5', '6', '7', '8', '9'};
   check(uds::baic_radar_crc32(test_vector) == 0x340BC6D9U,
         "BAIC CRC32 does not match the archived CAPL no-final-XOR algorithm");
+
+  uds::FlashProfile configurable_profile;
+  configurable_profile.tx_id = 0x700;
+  configurable_profile.rx_id = 0x708;
+  bool n61_custom_accepted = true;
+  bool bqb41_custom_accepted = true;
+  try {
+    uds::validate_baic_configurable_endpoint(
+        configurable_profile, uds::BaicRadarProject::n61ab);
+  } catch (const std::runtime_error&) {
+    n61_custom_accepted = false;
+  }
+  try {
+    uds::validate_baic_configurable_endpoint(
+        configurable_profile, uds::BaicRadarProject::bqb41);
+  } catch (const std::runtime_error&) {
+    bqb41_custom_accepted = false;
+  }
+  check(n61_custom_accepted && bqb41_custom_accepted,
+        "BAIC workflow rejected a valid configurable APP endpoint");
+  configurable_profile.tx_id = 0x1800;
+  bool invalid_standard_id_rejected = false;
+  try {
+    uds::validate_baic_configurable_endpoint(
+        configurable_profile, uds::BaicRadarProject::bqb41);
+  } catch (const std::runtime_error&) {
+    invalid_standard_id_rejected = true;
+  }
+  check(invalid_standard_id_rejected,
+        "BAIC workflow accepted an out-of-range standard CAN endpoint");
 }
 
 void test_longma_ars131_protocol_and_resources() {

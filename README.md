@@ -1,6 +1,6 @@
 # UDS 通用刷写工具
 
-更新日期：2026-08-28
+更新日期：2026-08-31
 当前正式程序：`CH_FLASH_tools.exe`
 当前代码分支：`main`
 
@@ -26,7 +26,7 @@
 | --- | --- |
 | `src/ui/qt` | 主窗口、刷写作业、版本读取、诊断报文、总线监听和交互状态 |
 | `src/app` | 在线探测、刷写调度、版本读取、单次诊断请求、操作互斥、审计和报告 |
-| `src/core` | Profile、S-record、VBF、ASC/HEX、CBF、Trace 和公共数据结构 |
+| `src/core` | Profile、可配置诊断端点校验、S-record、VBF、ASC/HEX、CBF、Trace 和公共数据结构 |
 | `src/transport` | ISO-TP、UDS 请求响应、超时和 NRC 处理 |
 | `src/drivers/can` | 四类 CAN 后端、设备枚举、通道配置和共享通道 |
 | `src/flash` | 项目 Workflow、刷写状态机、文件约束和项目协议契约 |
@@ -44,6 +44,7 @@
 - 每个厂商分别记忆上次选择的项目，每个项目分别记忆上次选择的设备/目标；离开后再次返回时恢复该项目上下文；
 - 刷写模式按 `Profile/目标` 独立保存，APP、FT、CAL、APP+CAL 不会在项目之间串用；全局刷写次数不随项目切换；
 - 所有项目均允许按台架需要修改 Tx/Rx ID，修改值按 `Profile/目标` 独立保存，并贯穿在线探测、刷写、版本读取和诊断请求；双击 Tx ID 或 Rx ID 标签可分别恢复该目标的 Profile 默认值，同时更新该目标的保存状态；
+- 吉利 P416/P417/P611、犀重 RSMR/LSMR、北汽 N61AB/BQB41 与零跑 LP-ARF 的正式刷写均使用当前界面/Profile 的 APP Tx/Rx；项目固定的功能寻址、FT、SBL、NM、帧格式和安全算法仍由各 Workflow 独立约束；
 - `lock_diagnostic_ids` 仅作为历史 Profile 配置元数据保留，不再阻止通用界面覆盖诊断端点；
 - 各 CAN 后端分别保存和恢复自己的通道选择；切换后端时，刷写页、版本读取页和监听页同步更新。
 

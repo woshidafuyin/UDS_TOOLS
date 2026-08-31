@@ -54,6 +54,22 @@ bool same_key(std::span<const std::uint8_t> seed,
 
 } // namespace
 
+GeelyP416EndpointRouting resolve_geely_p416_endpoint_routing(
+    const FlashProfile& profile) {
+  const auto app = require_configurable_diagnostic_endpoint(
+      profile.tx_id, profile.rx_id, false, "Geely ARS1.31L");
+  const auto programming_tx = profile.programming_tx_id != 0
+                                  ? profile.programming_tx_id
+                                  : app.tx_id;
+  const auto programming_rx = profile.programming_rx_id != 0
+                                  ? profile.programming_rx_id
+                                  : app.rx_id;
+  const auto programming = require_configurable_diagnostic_endpoint(
+      programming_tx, programming_rx, false,
+      "Geely ARS1.31L SBL programming");
+  return {app, programming};
+}
+
 std::wstring_view GeelyP416Workflow::id() const noexcept {
   return L"geely_p416";
 }
@@ -69,13 +85,15 @@ void GeelyP416Workflow::run(
     std::stop_token stop) {
   const std::string project_label =
       job.profile.id == L"geely_p611" ? "Geely P611" : "Geely P416";
+  const auto endpoints =
+      resolve_geely_p416_endpoint_routing(job.profile);
   if (!job.profile.can_fd || job.profile.extended_id || job.profile.uds_fd ||
       job.profile.uds_brs ||
       job.profile.functional_id != kGeelyP416AppFunctionalId ||
       (job.profile.programming_tx_id != 0 &&
-       job.profile.programming_tx_id != kGeelyP416AppTxId) ||
+       job.profile.programming_tx_id != kGeelyP416SblTxId) ||
       (job.profile.programming_rx_id != 0 &&
-       job.profile.programming_rx_id != kGeelyP416AppRxId) ||
+       job.profile.programming_rx_id != kGeelyP416SblRxId) ||
       job.profile.ft_tx_id != kGeelyP416PlsTxId ||
       job.profile.ft_rx_id != kGeelyP416PlsRxId ||
       job.profile.ft_extended_id || job.profile.ft_uds_fd ||
@@ -86,7 +104,8 @@ void GeelyP416Workflow::run(
     throw std::runtime_error(
         project_label +
         " requires a CAN-FD-capable 500k/2M channel with Classic UDS, "
-        "APP/SBL 716/616, PLS 701/761/7DF, padding 55 and STmin 0");
+        "configurable APP IDs, SBL 716/616, PLS 701/761/7DF, padding 55 "
+        "and STmin 0");
   }
   if (job.profile.power_control || !job.profile.supports_ft_entry ||
       job.profile.supports_cal_download) {
@@ -147,18 +166,14 @@ void GeelyP416Workflow::run(
        job.profile.data_bitrate, job.profile.can_fd, L"UDSToolCpp"});
 
   IsoTpConfig app_config;
-  app_config.tx_id = kGeelyP416AppTxId;
-  app_config.rx_id = kGeelyP416AppRxId;
+  app_config.tx_id = endpoints.app.tx_id;
+  app_config.rx_id = endpoints.app.rx_id;
   app_config.padding = 0x55;
   app_config.st_min = 0;
   IsoTpSession app_transport(*bus, app_config);
   auto programming_config = app_config;
-  programming_config.tx_id = job.profile.programming_tx_id != 0
-                                 ? job.profile.programming_tx_id
-                                 : app_config.tx_id;
-  programming_config.rx_id = job.profile.programming_rx_id != 0
-                                 ? job.profile.programming_rx_id
-                                 : app_config.rx_id;
+  programming_config.tx_id = endpoints.programming.tx_id;
+  programming_config.rx_id = endpoints.programming.rx_id;
   if (programming_config.tx_id > 0x7FFU ||
       programming_config.rx_id > 0x7FFU) {
     throw std::runtime_error(
@@ -201,7 +216,8 @@ void GeelyP416Workflow::run(
         if (callbacks.progress && !line.starts_with("36 TransferData")) {
           callbacks.progress(percent, line);
         }
-      });
+      }, {}, endpoints.app.tx_id, endpoints.app.rx_id,
+      endpoints.programming.tx_id, endpoints.programming.rx_id);
   try {
     flow.run(images, entry_mode, stop);
   } catch (...) {

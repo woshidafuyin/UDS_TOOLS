@@ -5,6 +5,7 @@
 #include "core/vbf.hpp"
 #include "flash/flash_workflow.hpp"
 #include "flash/geely_p416_flow.hpp"
+#include "flash/geely_p416_workflow.hpp"
 
 #include <algorithm>
 #include <array>
@@ -505,6 +506,30 @@ void run_fake_flow(uds::GeelyP416EntryMode mode, std::uint32_t sbl_rx_id,
   validate_trace(bus.snapshot_requests(), mode, images);
 }
 
+void test_configurable_app_endpoint_routing() {
+  auto profile = uds::load_profile_ini(
+      std::filesystem::path(UDS_SOURCE_DIR) / "profiles" /
+      "geely_p416.ini");
+  profile.tx_id = 0x700;
+  profile.rx_id = 0x708;
+  const auto routing = uds::resolve_geely_p416_endpoint_routing(profile);
+  check(routing.app.tx_id == 0x700 && routing.app.rx_id == 0x708 &&
+            routing.programming.tx_id == 0x716 &&
+            routing.programming.rx_id == 0x616,
+        "Geely configurable APP endpoint did not remain independent from "
+        "the SBL programming endpoint");
+
+  profile.tx_id = 0;
+  bool zero_endpoint_rejected = false;
+  try {
+    static_cast<void>(uds::resolve_geely_p416_endpoint_routing(profile));
+  } catch (const std::runtime_error&) {
+    zero_endpoint_rejected = true;
+  }
+  check(zero_endpoint_rejected,
+        "Geely accepted a zero configurable APP diagnostic endpoint");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -522,6 +547,7 @@ int main(int argc, char** argv) {
       return 0;
     }
     test_profile_parser_key_and_resources();
+    test_configurable_app_endpoint_routing();
     run_fake_flow(uds::GeelyP416EntryMode::app_to_app, 0x616U);
     run_fake_flow(uds::GeelyP416EntryMode::pls_to_app, 0x616U);
     run_fake_flow(uds::GeelyP416EntryMode::app_to_app, 0x616U, true);

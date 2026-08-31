@@ -6,6 +6,9 @@ namespace uds {
 
 enum class BaicRadarProject { n61ab, bqb41 };
 
+void validate_baic_configurable_endpoint(
+    const FlashProfile& profile, BaicRadarProject project);
+
 class BaicRadarWorkflow final : public FlashWorkflow {
 public:
   explicit BaicRadarWorkflow(BaicRadarProject project);
