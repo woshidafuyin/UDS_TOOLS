@@ -20,8 +20,8 @@ UDS 通用刷写工具 Change List
 - SHA-256：4A7E87ECC57A041C9A188B95E0D1269A2D77367B82CC3E7C050CFBA23FBACECB
 
 本次正式主程序：CH_FLASH_tools.exe
-- 文件大小：1,684,480 bytes
-- SHA-256：224F83F45A35A922D98FA4F22B244CAA642A29C3FF455304B68C07F08CC2A188
+- 文件大小：1,701,376 bytes
+- SHA-256：B126E682BFCD0E51E22FE9990AB35BA4DACA8B6180753A1A6091F7F06F0A1079
 
 比较方法：
 - 使用相对路径和 SHA-256 比较文件，不用文件名、大小或时间戳代替内容判断。
@@ -103,9 +103,10 @@ UDS 通用刷写工具 Change List
 2. 总线监听 Trace 和过滤
 
 - 工具启动后自动被动监听当前刷写通道，无需手工点击开始。
-- 完整 Trace 持续写盘，不受 UI 最近 10,000 帧缓存限制。
-- 运行中使用 .partial，正常结束形成 ASC，异常遗留文件可在下次启动时恢复。
-- 导出完整磁盘 Trace，而不是只导出当前表格缓存。
+- 完整 Trace 改为自动录制 Vector BLF，持续写入 `logs/bus_monitor`，不受 UI 最近 10,000 帧缓存限制；探测、版本读取、诊断和刷写的单次 Trace 仍保持 ASC。
+- BLF 同时保留经典 CAN、CAN FD/BRS、标准/扩展 ID、通道、TX/RX、时间戳和完整 Payload；实现位于通用 CanFrame/Trace 边界，不耦合特定硬件厂商。
+- 运行中使用 `.blf.partial`，正常结束形成 `.blf`；异常恢复按 BLF 文件头最后提交的完整容器大小截断损坏尾部，历史 `.asc.partial` 仍兼容恢复。
+- “导出 BLF”导出完整磁盘 Trace，而不是只导出当前表格缓存。
 - 支持诊断 ID 精确值、范围、掩码和排除过滤。
 - 增加当前项目诊断 ID、功能寻址、物理寻址和周期帧快捷过滤。
 - 区分总接收、当前显示和内存淘汰帧数。

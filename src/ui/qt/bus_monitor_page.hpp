@@ -76,7 +76,7 @@ private:
   void appendFrame(Row row);
   void rebuildTable();
   void clearFrames();
-  void exportAsc();
+  void exportBlf();
   void updateControls();
   void updateCounters();
   void updateTraceStatus();

@@ -176,13 +176,27 @@ void test_bus_monitor_trace_session() {
   std::filesystem::remove_all(directory, ignored);
   std::filesystem::create_directories(directory);
 
-  const auto abandoned = directory / "bus_monitor_abandoned_CH2.asc.partial";
+  const auto abandoned = directory / "bus_monitor_abandoned_CH2.blf.partial";
+  std::uintmax_t expected_recovered_size{};
   {
+    uds::BusMonitorTraceSession interrupted_source(directory);
+    check(interrupted_source.start(2),
+          "BLF recovery fixture could not be started");
+    interrupted_source.append(
+        uds::CanFrame{0x772, {0x10, 0x01}, false, false, false});
+    std::string valid_blf;
+    check(interrupted_source.export_snapshot(
+              [&valid_blf](std::string_view chunk) {
+                valid_blf.append(chunk);
+                return true;
+              }),
+          "BLF recovery fixture could not be exported");
+    expected_recovered_size = valid_blf.size();
     std::ofstream output(abandoned, std::ios::binary | std::ios::trunc);
-    output << uds::format_asc_header(std::time(nullptr))
-           << uds::format_asc_record(
-                  0.125, 2, uds::CanTraceDirection::receive,
-                  uds::CanFrame{0x772, {0x10, 0x01}, false, false, false});
+    output.write(valid_blf.data(),
+                 static_cast<std::streamsize>(valid_blf.size()));
+    output << "torn-container";
+    interrupted_source.stop();
   }
 
   uds::BusMonitorTraceSession session(directory);
@@ -190,12 +204,15 @@ void test_bus_monitor_trace_session() {
   check(recovery.recovered == 1 && recovery.failed == 0 &&
             !std::filesystem::exists(abandoned) &&
             std::filesystem::exists(
-                directory / "bus_monitor_abandoned_CH2.asc"),
-        "abandoned bus-monitor ASC trace was not recovered");
+                directory / "bus_monitor_abandoned_CH2.blf") &&
+            std::filesystem::file_size(
+                directory / "bus_monitor_abandoned_CH2.blf") ==
+                expected_recovered_size,
+        "abandoned bus-monitor BLF trace was not recovered");
 
   check(session.start(3) && session.is_active() &&
-            session.path().filename().string().ends_with(".asc.partial"),
-        "bus-monitor trace session did not create a partial ASC file");
+            session.path().filename().string().ends_with(".blf.partial"),
+        "bus-monitor trace session did not create a partial BLF file");
   session.append(
       uds::CanFrame{0x744, {0x10, 0x01}, false, false, false, true});
   session.append(uds::CanFrame{0x18DAF1B7,
@@ -209,26 +226,46 @@ void test_bus_monitor_trace_session() {
   check(session.export_snapshot([&snapshot](std::string_view chunk) {
           snapshot.append(chunk);
           return true;
-        }) &&
-            session.frame_count() == 2 &&
-            snapshot.find("3 744 Tx d 2 10 01") != std::string::npos &&
-            snapshot.find("CANFD 3 Rx 18daf1b7x 1 1 3 3 30 00 0A") !=
-                std::string::npos &&
-            snapshot.ends_with("End TriggerBlock\r\n"),
-        "active bus-monitor trace snapshot was incomplete");
+        }),
+        "active bus-monitor BLF snapshot could not be exported");
+  const auto byte = [&snapshot](std::size_t offset) {
+    return static_cast<std::uint8_t>(snapshot.at(offset));
+  };
+  const auto u32 = [&byte](std::size_t offset) {
+    return static_cast<std::uint32_t>(byte(offset)) |
+           (static_cast<std::uint32_t>(byte(offset + 1)) << 8U) |
+           (static_cast<std::uint32_t>(byte(offset + 2)) << 16U) |
+           (static_cast<std::uint32_t>(byte(offset + 3)) << 24U);
+  };
+  constexpr std::size_t kFirstObject = 144 + 16 + 16;
+  constexpr std::size_t kSecondObject = kFirstObject + 48;
+  constexpr std::size_t kSecondPayload = kSecondObject + 32;
+  check(session.frame_count() == 2 && snapshot.starts_with("LOGG") &&
+            snapshot.size() >= kSecondPayload + 84 &&
+            u32(kFirstObject + 12) == 1 &&
+            byte(kFirstObject + 32 + 2) == 1 &&
+            u32(kFirstObject + 32 + 4) == 0x744 &&
+            byte(kFirstObject + 32 + 8) == 0x10 &&
+            u32(kSecondObject + 12) == 100 &&
+            byte(kSecondPayload + 2) == 0 &&
+            u32(kSecondPayload + 4) == (0x80000000U | 0x18DAF1B7U) &&
+            byte(kSecondPayload + 13) == 3 &&
+            byte(kSecondPayload + 14) == 3 &&
+            byte(kSecondPayload + 20) == 0x30 &&
+            byte(kSecondPayload + 21) == 0x00 &&
+            byte(kSecondPayload + 22) == 0x0A,
+        "active bus-monitor BLF snapshot was incomplete");
 
   session.stop();
   check(!session.is_active() &&
-            session.path().filename().string().ends_with(".asc") &&
+            session.path().filename().string().ends_with(".blf") &&
             std::filesystem::exists(session.path()),
-        "bus-monitor trace session did not finalize its ASC file");
+        "bus-monitor trace session did not finalize its BLF file");
   std::ifstream input(session.path(), std::ios::binary);
-  const std::string completed((std::istreambuf_iterator<char>(input)),
-                              std::istreambuf_iterator<char>());
-  check(completed.ends_with("End TriggerBlock\r\n") &&
-            completed.find("End TriggerBlock\r\n") ==
-                completed.rfind("End TriggerBlock\r\n"),
-        "finalized bus-monitor ASC trace has an invalid end marker");
+  std::array<char, 4> signature{};
+  input.read(signature.data(), static_cast<std::streamsize>(signature.size()));
+  check(signature == std::array<char, 4>{'L', 'O', 'G', 'G'},
+        "finalized bus-monitor BLF trace has an invalid signature");
 
   std::filesystem::remove_all(directory, ignored);
 }

@@ -26,7 +26,7 @@
 | --- | --- |
 | `src/ui/qt` | 主窗口、刷写作业、版本读取、诊断报文、总线监听和交互状态 |
 | `src/app` | 在线探测、刷写调度、版本读取、单次诊断请求、操作互斥、审计和报告 |
-| `src/core` | Profile、可配置诊断端点校验、S-record、VBF、ASC/HEX、CBF、Trace 和公共数据结构 |
+| `src/core` | Profile、可配置诊断端点校验、S-record、VBF、ASC/HEX、CBF、BLF Trace 和公共数据结构 |
 | `src/transport` | ISO-TP、UDS 请求响应、超时和 NRC 处理 |
 | `src/drivers/can` | 四类 CAN 后端、设备枚举、通道配置和共享通道 |
 | `src/flash` | 项目 Workflow、刷写状态机、文件约束和项目协议契约 |
@@ -153,10 +153,10 @@
 
 ### 8.3 完整 Trace
 
-- 所有原始帧从监听开始持续写入 `logs/bus_monitor/*.asc.partial`，不受 UI 过滤和 10,000 帧上限影响；探测、版本读取、诊断报文和刷写 Trace 分别写入 `logs/traces/probe`、`version`、`diagnostic`、`flash`；
-- 正常停止后封口为完整 `.asc`；异常退出遗留的 `.partial` 会在下次启动时恢复；
+- 所有原始帧从监听开始持续写入 `logs/bus_monitor/*.blf.partial`，不受 UI 过滤和 10,000 帧上限影响；探测、版本读取、诊断报文和刷写 Trace 仍分别以 ASC 写入 `logs/traces/probe`、`version`、`diagnostic`、`flash`；
+- 正常停止后形成可由 CANoe/CANalyzer 等工具读取的完整 `.blf`；异常退出遗留的 BLF `.partial` 会按最后一次完整提交的容器边界恢复，历史 ASC `.partial` 仍兼容恢复；
 - “清空列表”只清空当前表格，不删除完整 Trace；
-- “导出 ASC”读取磁盘完整证据源，而不是只导出表格中的可见帧。
+- “导出 BLF”读取磁盘完整证据源，而不是只导出表格中的可见帧。
 
 ## 9. CAN 硬件后端
 
@@ -214,7 +214,7 @@
 
 - `profiles`、经过运行时筛选的 `resources` 和 `drivers` 是发布内容；
 - `Configuration` 保存当前用户的界面和硬件选择，由程序运行时创建；
-- `logs/execution` 保存界面运行日志，`logs/reports` 保存 HTML 报告，`logs/traces` 按 probe/version/diagnostic/flash 分类保存单次操作 ASC，`logs/bus_monitor` 保存持续总线监听 ASC；这些目录均由程序运行时创建；
+- `logs/execution` 保存界面运行日志，`logs/reports` 保存 HTML 报告，`logs/traces` 按 probe/version/diagnostic/flash 分类保存单次操作 ASC，`logs/bus_monitor` 保存持续总线监听 BLF；这些目录均由程序运行时创建；
 - 刷写页运行日志按目标持续追加；版本读取开始和结束会写入独立分隔标记，读取失败不会清除此前刷写日志，也不会覆盖刷写页最后结果；
 - 版本读取页的原始通信框只展示当前一轮读取，每次开始读取时会清空该区域，但磁盘执行日志和已有刷写报告不受影响；
 - 干净发布包不携带开发机历史 `Configuration`、`logs`、`.partial`、`validation`、台架探针、内部流程文档、厂商头文件/导入库、未使用的参考工程、构建目录或 Python 缓存；

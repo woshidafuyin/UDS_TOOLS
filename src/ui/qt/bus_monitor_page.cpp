@@ -141,7 +141,7 @@ BusMonitorPage::BusMonitorPage(QWidget* parent) : QWidget(parent) {
   config_layout->addWidget(trace_status_label_, 2, 1, 1, 5);
   clear_button_ = new QPushButton(QStringLiteral("清空列表"), configuration);
   clear_button_->setObjectName(QStringLiteral("busMonitorClearButton"));
-  export_button_ = new QPushButton(QStringLiteral("导出 ASC"), configuration);
+  export_button_ = new QPushButton(QStringLiteral("导出 BLF"), configuration);
   export_button_->setObjectName(QStringLiteral("busMonitorExportButton"));
   config_layout->addWidget(clear_button_, 3, 1);
   config_layout->addWidget(export_button_, 3, 2);
@@ -240,7 +240,7 @@ BusMonitorPage::BusMonitorPage(QWidget* parent) : QWidget(parent) {
   layout->addWidget(table_, 1);
 
   connect(clear_button_, &QPushButton::clicked, this, &BusMonitorPage::clearFrames);
-  connect(export_button_, &QPushButton::clicked, this, &BusMonitorPage::exportAsc);
+  connect(export_button_, &QPushButton::clicked, this, &BusMonitorPage::exportBlf);
   const auto refresh = [this] {
     rebuildTable();
   };
@@ -557,8 +557,8 @@ void BusMonitorPage::clearFrames() {
   updateControls();
 }
 
-void BusMonitorPage::exportAsc() {
-  const auto path = QFileDialog::getSaveFileName(this, QStringLiteral("导出监听报文"), QStringLiteral("bus_monitor_CH%1.asc").arg(channel_), QStringLiteral("ASC 文件 (*.asc)"));
+void BusMonitorPage::exportBlf() {
+  const auto path = QFileDialog::getSaveFileName(this, QStringLiteral("导出监听报文"), QStringLiteral("bus_monitor_CH%1.blf").arg(channel_), QStringLiteral("BLF 文件 (*.blf)"));
   if (path.isEmpty()) return;
   QSaveFile file(path);
   if (!file.open(QIODevice::WriteOnly)) { status_label_->setText(QStringLiteral("导出失败：无法写入 %1").arg(path)); return; }

@@ -724,7 +724,7 @@ int main(int argc, char* argv[]) {
                  !window.findChild<QPushButton*>(
                      QStringLiteral("busMonitorStartStopButton")) &&
                  bus_monitor_export &&
-                 bus_monitor_export->text() == QStringLiteral("导出 ASC") &&
+                 bus_monitor_export->text() == QStringLiteral("导出 BLF") &&
                  bus_monitor_context &&
                  !bus_monitor_context->text().isEmpty() &&
                  bus_monitor_context->text().contains(QStringLiteral("CH")) &&
