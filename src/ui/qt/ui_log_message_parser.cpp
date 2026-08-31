@@ -34,4 +34,44 @@ ParsedUiLogMessage parseUiLogMessage(const QString& message) {
   return parsed;
 }
 
+ProbeUiLogSummary summarizeProbeUiLog(const QString& message,
+                                      const QString& can_open_summary) {
+  if (message.contains(QStringLiteral("PASS：CAN硬件物理CH")) &&
+      message.contains(QStringLiteral("已打开"))) {
+    return {ProbeUiLogKind::CanOpened,
+            can_open_summary.isEmpty()
+                ? QStringLiteral("CAN已打开")
+                : can_open_summary};
+  }
+
+  if (parseUiLogMessage(message).direction != LogDirection::None) {
+    return {ProbeUiLogKind::WireMessage, message};
+  }
+
+  if (message.contains(QStringLiteral("WARN"), Qt::CaseInsensitive) &&
+      (message.contains(QStringLiteral("刷新条件")) ||
+       message.contains(QStringLiteral("ProgrammingPrecondition"),
+                        Qt::CaseInsensitive) ||
+       message.contains(QStringLiteral("7F 31 31")))) {
+    if (message.contains(QStringLiteral("0x05"), Qt::CaseInsensitive)) {
+      return {ProbeUiLogKind::RefreshWarning,
+              QStringLiteral(
+                  "WARN：刷新条件状态 0x05，当前项目策略允许继续")};
+    }
+    if (message.contains(QStringLiteral("7F 31 31"))) {
+      return {ProbeUiLogKind::RefreshWarning,
+              QStringLiteral(
+                  "WARN：刷新条件检查返回 NRC 0x31，当前项目策略允许继续")};
+    }
+    return {ProbeUiLogKind::RefreshWarning, message};
+  }
+
+  if (message.contains(QStringLiteral("WARN：ASC日志创建失败"))) {
+    return {ProbeUiLogKind::TraceWarning,
+            QStringLiteral("WARN：ASC日志创建失败，在线探测继续执行")};
+  }
+
+  return {};
+}
+
 } // namespace uds::ui::qt

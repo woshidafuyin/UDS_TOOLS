@@ -75,6 +75,12 @@ private:
     Failure,
   };
 
+  enum class UiLogDestination {
+    ViewAndFile,
+    ViewOnly,
+    FileOnly,
+  };
+
   struct UiLogEntry {
     QString timestamp;
     QString message;
@@ -131,7 +137,10 @@ private:
   void initializeExecutionLog();
   void refreshLatestReportPath();
   void appendUiLog(const QString& message,
-                   UiLogTone tone = UiLogTone::Normal);
+                   UiLogTone tone = UiLogTone::Normal,
+                   UiLogDestination destination =
+                       UiLogDestination::ViewAndFile);
+  void appendProbeLogMessage(const QString& message);
   void appendUiLogEntryToView(const UiLogEntry& entry);
   void scheduleExecutionLogTailFollow();
   void renderActiveUiLog();
@@ -151,6 +160,8 @@ private:
   std::unique_ptr<Ui::MainWindow> ui_;
   std::unique_ptr<ControllerBridge> controller_bridge_;
   bool probe_running_{};
+  bool probe_ui_log_active_{};
+  bool probe_refresh_entry_checked_{};
   bool flash_running_{};
   bool flash_stop_requested_{};
   bool version_check_running_{};
@@ -166,6 +177,7 @@ private:
   QString active_profile_state_key_;
   QString active_file_selection_key_;
   QString active_log_target_key_;
+  QString probe_can_open_summary_;
   bool execution_log_follow_tail_{true};
   VersionConfirmationPage* version_page_{};
   BusMonitorPage* bus_monitor_page_{};

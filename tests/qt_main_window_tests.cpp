@@ -1073,6 +1073,30 @@ int main(int argc, char* argv[]) {
                 QStringLiteral("说明文字：TX=0x72E；RX=0x72F"))
                 .direction == uds::ui::qt::LogDirection::None,
             "Structured UI log parser misclassified descriptive prose");
+      const auto can_probe_summary = uds::ui::qt::summarizeProbeUiLog(
+          QStringLiteral("PASS：CAN硬件物理CH2 已打开（后端：Vector XL）"),
+          QStringLiteral("CAN已打开：Vector XL，CH2，TX 0x7E2，RX 0x72F"));
+      const auto wire_probe_summary = uds::ui::qt::summarizeProbeUiLog(
+          QStringLiteral("RX [0x72F] 71 01 02 03 05"), QString{});
+      const auto warning_probe_summary = uds::ui::qt::summarizeProbeUiLog(
+          QStringLiteral(
+              "WARN：楚能ARC331 APP刷新入口可用，但刷新条件状态为0x05；正式流程将按项目参考策略继续并保留原始响应。"),
+          QString{});
+      const auto hidden_probe_summary = uds::ui::qt::summarizeProbeUiLog(
+          QStringLiteral("ASC原始总线日志：D:/probe/trace.asc"), QString{});
+      check(can_probe_summary.kind ==
+                    uds::ui::qt::ProbeUiLogKind::CanOpened &&
+                can_probe_summary.message == QStringLiteral(
+                    "CAN已打开：Vector XL，CH2，TX 0x7E2，RX 0x72F") &&
+                wire_probe_summary.kind ==
+                    uds::ui::qt::ProbeUiLogKind::WireMessage &&
+                warning_probe_summary.kind ==
+                    uds::ui::qt::ProbeUiLogKind::RefreshWarning &&
+                warning_probe_summary.message.contains(
+                    QStringLiteral("刷新条件状态 0x05")) &&
+                hidden_probe_summary.kind ==
+                    uds::ui::qt::ProbeUiLogKind::Hidden,
+            "Online-probe UI summary did not retain only CAN, wire, and refresh-warning messages");
 
       bridge->logMessage(QStringLiteral("TX [0x716] 34 00 44"));
       bridge->logMessage(QStringLiteral("RX [0x616] 74 20 08 00"));
@@ -1154,6 +1178,57 @@ int main(int argc, char* argv[]) {
                 "[第2/3次] TX [0x72E] 36 A5 FF") &&
                 !persisted_after_rich_text.contains("#1565C0"),
             "Rich-text rendering changed or decorated the persisted log");
+
+      clear_log->trigger();
+      bridge->probeRunningChanged(true);
+      bridge->logMessage(QStringLiteral(
+          "ASC原始总线日志：D:/logs/traces/probe/full_probe_trace.asc"));
+      bridge->logMessage(QStringLiteral(
+          "在线探测：该项目不使用 CANoe DOUT，保持台架现有外部供电状态。"));
+      bridge->logMessage(QStringLiteral(
+          "PASS：CAN硬件物理CH2 已打开（后端：Vector XL）"));
+      bridge->logMessage(QStringLiteral("TX [0x7E2] 10 03"));
+      bridge->logMessage(QStringLiteral("RX [0x72F] 50 03 00 32 01 5E"));
+      bridge->logMessage(QStringLiteral("TX [0x7E2] 31 01 02 03"));
+      bridge->logMessage(QStringLiteral("RX [0x72F] 71 01 02 03 05"));
+      bridge->logMessage(QStringLiteral(
+          "WARN：楚能ARC331 APP刷新入口可用，但刷新条件状态为0x05；正式流程将按项目参考策略继续并保留原始响应。"));
+      application.processEvents();
+      check(QMetaObject::invokeMethod(
+                &window, "handleProbeFinished", Qt::DirectConnection,
+                Q_ARG(bool, true), Q_ARG(bool, false),
+                Q_ARG(QString,
+                      QStringLiteral(
+                          "设备在线：响应 50 03；ProgrammingPrecondition=71 01 02 03 05"))),
+            "Concise probe integration result was not invokable");
+      application.processEvents();
+      const auto concise_probe_view = log_view->toPlainText();
+      check(concise_probe_view.count(QLatin1Char('\n')) + 1 == 7 &&
+                concise_probe_view.contains(QStringLiteral("CAN已打开")) &&
+                concise_probe_view.contains(
+                    QStringLiteral("TX [0x7E2] 31 01 02 03")) &&
+                concise_probe_view.contains(
+                    QStringLiteral("WARN：刷新条件状态 0x05")) &&
+                concise_probe_view.contains(QStringLiteral(
+                    "在线探测成功：诊断响应正常，APP刷新入口判定可用")) &&
+                !concise_probe_view.contains(QStringLiteral("ASC原始总线日志")) &&
+                !concise_probe_view.contains(QStringLiteral("CANoe DOUT")) &&
+                !concise_probe_view.contains(
+                    QStringLiteral("ProgrammingPrecondition=")),
+            "Online-probe runtime view was not reduced to key CAN/UDS/warning/result lines");
+      QFile probe_persisted(execution_log);
+      check(probe_persisted.open(QIODevice::ReadOnly),
+            "Detailed execution log could not be reopened for probe filtering test");
+      const auto detailed_probe_log = probe_persisted.readAll();
+      check(detailed_probe_log.contains(
+                "ASC原始总线日志：D:/logs/traces/probe/full_probe_trace.asc") &&
+                detailed_probe_log.contains("CANoe DOUT") &&
+                detailed_probe_log.contains(
+                    "ProgrammingPrecondition=71 01 02 03 05") &&
+                !detailed_probe_log.contains(
+                    "在线探测成功：诊断响应正常，APP刷新入口判定可用"),
+            "Probe UI filtering removed raw detail from the file log or persisted UI-only summaries");
+
       QString long_execution_log;
       for (int line = 0; line < 240; ++line) {
         long_execution_log +=
@@ -1331,22 +1406,23 @@ int main(int argc, char* argv[]) {
             "Probe result handler is not invokable");
       result_block = log_view->document()->lastBlock();
       result_format =
-          log_fragment_format(result_block, QStringLiteral("● 在线："));
-      check(result_block.text().contains(QStringLiteral("● 在线：")) &&
+          log_fragment_format(result_block, QStringLiteral("在线探测成功："));
+      check(result_block.text().contains(
+                QStringLiteral("在线探测成功：设备在线")) &&
                 result_format.foreground().color() ==
                     QColor(QStringLiteral("#16803C")) &&
                 result_format.fontWeight() == QFont::Bold,
-            "Online probe result is not a bold green log entry");
+            "Concise online-probe result is not a bold green log entry");
       check(invoke_probe_result(false),
             "Probe failure handler is not invokable");
       result_block = log_view->document()->lastBlock();
       result_format =
-          log_fragment_format(result_block, QStringLiteral("● 不在线："));
-      check(result_block.text().contains(QStringLiteral("● 不在线：")) &&
+          log_fragment_format(result_block, QStringLiteral("在线探测失败"));
+      check(result_block.text().contains(QStringLiteral("在线探测失败")) &&
                 result_format.foreground().color() ==
                     QColor(QStringLiteral("#C62828")) &&
                 result_format.fontWeight() == QFont::Bold,
-            "Offline probe result is not a bold red log entry");
+            "Concise failed-probe result is not a bold red log entry");
       QApplication::sendEvent(log_view, &home_event);
       application.processEvents();
       const auto review_scroll_position =

@@ -87,7 +87,8 @@ void MainWindow::refreshLatestReportPath() {
   if (ui_) updateEnabledState();
 }
 
-void MainWindow::appendUiLog(const QString& message, UiLogTone tone) {
+void MainWindow::appendUiLog(const QString& message, UiLogTone tone,
+                             UiLogDestination destination) {
   const auto now = QDateTime::currentDateTime();
   auto displayed_message = message;
   const auto nrc = nrcFromLogLine(displayed_message);
@@ -134,31 +135,35 @@ void MainWindow::appendUiLog(const QString& message, UiLogTone tone) {
   }
   const auto display_timestamp =
       QStringLiteral("[%1]").arg(now.toString(QStringLiteral("HH:mm:ss")));
-  if (active_log_target_key_.isEmpty()) {
-    active_log_target_key_ = selectedLogTargetKey();
+  const auto show_in_view = destination != UiLogDestination::FileOnly;
+  const auto persist_to_file = destination != UiLogDestination::ViewOnly;
+  if (show_in_view) {
     if (active_log_target_key_.isEmpty()) {
-      active_log_target_key_ = QStringLiteral("__application__");
+      active_log_target_key_ = selectedLogTargetKey();
+      if (active_log_target_key_.isEmpty()) {
+        active_log_target_key_ = QStringLiteral("__application__");
+      }
+    }
+    auto& target_entries = target_log_entries_[active_log_target_key_];
+    target_entries.push_back(UiLogEntry{display_timestamp, displayed_message,
+                                        tone,
+                                        parseUiLogMessage(displayed_message)});
+    constexpr qsizetype kMaximumUiLogLinesPerTarget = 5000;
+    while (target_entries.size() > kMaximumUiLogLinesPerTarget) {
+      target_entries.removeFirst();
+    }
+    auto* scrollbar = ui_->logPlainTextEdit->verticalScrollBar();
+    const auto old_scroll_value = scrollbar->value();
+    const auto old_cursor = ui_->logPlainTextEdit->textCursor();
+    appendUiLogEntryToView(target_entries.back());
+    if (execution_log_follow_tail_) {
+      scheduleExecutionLogTailFollow();
+    } else {
+      ui_->logPlainTextEdit->setTextCursor(old_cursor);
+      scrollbar->setValue(old_scroll_value);
     }
   }
-  auto& target_entries = target_log_entries_[active_log_target_key_];
-  target_entries.push_back(UiLogEntry{display_timestamp, displayed_message,
-                                      tone,
-                                      parseUiLogMessage(displayed_message)});
-  constexpr qsizetype kMaximumUiLogLinesPerTarget = 5000;
-  while (target_entries.size() > kMaximumUiLogLinesPerTarget) {
-    target_entries.removeFirst();
-  }
-  auto* scrollbar = ui_->logPlainTextEdit->verticalScrollBar();
-  const auto old_scroll_value = scrollbar->value();
-  const auto old_cursor = ui_->logPlainTextEdit->textCursor();
-  appendUiLogEntryToView(target_entries.back());
-  if (execution_log_follow_tail_) {
-    scheduleExecutionLogTailFollow();
-  } else {
-    ui_->logPlainTextEdit->setTextCursor(old_cursor);
-    scrollbar->setValue(old_scroll_value);
-  }
-  if (execution_log_file_ && execution_log_file_->isOpen()) {
+  if (persist_to_file && execution_log_file_ && execution_log_file_->isOpen()) {
     const auto persisted_line = QStringLiteral("[%1] %2\r\n")
                                     .arg(now.toString(QStringLiteral(
                                          "yyyy-MM-dd HH:mm:ss.zzz")),
@@ -167,6 +172,41 @@ void MainWindow::appendUiLog(const QString& message, UiLogTone tone) {
     execution_log_file_->write(persisted_line);
     execution_log_file_->flush();
   }
+}
+
+void MainWindow::appendProbeLogMessage(const QString& message) {
+  // Preserve the full controller/service message in the detailed execution
+  // log. Only the runtime view receives the concise summary selected below.
+  appendUiLog(message, UiLogTone::Normal, UiLogDestination::FileOnly);
+
+  // probe_start_description() carries the resolved endpoint after project
+  // routing (for example FT or functional addressing). Use it to keep the CAN
+  // summary accurate without exposing the strategy explanation itself.
+  static const QRegularExpression resolved_endpoint(
+      QStringLiteral(
+          R"((?:功能|物理)寻址\s+0x([0-9A-Fa-f]+)\s*->\s*0x([0-9A-Fa-f]+))"));
+  const auto endpoint_match = resolved_endpoint.match(message);
+  if (endpoint_match.hasMatch()) {
+    static const QRegularExpression summary_endpoint(
+        QStringLiteral(R"(TX 0x[0-9A-Fa-f]+，RX 0x[0-9A-Fa-f]+$)"));
+    probe_can_open_summary_.replace(
+        summary_endpoint,
+        QStringLiteral("TX 0x%1，RX 0x%2")
+            .arg(endpoint_match.captured(1).toUpper(),
+                 endpoint_match.captured(2).toUpper()));
+  }
+
+  const auto summary = summarizeProbeUiLog(message, probe_can_open_summary_);
+  if (summary.kind == ProbeUiLogKind::Hidden) return;
+  if (summary.kind == ProbeUiLogKind::WireMessage &&
+      summary.message.contains(QStringLiteral("31 01 02 03"))) {
+    probe_refresh_entry_checked_ = true;
+  }
+  const auto tone = summary.kind == ProbeUiLogKind::RefreshWarning ||
+                            summary.kind == ProbeUiLogKind::TraceWarning
+                        ? UiLogTone::Pending
+                        : UiLogTone::Normal;
+  appendUiLog(summary.message, tone, UiLogDestination::ViewOnly);
 }
 
 void MainWindow::scheduleExecutionLogTailFollow() {
@@ -290,15 +330,31 @@ void MainWindow::handleProbeFinished(bool success, bool cancelled,
   updateEnabledState();
   ui_->progressBar->setValue(success ? 100 : 0);
   ui_->progressStatusLabel->setText(message);
+  const auto persisted_result =
+      cancelled ? QStringLiteral("在线探测已停止：%1").arg(message)
+                : (success ? QStringLiteral("● 在线：%1").arg(message)
+                           : QStringLiteral("● 不在线：%1").arg(message));
+  appendUiLog(persisted_result,
+              success ? UiLogTone::Success : UiLogTone::Failure,
+              UiLogDestination::FileOnly);
   if (cancelled) {
-    appendUiLog(QStringLiteral("在线探测已停止：%1").arg(message));
+    appendUiLog(QStringLiteral("在线探测已停止"), UiLogTone::Failure,
+                UiLogDestination::ViewOnly);
   } else if (success) {
-    appendUiLog(QStringLiteral("● 在线：%1").arg(message),
-                UiLogTone::Success);
+    appendUiLog(probe_refresh_entry_checked_
+                    ? QStringLiteral(
+                          "在线探测成功：诊断响应正常，APP刷新入口判定可用")
+                    : QStringLiteral("在线探测成功：设备在线"),
+                UiLogTone::Success, UiLogDestination::ViewOnly);
   } else {
-    appendUiLog(QStringLiteral("● 不在线：%1").arg(message),
-                UiLogTone::Failure);
+    appendUiLog(message.startsWith(QStringLiteral("在线探测"))
+                    ? message
+                    : QStringLiteral("在线探测失败：%1").arg(message),
+                UiLogTone::Failure, UiLogDestination::ViewOnly);
   }
+  probe_ui_log_active_ = false;
+  probe_can_open_summary_.clear();
+  probe_refresh_entry_checked_ = false;
 }
 
 void MainWindow::handleProgressChanged(int percent, const QString& message) {

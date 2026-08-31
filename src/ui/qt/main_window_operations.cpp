@@ -92,7 +92,13 @@ void MainWindow::startProbeFromUi() {
   ui_->progressBar->setValue(0);
   ui_->progressStatusLabel->setText(QStringLiteral("正在启动在线探测……"));
   const auto entry_mode = ui_->entryModeComboBox->currentData().toString();
-  appendUiLog(QStringLiteral("请求在线探测：%1CH%2，入口=%3，界面APP端点 TX=0x%4，RX=0x%5；实际寻址按项目探测策略执行")
+  const auto& profile = controller_bridge_->profileOptions()[
+      static_cast<std::size_t>(profile_index)];
+  const auto target_name = hasRadarSelector()
+                               ? ui_->radarComboBox->currentText()
+                               : profile.device_name;
+  const auto detailed_request =
+      QStringLiteral("请求在线探测：%1CH%2，入口=%3，界面APP端点 TX=0x%4，RX=0x%5；实际寻址按项目探测策略执行")
                   .arg(hasRadarSelector()
                            ? ui_->radarComboBox->currentText() +
                                  QStringLiteral("；")
@@ -100,7 +106,21 @@ void MainWindow::startProbeFromUi() {
                   .arg(channel)
                   .arg(entry_mode.toUpper())
                   .arg(QString::number(tx_id, 16).toUpper())
-                  .arg(QString::number(rx_id, 16).toUpper()));
+                  .arg(QString::number(rx_id, 16).toUpper());
+  appendUiLog(detailed_request, UiLogTone::Normal,
+              UiLogDestination::FileOnly);
+  probe_ui_log_active_ = true;
+  probe_refresh_entry_checked_ = false;
+  probe_can_open_summary_ =
+      QStringLiteral("CAN已打开：%1，CH%2，TX 0x%3，RX 0x%4")
+          .arg(canVendorDisplayName(default_can_vendor()))
+          .arg(channel)
+          .arg(QString::number(tx_id, 16).toUpper())
+          .arg(QString::number(rx_id, 16).toUpper());
+  appendUiLog(QStringLiteral("开始在线探测：%1 / %2 / %3 / %4")
+                  .arg(profile.vendor_name, profile.project_name, target_name,
+                       entry_mode.toUpper()),
+              UiLogTone::Normal, UiLogDestination::ViewOnly);
   emit probeRequested(profile_index, selectedTargetId(), entry_mode, channel,
                       tx_id, rx_id);
 }

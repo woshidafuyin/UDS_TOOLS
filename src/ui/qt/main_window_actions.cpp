@@ -337,12 +337,19 @@ void MainWindow::connectControllerActions() {
   connect(bus_monitor_page_, &BusMonitorPage::monitorMessage, this,
           [this](const QString& message) { appendUiLog(message); });
   connect(controller_bridge_.get(), &ControllerBridge::logMessage, this,
-          [this](const QString& message) { appendUiLog(message); });
+          [this](const QString& message) {
+            if (probe_ui_log_active_) {
+              appendProbeLogMessage(message);
+            } else {
+              appendUiLog(message);
+            }
+          });
   connect(controller_bridge_.get(), &ControllerBridge::progressChanged, this,
           &MainWindow::handleProgressChanged);
   connect(controller_bridge_.get(), &ControllerBridge::probeRunningChanged,
           this, [this](bool running) {
             probe_running_ = running;
+            if (running) probe_ui_log_active_ = true;
             updateEnabledState();
              if (running) {
                ui_->progressBar->setValue(0);
