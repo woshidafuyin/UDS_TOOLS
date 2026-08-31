@@ -27,7 +27,85 @@ bool samePath(const QString& left, const QString& right) {
                                            Qt::CaseInsensitive) == 0;
 }
 
+QString normalizedAbsolute(const QString& path) {
+  return QDir::cleanPath(QFileInfo(path).absoluteFilePath());
+}
+
+QString normalizedRelative(const QString& path) {
+  return QDir::toNativeSeparators(
+      QDir::cleanPath(QDir::fromNativeSeparators(path)));
+}
+
+QString managedRelativePath(const QString& absolute_path,
+                            const QString& application_directory) {
+  const auto application_root = normalizedAbsolute(application_directory);
+  const auto resources_root =
+      normalizedAbsolute(QDir(application_root).filePath(QStringLiteral("resources")));
+  const auto candidate = normalizedAbsolute(absolute_path);
+  if (!isInside(candidate, resources_root)) return {};
+  return normalizedRelative(QDir(application_root).relativeFilePath(candidate));
+}
+
+QString legacyResourcesRelativePath(const QString& absolute_path) {
+  const auto portable = QDir::fromNativeSeparators(QDir::cleanPath(absolute_path));
+  const auto marker = QStringLiteral("/resources/");
+  const auto marker_index =
+      portable.lastIndexOf(marker, -1, Qt::CaseInsensitive);
+  if (marker_index < 0) return {};
+  return normalizedRelative(portable.mid(marker_index + 1));
+}
+
 } // namespace
+
+QString resourcePathForPersistence(const QString& path,
+                                   const QString& application_directory) {
+  const auto trimmed = path.trimmed();
+  if (trimmed.isEmpty()) return {};
+  if (QDir::isRelativePath(trimmed)) return normalizedRelative(trimmed);
+  const auto relative = managedRelativePath(trimmed, application_directory);
+  return relative.isEmpty() ? normalizedAbsolute(trimmed) : relative;
+}
+
+PersistedResourcePathResolution resolvePersistedResourcePath(
+    const QString& persisted_path, const QString& application_directory) {
+  PersistedResourcePathResolution result;
+  const auto trimmed = persisted_path.trimmed();
+  if (trimmed.isEmpty()) return result;
+
+  if (QDir::isRelativePath(trimmed)) {
+    result.persisted_path = normalizedRelative(trimmed);
+    result.absolute_path = normalizedAbsolute(
+        QDir(application_directory).filePath(result.persisted_path));
+    result.migrated = result.persisted_path != trimmed;
+    return result;
+  }
+
+  const auto absolute = normalizedAbsolute(trimmed);
+  const auto current_relative =
+      managedRelativePath(absolute, application_directory);
+  if (!current_relative.isEmpty()) {
+    result.absolute_path = absolute;
+    result.persisted_path = current_relative;
+    result.migrated = true;
+    return result;
+  }
+
+  const auto legacy_relative = legacyResourcesRelativePath(absolute);
+  if (!legacy_relative.isEmpty()) {
+    const auto current_candidate = normalizedAbsolute(
+        QDir(application_directory).filePath(legacy_relative));
+    if (QFileInfo::exists(current_candidate)) {
+      result.absolute_path = current_candidate;
+      result.persisted_path = legacy_relative;
+      result.migrated = true;
+      return result;
+    }
+  }
+
+  result.absolute_path = absolute;
+  result.persisted_path = absolute;
+  return result;
+}
 
 ResourceFileReplaceResult replaceConfiguredResourceFile(
     const QString& selected_path, const QString& configured_default_path,

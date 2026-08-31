@@ -1489,18 +1489,25 @@ void MainWindow::saveRuntimeFileSelection() {
   };
   runtime_file_selections_.insert(active_file_selection_key_, selection);
 
+  const auto application_directory = QCoreApplication::applicationDirPath();
+  const auto persisted = [&application_directory](const QString& path) {
+    return resourcePathForPersistence(path, application_directory);
+  };
+
   QSettings settings;
   settings.beginGroup(QStringLiteral("flash_file_selections"));
   settings.beginGroup(active_file_selection_key_);
-  settings.setValue(QStringLiteral("driver"), selection.driver_path);
-  settings.setValue(QStringLiteral("app"), selection.app_path);
-  settings.setValue(QStringLiteral("cal"), selection.cal_path);
+  settings.setValue(QStringLiteral("driver"), persisted(selection.driver_path));
+  settings.setValue(QStringLiteral("app"), persisted(selection.app_path));
+  settings.setValue(QStringLiteral("cal"), persisted(selection.cal_path));
   settings.setValue(QStringLiteral("driver_verify"),
-                    selection.driver_verify_path);
-  settings.setValue(QStringLiteral("app_verify"), selection.app_verify_path);
-  settings.setValue(QStringLiteral("cal_verify"), selection.cal_verify_path);
+                    persisted(selection.driver_verify_path));
+  settings.setValue(QStringLiteral("app_verify"),
+                    persisted(selection.app_verify_path));
+  settings.setValue(QStringLiteral("cal_verify"),
+                    persisted(selection.cal_verify_path));
   settings.setValue(QStringLiteral("seed_key_dll"),
-                    selection.seed_key_dll_path);
+                    persisted(selection.seed_key_dll_path));
   settings.endGroup();
   settings.endGroup();
   settings.sync();
@@ -1515,17 +1522,31 @@ void MainWindow::restoreRuntimeFileSelection() {
     settings.beginGroup(QStringLiteral("flash_file_selections"));
     settings.beginGroup(active_file_selection_key_);
     if (settings.contains(QStringLiteral("driver"))) {
+      const auto application_directory = QCoreApplication::applicationDirPath();
+      bool migrated{};
+      const auto restored = [&settings, &application_directory, &migrated](
+                                const QString& name) {
+        const auto persisted = settings.value(name).toString();
+        const auto resolved = resolvePersistedResourcePath(
+            persisted, application_directory);
+        if (resolved.migrated) {
+          settings.setValue(name, resolved.persisted_path);
+          migrated = true;
+        }
+        return resolved.absolute_path;
+      };
       runtime_file_selections_.insert(
           active_file_selection_key_,
           RuntimeFileSelection{
-              settings.value(QStringLiteral("driver")).toString(),
-              settings.value(QStringLiteral("app")).toString(),
-              settings.value(QStringLiteral("cal")).toString(),
-              settings.value(QStringLiteral("driver_verify")).toString(),
-              settings.value(QStringLiteral("app_verify")).toString(),
-              settings.value(QStringLiteral("cal_verify")).toString(),
-              settings.value(QStringLiteral("seed_key_dll")).toString(),
+              restored(QStringLiteral("driver")),
+              restored(QStringLiteral("app")),
+              restored(QStringLiteral("cal")),
+              restored(QStringLiteral("driver_verify")),
+              restored(QStringLiteral("app_verify")),
+              restored(QStringLiteral("cal_verify")),
+              restored(QStringLiteral("seed_key_dll")),
           });
+      if (migrated) settings.sync();
       saved = runtime_file_selections_.constFind(active_file_selection_key_);
     }
     settings.endGroup();

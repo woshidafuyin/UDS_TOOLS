@@ -404,6 +404,61 @@ int main(int argc, char* argv[]) {
       check(QFileInfo::exists(preserved_tmp) &&
                 QFileInfo::exists(unrelated_s19),
             "Second replacement removed an unrelated resource file");
+
+      const auto application_directory =
+          QDir(sandbox.path()).filePath("portable-dist");
+      const auto portable_driver = QDir(application_directory).filePath(
+          "resources/lp_arc/Driver/FlashDriver.srec");
+      check(QDir().mkpath(QFileInfo(portable_driver).absolutePath()),
+            "Portable resource directory setup failed");
+      QFile portable_file(portable_driver);
+      check(portable_file.open(QIODevice::WriteOnly) &&
+                portable_file.write("DRIVER", 6) == 6,
+            "Portable resource setup failed");
+      portable_file.close();
+
+      const auto expected_relative = QDir::toNativeSeparators(
+          QStringLiteral("resources/lp_arc/Driver/FlashDriver.srec"));
+      check(uds::ui::qt::resourcePathForPersistence(
+                portable_driver, application_directory) == expected_relative,
+            "Managed resource path was not persisted relative to the EXE");
+
+      const auto relative_resolution =
+          uds::ui::qt::resolvePersistedResourcePath(
+              expected_relative, application_directory);
+      check(QFileInfo(relative_resolution.absolute_path).absoluteFilePath() ==
+                    QFileInfo(portable_driver).absoluteFilePath() &&
+                relative_resolution.persisted_path == expected_relative,
+            "Portable resource path did not follow the current EXE directory");
+
+      const auto legacy_driver = QStringLiteral(
+          "D:/old/UDS_tools/build/legacy-dist/resources/lp_arc/Driver/"
+          "FlashDriver.srec");
+      const auto legacy_resolution =
+          uds::ui::qt::resolvePersistedResourcePath(
+              legacy_driver, application_directory);
+      check(legacy_resolution.migrated &&
+                QFileInfo(legacy_resolution.absolute_path).absoluteFilePath() ==
+                    QFileInfo(portable_driver).absoluteFilePath() &&
+                legacy_resolution.persisted_path == expected_relative,
+            "Legacy absolute resource path was not migrated to the current EXE");
+
+      const auto external_path =
+          QDir(sandbox.path()).filePath("external/keep-absolute.s19");
+      check(uds::ui::qt::resourcePathForPersistence(
+                external_path, application_directory) ==
+                QFileInfo(external_path).absoluteFilePath(),
+            "External resource path unexpectedly changed semantics");
+
+      const auto missing_legacy = QStringLiteral(
+          "D:/old/UDS_tools/dist/resources/missing/APP/missing.s19");
+      const auto missing_resolution =
+          uds::ui::qt::resolvePersistedResourcePath(
+              missing_legacy, application_directory);
+      check(!missing_resolution.migrated &&
+                missing_resolution.absolute_path ==
+                    QDir::cleanPath(missing_legacy),
+            "Missing legacy resource was silently redirected");
     }
 
     {
