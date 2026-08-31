@@ -340,6 +340,8 @@ void MainWindow::connectControllerActions() {
           [this](const QString& message) {
             if (probe_ui_log_active_) {
               appendProbeLogMessage(message);
+            } else if (flash_ui_log_active_) {
+              appendFlashLogMessage(message);
             } else {
               appendUiLog(message);
             }
@@ -364,6 +366,7 @@ void MainWindow::connectControllerActions() {
   connect(controller_bridge_.get(), &ControllerBridge::flashRunningChanged,
            this, [this](bool running) {
              flash_running_ = running;
+             if (running) beginFlashUiLog();
              flash_stop_requested_ = false;
              updateEnabledState();
              if (running) {

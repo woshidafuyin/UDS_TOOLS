@@ -209,6 +209,78 @@ void MainWindow::appendProbeLogMessage(const QString& message) {
   appendUiLog(summary.message, tone, UiLogDestination::ViewOnly);
 }
 
+void MainWindow::flushPendingFlashPreparationSummary() {
+  if (!pending_flash_trace_summary_.isEmpty()) {
+    appendUiLog(pending_flash_trace_summary_, UiLogTone::Normal,
+                UiLogDestination::ViewOnly);
+    pending_flash_trace_summary_.clear();
+  }
+  if (!pending_flash_cycle_summary_.isEmpty()) {
+    appendUiLog(pending_flash_cycle_summary_, UiLogTone::Normal,
+                UiLogDestination::ViewOnly);
+    pending_flash_cycle_summary_.clear();
+  }
+}
+
+void MainWindow::beginFlashUiLog() {
+  flash_ui_log_active_ = true;
+  flash_preparation_ui_active_ = true;
+  pending_flash_trace_summary_.clear();
+  pending_flash_cycle_summary_.clear();
+}
+
+void MainWindow::appendFlashLogMessage(const QString& message) {
+  appendUiLog(message, UiLogTone::Normal, UiLogDestination::FileOnly);
+  const auto summary = summarizeFlashPreparationUiLog(message);
+
+  if (summary.kind == FlashPreparationUiLogKind::Trace) {
+    pending_flash_trace_summary_ = summary.message;
+    return;
+  }
+  if (summary.kind == FlashPreparationUiLogKind::Cycle) {
+    pending_flash_cycle_summary_ = summary.message;
+    flash_preparation_ui_active_ = true;
+    return;
+  }
+
+  if (flash_preparation_ui_active_) {
+    if (summary.kind == FlashPreparationUiLogKind::RuntimeStarted) {
+      flushPendingFlashPreparationSummary();
+      flash_preparation_ui_active_ = false;
+      appendUiLog(summary.message, UiLogTone::Normal,
+                  UiLogDestination::ViewOnly);
+      return;
+    }
+    if (summary.kind == FlashPreparationUiLogKind::PairMatch) {
+      appendUiLog(summary.message, UiLogTone::Normal,
+                  UiLogDestination::ViewOnly);
+      flushPendingFlashPreparationSummary();
+      return;
+    }
+    if (summary.kind == FlashPreparationUiLogKind::Unclassified ||
+        summary.kind == FlashPreparationUiLogKind::Hidden) {
+      return;
+    }
+    appendUiLog(summary.message,
+                summary.warning ? UiLogTone::Pending : UiLogTone::Normal,
+                UiLogDestination::ViewOnly);
+    return;
+  }
+
+  if (summary.kind == FlashPreparationUiLogKind::Hidden ||
+      summary.kind == FlashPreparationUiLogKind::Qualification ||
+      summary.kind == FlashPreparationUiLogKind::CanConfiguration ||
+      summary.kind == FlashPreparationUiLogKind::DriverFile ||
+      summary.kind == FlashPreparationUiLogKind::AppFile ||
+      summary.kind == FlashPreparationUiLogKind::SeedKey ||
+      summary.kind == FlashPreparationUiLogKind::PairMatch) {
+    return;
+  }
+  appendUiLog(summary.message.isEmpty() ? message : summary.message,
+              summary.warning ? UiLogTone::Pending : UiLogTone::Normal,
+              UiLogDestination::ViewOnly);
+}
+
 void MainWindow::scheduleExecutionLogTailFollow() {
   // QTextDocument layout and the scrollbar range can update after text
   // insertion returns. Queue the scroll so End means a persistent tail-follow
@@ -322,6 +394,10 @@ void MainWindow::handleFlashFinished(bool success, bool cancelled,
     appendUiLog(QStringLiteral("========== 刷写失败 =========="),
                 UiLogTone::Failure);
   }
+  flash_ui_log_active_ = false;
+  flash_preparation_ui_active_ = false;
+  pending_flash_trace_summary_.clear();
+  pending_flash_cycle_summary_.clear();
 }
 
 void MainWindow::handleProbeFinished(bool success, bool cancelled,

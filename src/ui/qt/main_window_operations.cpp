@@ -228,20 +228,26 @@ void MainWindow::startFlashFromUi() {
   if (profile.supports_ft_entry && entry_mode == QStringLiteral("ft")) {
     appendUiLog(QStringLiteral(
         "提示：已选择FT恢复入口，将使用当前目标Profile配置的FT端点切换，"
-        "随后继续执行Driver与APP下载。"));
+        "随后继续执行Driver与APP下载。"), UiLogTone::Normal,
+        UiLogDestination::FileOnly);
   }
   if (profile.flow_id == QStringLiteral("chuneng_arc331") &&
       entry_mode == QStringLiteral("boot")) {
     appendUiLog(QStringLiteral(
         "提示：已选择BOOT→APP入口；使用当前设备物理诊断ID，跳过APP态0203/85/28，"
-        "正式刷写全程保持0x520/500ms唤醒。"));
+        "正式刷写全程保持0x520/500ms唤醒。"), UiLogTone::Normal,
+        UiLogDestination::FileOnly);
   }
   if (entry_mode == QStringLiteral("cal")) {
-    appendUiLog(QStringLiteral(
-        "提示：CAL模式将按CANoe顺序执行 Driver + CAL，APP文件不会下载。"));
+    appendUiLog(
+        QStringLiteral(
+            "提示：CAL模式将按CANoe顺序执行 Driver + CAL，APP文件不会下载。"),
+        UiLogTone::Normal, UiLogDestination::FileOnly);
   } else if (entry_mode == QStringLiteral("app_cal")) {
-    appendUiLog(QStringLiteral(
-        "提示：APP+CAL模式将按CANoe顺序执行 Driver + APP + CAL。"));
+    appendUiLog(
+        QStringLiteral(
+            "提示：APP+CAL模式将按CANoe顺序执行 Driver + APP + CAL。"),
+        UiLogTone::Normal, UiLogDestination::FileOnly);
   }
 
   flash_progress_ = 0;
@@ -251,7 +257,7 @@ void MainWindow::startFlashFromUi() {
                                 .arg(profile.vendor_name,
                                      profile.project_name,
                                      ui_->radarComboBox->currentText());
-  appendUiLog(QStringLiteral(
+  const auto detailed_start = QStringLiteral(
                   "直接开始刷写：%1，次数 %2，CH%3，TX 0x%4 -> RX 0x%5，FUNC 0x%6，模式 %7")
                     .arg(flash_target)
                     .arg(repeat_count)
@@ -259,7 +265,13 @@ void MainWindow::startFlashFromUi() {
                    .arg(QString::number(tx_id, 16).toUpper())
                    .arg(QString::number(rx_id, 16).toUpper())
                    .arg(QString::number(profile.functional_id, 16).toUpper())
-                    .arg(entry_mode.toUpper()));
+                    .arg(entry_mode.toUpper());
+  appendUiLog(detailed_start, UiLogTone::Normal,
+              UiLogDestination::FileOnly);
+  beginFlashUiLog();
+  appendUiLog(QStringLiteral("准备开始刷写：%1 / %2")
+                  .arg(flash_target, entry_mode.toUpper()),
+              UiLogTone::Normal, UiLogDestination::ViewOnly);
   emit flashRequested(
        profile_index, selectedTargetId(), entry_mode, repeat_count, channel,
        tx_id, rx_id, fullPath(ui_->driverPathLineEdit),

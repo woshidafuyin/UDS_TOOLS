@@ -1097,6 +1097,29 @@ int main(int argc, char* argv[]) {
                 hidden_probe_summary.kind ==
                     uds::ui::qt::ProbeUiLogKind::Hidden,
             "Online-probe UI summary did not retain only CAN, wire, and refresh-warning messages");
+      const auto flash_qualification =
+          uds::ui::qt::summarizeFlashPreparationUiLog(QStringLiteral(
+              "Pre-flash qualification: Status=PASS; Completed at=2026-08-31T18:18:41.168"));
+      const auto flash_can =
+          uds::ui::qt::summarizeFlashPreparationUiLog(QStringLiteral(
+              "CAN configuration: Hardware backend=Vector XL; Channel=2; Nominal bitrate=500000 bit/s; Data bitrate=2000000 bit/s; CAN FD=yes; Padding=0x55"));
+      const auto flash_driver =
+          uds::ui::qt::summarizeFlashPreparationUiLog(QStringLiteral(
+              "Flash file: Boot Driver=D:/full/driver.cbf; exists=yes; size=17322 bytes"));
+      const auto flash_hidden =
+          uds::ui::qt::summarizeFlashPreparationUiLog(QStringLiteral(
+              "Driver CBF identity: target=7052A5023002AB; software_id=7052A5023002"));
+      check(flash_qualification.kind ==
+                    uds::ui::qt::FlashPreparationUiLogKind::Qualification &&
+                flash_qualification.message ==
+                    QStringLiteral("刷写前条件检查：通过") &&
+                flash_can.message == QStringLiteral(
+                    "CAN配置：Vector XL，CH2，500K/2M，CAN FD") &&
+                flash_driver.message == QStringLiteral(
+                    "Driver文件检查：已找到（17,322 bytes）") &&
+                flash_hidden.kind ==
+                    uds::ui::qt::FlashPreparationUiLogKind::Hidden,
+            "Flash-preparation UI summary did not compact qualification, CAN, file, or CBF details");
 
       bridge->logMessage(QStringLiteral("TX [0x716] 34 00 44"));
       bridge->logMessage(QStringLiteral("RX [0x616] 74 20 08 00"));
@@ -1228,6 +1251,89 @@ int main(int argc, char* argv[]) {
                 !detailed_probe_log.contains(
                     "在线探测成功：诊断响应正常，APP刷新入口判定可用"),
             "Probe UI filtering removed raw detail from the file log or persisted UI-only summaries");
+
+      clear_log->trigger();
+      check(QMetaObject::invokeMethod(&window, "beginFlashUiLog",
+                                      Qt::DirectConnection),
+            "Flash preparation UI state could not be started");
+      bridge->logMessage(QStringLiteral(
+          "Flash target: 楚能 / ARC331 / 左后雷达; Profile=chuneng_331_left_rear; Target=left_rear; Flow=chuneng_arc331; Entry=APP"));
+      bridge->logMessage(QStringLiteral(
+          "Pre-flash qualification: Status=PASS; Completed at=2026-08-31T18:18:41.168; Detail=设备在线"));
+      bridge->logMessage(QStringLiteral(
+          "CAN configuration: Hardware backend=Vector XL; Channel=2; Nominal bitrate=500000 bit/s; Data bitrate=2000000 bit/s; CAN FD=yes; Padding=0x55"));
+      bridge->logMessage(QStringLiteral(
+          "Flash file: Boot Driver=D:/project/UDS_tools/dist/resources/driver.cbf; exists=yes; size=17322 bytes"));
+      bridge->logMessage(QStringLiteral(
+          "Flash file: APP=D:/project/UDS_tools/dist/resources/app.cbf; exists=yes; size=1573818 bytes"));
+      bridge->logMessage(
+          QStringLiteral("Flash file: APP Data=<not configured>"));
+      bridge->logMessage(QStringLiteral(
+          "Flash file: SeedKey=D:/project/UDS_tools/dist/resources/key.dll; exists=yes; size=939520 bytes"));
+      bridge->logMessage(QStringLiteral(
+          "Cycle 1/1 raw ASC PASS: D:/logs/full_trace.asc; raw BLF PASS: D:/logs/full_trace.blf"));
+      bridge->logMessage(QStringLiteral("第1/1次完整刷写开始"));
+      bridge->logMessage(QStringLiteral(
+          "ChuNeng ARC331 dedicated flow selected: Driver+APP CBF pair; 256-byte signature state machine"));
+      bridge->logMessage(QStringLiteral(
+          "Driver CBF identity: target=7052A5023002AB; software_id=7052A5023002"));
+      bridge->logMessage(QStringLiteral(
+          "APP CBF identity: target=7052A5023002AB; software_id=7052A5023002"));
+      bridge->logMessage(QStringLiteral(
+          "ChuNeng ARC331 paired input preflight passed: mode=Driver CBF + APP CBF; both roles enter the same 0202/256-byte-signature state machine"));
+      application.processEvents();
+      const auto concise_flash_preparation = log_view->toPlainText();
+      check(concise_flash_preparation.count(QLatin1Char('\n')) + 1 == 8 &&
+                concise_flash_preparation.contains(
+                    QStringLiteral("刷写前条件检查：通过")) &&
+                concise_flash_preparation.contains(QStringLiteral(
+                    "CAN配置：Vector XL，CH2，500K/2M，CAN FD")) &&
+                concise_flash_preparation.contains(QStringLiteral(
+                    "Driver文件检查：已找到（17,322 bytes）")) &&
+                concise_flash_preparation.contains(QStringLiteral(
+                    "APP文件检查：已找到（1,573,818 bytes）")) &&
+                concise_flash_preparation.contains(
+                    QStringLiteral("Driver与APP匹配检查：通过")) &&
+                concise_flash_preparation.contains(
+                    QStringLiteral("ASC/BLF记录：已启动")) &&
+                concise_flash_preparation.endsWith(
+                    QStringLiteral("开始第1/1次刷写")) &&
+                !concise_flash_preparation.contains(
+                    QStringLiteral("D:/project/UDS_tools")) &&
+                !concise_flash_preparation.contains(
+                    QStringLiteral("CBF identity")) &&
+                !concise_flash_preparation.contains(
+                    QStringLiteral("signature state machine")) &&
+                !concise_flash_preparation.contains(
+                    QStringLiteral("<not configured>")),
+            "Flash-preparation runtime view was not reduced to eight operator-facing lines");
+      bridge->logMessage(QStringLiteral("TX [0x7E2] 10 02"));
+      bridge->logMessage(QStringLiteral("RX [0x72F] 50 02 00 32 01 F4"));
+      application.processEvents();
+      check(log_view->toPlainText().contains(
+                QStringLiteral("TX [0x7E2] 10 02")) &&
+                log_view->toPlainText().contains(
+                    QStringLiteral("RX [0x72F] 50 02 00 32 01 F4")),
+            "Flash preparation filter did not release normal UDS runtime logs");
+      QFile flash_persisted(execution_log);
+      check(flash_persisted.open(QIODevice::ReadOnly),
+            "Detailed execution log could not be reopened for flash filtering test");
+      const auto detailed_flash_log = flash_persisted.readAll();
+      check(detailed_flash_log.contains(
+                "D:/project/UDS_tools/dist/resources/driver.cbf") &&
+                detailed_flash_log.contains("APP Data=<not configured>") &&
+                detailed_flash_log.contains("Driver CBF identity:") &&
+                detailed_flash_log.contains("signature state machine") &&
+                detailed_flash_log.contains("D:/logs/full_trace.asc") &&
+                !detailed_flash_log.contains(
+                    "Driver文件检查：已找到（17,322 bytes）"),
+            "Flash UI filtering removed raw detail from the file log or persisted UI-only summaries");
+      check(QMetaObject::invokeMethod(
+                &window, "handleFlashFinished", Qt::DirectConnection,
+                Q_ARG(bool, true), Q_ARG(bool, false),
+                Q_ARG(QString, QStringLiteral("test concise flash result")),
+                Q_ARG(QString, QString{})),
+            "Flash filtering integration result was not invokable");
 
       QString long_execution_log;
       for (int line = 0; line < 240; ++line) {

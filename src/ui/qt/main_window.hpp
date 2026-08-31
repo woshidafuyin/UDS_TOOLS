@@ -141,6 +141,9 @@ private:
                    UiLogDestination destination =
                        UiLogDestination::ViewAndFile);
   void appendProbeLogMessage(const QString& message);
+  void appendFlashLogMessage(const QString& message);
+  void flushPendingFlashPreparationSummary();
+  Q_INVOKABLE void beginFlashUiLog();
   void appendUiLogEntryToView(const UiLogEntry& entry);
   void scheduleExecutionLogTailFollow();
   void renderActiveUiLog();
@@ -163,6 +166,8 @@ private:
   bool probe_ui_log_active_{};
   bool probe_refresh_entry_checked_{};
   bool flash_running_{};
+  bool flash_ui_log_active_{};
+  bool flash_preparation_ui_active_{};
   bool flash_stop_requested_{};
   bool version_check_running_{};
   bool diagnostic_request_running_{};
@@ -178,6 +183,8 @@ private:
   QString active_file_selection_key_;
   QString active_log_target_key_;
   QString probe_can_open_summary_;
+  QString pending_flash_trace_summary_;
+  QString pending_flash_cycle_summary_;
   bool execution_log_follow_tail_{true};
   VersionConfirmationPage* version_page_{};
   BusMonitorPage* bus_monitor_page_{};
