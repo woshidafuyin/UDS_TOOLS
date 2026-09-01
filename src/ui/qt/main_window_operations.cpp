@@ -225,6 +225,7 @@ void MainWindow::startFlashFromUi() {
 
   const auto repeat_count =
       static_cast<unsigned>(ui_->repeatCountSpinBox->value());
+  const auto update_public_key = ui_->updatePublicKeyCheckBox->isChecked();
   if (profile.supports_ft_entry && entry_mode == QStringLiteral("ft")) {
     appendUiLog(QStringLiteral(
         "提示：已选择FT恢复入口，将使用当前目标Profile配置的FT端点切换，"
@@ -258,14 +259,16 @@ void MainWindow::startFlashFromUi() {
                                      profile.project_name,
                                      ui_->radarComboBox->currentText());
   const auto detailed_start = QStringLiteral(
-                  "直接开始刷写：%1，次数 %2，CH%3，TX 0x%4 -> RX 0x%5，FUNC 0x%6，模式 %7")
+                  "直接开始刷写：%1，次数 %2，CH%3，TX 0x%4 -> RX 0x%5，FUNC 0x%6，模式 %7，Update_PublicKey=%8")
                     .arg(flash_target)
                     .arg(repeat_count)
                     .arg(channel)
                    .arg(QString::number(tx_id, 16).toUpper())
                    .arg(QString::number(rx_id, 16).toUpper())
                    .arg(QString::number(profile.functional_id, 16).toUpper())
-                    .arg(entry_mode.toUpper());
+                    .arg(entry_mode.toUpper())
+                    .arg(update_public_key ? QStringLiteral("ON")
+                                           : QStringLiteral("OFF"));
   appendUiLog(detailed_start, UiLogTone::Normal,
               UiLogDestination::FileOnly);
   beginFlashUiLog();
@@ -273,8 +276,8 @@ void MainWindow::startFlashFromUi() {
                   .arg(flash_target, entry_mode.toUpper()),
               UiLogTone::Normal, UiLogDestination::ViewOnly);
   emit flashRequested(
-       profile_index, selectedTargetId(), entry_mode, repeat_count, channel,
-       tx_id, rx_id, fullPath(ui_->driverPathLineEdit),
+       profile_index, selectedTargetId(), entry_mode, update_public_key,
+       repeat_count, channel, tx_id, rx_id, fullPath(ui_->driverPathLineEdit),
        fullPath(ui_->appPathLineEdit), fullPath(ui_->calPathLineEdit),
        fullPath(ui_->driverVerifyPathLineEdit),
        fullPath(ui_->appVerifyPathLineEdit),
@@ -316,6 +319,15 @@ void MainWindow::updateEnabledState() {
   ui_->rxIdLineEdit->setReadOnly(false);
   ui_->entryModeComboBox->setEnabled(!busy && profile_valid);
   ui_->repeatCountSpinBox->setEnabled(!busy && usable);
+  const auto e0y_public_key_compatible =
+      usable && profiles[profile_index].flow_id == QStringLiteral("chery_e0y") &&
+      ui_->entryModeComboBox->currentData().toString() !=
+          QStringLiteral("app_cal");
+  if (!e0y_public_key_compatible) {
+    ui_->updatePublicKeyCheckBox->setChecked(false);
+  }
+  ui_->updatePublicKeyCheckBox->setEnabled(
+      !busy && e0y_public_key_compatible);
   // Placeholder profiles remain fail-closed for CAN operations, but file
   // selection is an offline preparation action and must stay available.
   ui_->filesGroupBox->setEnabled(!busy && profile_valid);

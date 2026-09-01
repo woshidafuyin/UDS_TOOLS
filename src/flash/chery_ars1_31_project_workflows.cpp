@@ -47,6 +47,15 @@ void run_project(CheryArs131Project project, std::wstring_view workflow_id,
   }
   const auto plan = resolve_chery_ars1_31_download_plan(project,
                                                         job.entry_mode);
+  if (job.update_public_key && project != CheryArs131Project::e0y) {
+    throw std::runtime_error(
+        "Update_PublicKey is supported only by the Chery E0Y workflow");
+  }
+  if (job.update_public_key &&
+      plan.mode == CheryArs131FlashMode::app_cal) {
+    throw std::runtime_error(
+        "Chery E0Y Update_PublicKey is not part of APP+CAL/TC_2; select APP or CAL");
+  }
   constexpr auto supports_cal = true;
   if (job.profile.placeholder || job.profile.can_fd ||
       job.profile.extended_id || job.profile.uds_fd || job.profile.uds_brs ||
@@ -131,6 +140,11 @@ void run_project(CheryArs131Project project, std::wstring_view workflow_id,
   report(callbacks, "Requirement contract", "PASS", contract.str());
   report(callbacks, "Acceptance boundary", "WARN",
          "Offline preflight passed; real ECU acceptance still requires a hash-bound bench report and trace");
+  report(callbacks, "Update_PublicKey",
+         job.update_public_key ? "WARN" : "INFO",
+         job.update_public_key
+             ? "Enabled: after SecurityAccess, send 2E 6F00 plus the frozen 514-byte Panel public key before 2E F184"
+             : "Disabled: matches the CANoe Panel default; no 2E 6F00 request will be sent");
 
   const auto broker = job.executable_directory / L"keygen_broker.exe";
   required(broker, "x86 SeedKey broker");
@@ -196,7 +210,7 @@ void run_project(CheryArs131Project project, std::wstring_view workflow_id,
                line);
       },
       keygen);
-  flow.run(images, plan.mode, stop);
+  flow.run(images, plan.mode, job.update_public_key, stop);
   const auto mode = plan.download_app
                         ? (plan.download_cal ? "APP+CAL/TC_2" : "APP")
                         : "CAL/TC_7";

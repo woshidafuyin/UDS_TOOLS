@@ -293,6 +293,11 @@ void MainWindow::applySelectedProfile(int device_index) {
   const auto& profile = profiles[profile_index];
   const auto geely_p416 =
       profile.flow_id == QStringLiteral("geely_p416");
+  const auto chery_e0y =
+      profile.flow_id == QStringLiteral("chery_e0y");
+  ui_->updatePublicKeyLabel->setVisible(chery_e0y);
+  ui_->updatePublicKeyCheckBox->setVisible(chery_e0y);
+  ui_->updatePublicKeyCheckBox->setChecked(false);
   ui_->driverPathLabel->setText(QStringLiteral("Driver 文件"));
   ui_->appPathLabel->setText(
       geely_p416 ? QStringLiteral("APP VBF 文件")

@@ -651,6 +651,8 @@ int main(int argc, char* argv[]) {
           window.findChild<QLabel*>(QStringLiteral("rxIdLabel"));
       auto* repeat_count = window.findChild<QSpinBox*>(
           QStringLiteral("repeatCountSpinBox"));
+      auto* update_public_key = window.findChild<QCheckBox*>(
+          QStringLiteral("updatePublicKeyCheckBox"));
       auto* start_flash = window.findChild<QPushButton*>(
           QStringLiteral("startFlashButton"));
       auto* probe = window.findChild<QPushButton*>(
@@ -2002,6 +2004,27 @@ int main(int argc, char* argv[]) {
                          QStringLiteral("APP+CAL"),
                  "T1EJ/T22/E0Y TC_7/TC_2 flashing modes are not exposed");
          }
+         const auto is_e0y = project == QStringLiteral("E0Y");
+         check(update_public_key &&
+                    update_public_key->isHidden() != is_e0y &&
+                    !update_public_key->isChecked(),
+                "Update_PublicKey must be visible only for E0Y and default off");
+         if (is_e0y) {
+           check(update_public_key->isEnabled(),
+                  "E0Y APP did not enable Update_PublicKey");
+           update_public_key->setChecked(true);
+           entries->setCurrentIndex(
+                entries->findData(QStringLiteral("app_cal")));
+           application.processEvents();
+           check(!update_public_key->isEnabled() &&
+                      !update_public_key->isChecked(),
+                  "E0Y APP+CAL must reject and clear Update_PublicKey");
+           entries->setCurrentIndex(entries->findData(QStringLiteral("cal")));
+           application.processEvents();
+           check(update_public_key->isEnabled() &&
+                      !update_public_key->isChecked(),
+                  "E0Y CAL did not safely expose Update_PublicKey");
+         }
        }
       check_file_panel_is_stable();
       check_project_devices(application, projects, devices,
@@ -2400,8 +2423,8 @@ int main(int argc, char* argv[]) {
       QString arf_app_verify_path;
       QObject::connect(
           &window, &uds::ui::qt::MainWindow::flashRequested, &window,
-          [&](int, const QString&, const QString&, unsigned, unsigned, quint32,
-              quint32, const QString&, const QString&, const QString&,
+          [&](int, const QString&, const QString&, bool, unsigned, unsigned,
+              quint32, quint32, const QString&, const QString&, const QString&,
               const QString&, const QString& app_verify_path) {
             ++arf_flash_request_count;
             arf_app_verify_path = app_verify_path;

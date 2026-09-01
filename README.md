@@ -175,7 +175,7 @@
 | 楚能 ARC331 | `chuneng_331_left_rear.ini` / `chuneng_arc331` | 左/右后雷达；APP、FT；CBF 或成对 S19/ASC |
 | 奇瑞 ARS1.33 | `chery_ars1_33.ini` / `chery_ars1_33` | APP、CAL、APP+CAL |
 | 奇瑞 KP31 | `chery_kp31.ini` / `chery_kp31` | APP、CAL、APP+CAL |
-| 奇瑞 E0Y、T22、T1EJ | 各自 Profile / Workflow | 复用项目内核并保留独立端点和资源 |
+| 奇瑞 E0Y、T22、T1EJ | 各自 Profile / Workflow | APP、CAL、APP+CAL；E0Y 的 APP/CAL 额外提供默认关闭的 `Update_PublicKey` Panel 同义开关 |
 | 长安 C857 | `changan_c857.ini` / `changan_c857` | 主/从目标；APP、FT、CAL、APP+CAL |
 | 长安 B216 | `lingyao_b216.ini` / `lingyao_b216` | 主/从目标；Profile 声明模式 |
 | 长马 J90K / ARS1.31 | `longma_ars1_31.ini` / `longma_ars1_31` | APP、FT |

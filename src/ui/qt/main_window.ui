@@ -217,7 +217,30 @@
              </property>
             </widget>
            </item>
-         </layout>
+           <item row="5" column="0">
+            <widget class="QLabel" name="updatePublicKeyLabel">
+             <property name="text">
+              <string>更新公钥</string>
+             </property>
+             <property name="toolTip">
+              <string>奇瑞 E0Y Panel 的 Update_PublicKey 可选项；默认关闭</string>
+             </property>
+            </widget>
+           </item>
+           <item row="5" column="1">
+            <widget class="QCheckBox" name="updatePublicKeyCheckBox">
+             <property name="toolTip">
+              <string>仅奇瑞 E0Y 的 APP/CAL 流程可用；安全解锁后、写 F184 前发送 2E 6F00 和 514 字节公钥</string>
+             </property>
+             <property name="text">
+              <string>Update_PublicKey</string>
+             </property>
+             <property name="checked">
+              <bool>false</bool>
+             </property>
+            </widget>
+           </item>
+          </layout>
         </widget>
        </item>
        <item>

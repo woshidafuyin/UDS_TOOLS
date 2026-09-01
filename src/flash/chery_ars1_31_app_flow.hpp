@@ -69,6 +69,7 @@ std::vector<std::uint8_t> chery_ars1_31_request_download(
     std::uint32_t address, std::uint32_t length);
 std::vector<std::uint8_t> chery_ars1_31_erase_memory(
     std::uint32_t address, std::uint32_t length);
+std::vector<std::uint8_t> chery_e0y_update_public_key_request();
 
 class CheryArs131AppFlow {
 public:
@@ -82,7 +83,7 @@ public:
                      KeyGenerator key_generator);
 
   void run(const CheryArs131AppImages& images,
-           CheryArs131FlashMode mode = CheryArs131FlashMode::app_only,
+           CheryArs131FlashMode mode, bool update_public_key,
            std::stop_token stop = {});
 
 private:
@@ -98,6 +99,7 @@ private:
   void unlock(int percent);
   void write_fingerprint(int percent, std::uint16_t did,
                          std::size_t length);
+  void write_public_key(int percent);
   void verify(std::uint16_t routine_id,
               std::span<const std::uint8_t> signature, int percent,
               const std::string& label);
@@ -105,8 +107,10 @@ private:
                 std::span<const std::uint8_t> image, int begin_percent,
                 int end_percent, const std::string& label);
   void precondition(int percent);
-  void run_app_only(const CheryArs131AppImages& images);
-  void run_cal_only(const CheryArs131AppImages& images);
+  void run_app_only(const CheryArs131AppImages& images,
+                    bool update_public_key);
+  void run_cal_only(const CheryArs131AppImages& images,
+                    bool update_public_key);
   void run_t22_cal_only(const CheryArs131AppImages& images);
   void run_app_cal(const CheryArs131AppImages& images);
   void wait(std::chrono::milliseconds duration) const;

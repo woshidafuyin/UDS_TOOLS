@@ -274,6 +274,7 @@ void MainWindow::connectActions() {
           [this] {
             saveActiveProfileState();
             saveComboSelections();
+            updateEnabledState();
           });
   connect(ui_->repeatCountSpinBox,
           QOverload<int>::of(&QSpinBox::valueChanged), this,

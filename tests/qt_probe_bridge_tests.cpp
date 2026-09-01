@@ -460,7 +460,7 @@ int main(int argc, char* argv[]) {
 
     timed_out = false;
     QTimer::singleShot(0, &bridge, [&bridge] {
-      bridge.startFlash(0, {}, QStringLiteral("ft"), 1, 2, 0x703, 0x763,
+      bridge.startFlash(0, {}, QStringLiteral("ft"), false, 1, 2, 0x703, 0x763,
                         QStringLiteral("driver.s19"),
                         QStringLiteral("app.s19"), {}, {}, {}, {},
                         QStringLiteral("security.dll"));
@@ -542,7 +542,7 @@ int main(int argc, char* argv[]) {
     timed_out = false;
     QTimer::singleShot(0, &bridge, [&bridge] {
       bridge.startFlash(
-          1, QStringLiteral("secondary"), QStringLiteral("app"), 1, 2,
+          1, QStringLiteral("secondary"), QStringLiteral("app"), false, 1, 2,
           0x123, 0x456, QStringLiteral("driver.s19"),
           QStringLiteral("app.s19"), {}, {}, {}, {},
           QStringLiteral("security.dll"));
@@ -572,7 +572,7 @@ int main(int argc, char* argv[]) {
     timed_out = false;
     QTimer::singleShot(0, &bridge, [&bridge] {
       bridge.startFlash(
-          2, QStringLiteral("secondary"), QStringLiteral("ft"), 1, 2,
+          2, QStringLiteral("secondary"), QStringLiteral("ft"), false, 1, 2,
           0x760, 0x768, QStringLiteral("driver.s19"),
           QStringLiteral("secondary_app.s19"), {}, {}, {}, {},
           QStringLiteral("SeedKey_Slave.dll"));

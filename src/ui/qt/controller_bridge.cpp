@@ -305,7 +305,8 @@ void ControllerBridge::requestProbeStop() {
 
 void ControllerBridge::startFlash(
     int profile_index, const QString& target_id, const QString& entry_mode,
-    unsigned repeat_count, unsigned channel, quint32 tx_id, quint32 rx_id,
+    bool update_public_key, unsigned repeat_count, unsigned channel,
+    quint32 tx_id, quint32 rx_id,
     const QString& driver_path,
     const QString& app_path, const QString& cal_path,
     const QString& driver_verify_path, const QString& app_verify_path,
@@ -340,6 +341,7 @@ void ControllerBridge::startFlash(
   request.profile = profile;
   request.target_id = target_id.toStdWString();
   request.entry_mode = entry_mode.toStdWString();
+  request.update_public_key = update_public_key;
   request.repeat_count = repeat_count;
   request.executable_directory =
       QCoreApplication::applicationDirPath().toStdWString();
@@ -359,10 +361,12 @@ void ControllerBridge::startFlash(
   }
   request.target_description = toUtf8(
       QStringLiteral("%1 / %2 / %3; Profile=%4; Target=%5; Flow=%6; Entry=%7; "
-                     "Repetitions=%8")
+                     "Update_PublicKey=%8; Repetitions=%9")
           .arg(fromWide(profile.vendor_name), fromWide(profile.project_name),
                target_display_name, fromWide(profile.id), target_id,
-               fromWide(profile.flow), entry_mode.toUpper())
+               fromWide(profile.flow), entry_mode.toUpper(),
+               update_public_key ? QStringLiteral("ON")
+                                 : QStringLiteral("OFF"))
           .arg(repeat_count));
   request.channel = channel;
   request.tx_id = tx_id;

@@ -39,6 +39,8 @@ void check(bool condition, const char* message) {
 void test_flash_request_defaults() {
   const uds::app::FlashRequest request;
   check(request.entry_mode == L"app", "flash request entry mode default mismatch");
+  check(!request.update_public_key,
+        "flash request Update_PublicKey default must be disabled");
   check(uds::app::kMinFlashRepeatCount == 1 &&
             uds::app::kMaxFlashRepeatCount == 10000 &&
             request.repeat_count == uds::app::kMinFlashRepeatCount &&
@@ -263,6 +265,7 @@ uds::app::FlashRequest make_flash_request(
   request.profile.flow = L"fake";
   request.profile.name = L"Fake ECU";
   request.entry_mode = L"ft";
+  request.update_public_key = true;
   request.executable_directory = directory;
   request.hardware_backend = "ZLG / ZCANPRO (ZCAN)";
   request.target_description =
@@ -310,7 +313,8 @@ void test_flash_controller_success() {
     if (line.find("Flash target:") == 0 ||
         line.find("Pre-flash qualification:") == 0 ||
         line.find("CAN configuration:") == 0 ||
-        line.find("Flash file:") == 0) {
+        line.find("Flash file:") == 0 ||
+        line.find("Update_PublicKey:") == 0) {
       audit_logs.push_back(line);
     }
   };
@@ -338,13 +342,14 @@ void test_flash_controller_success() {
             capture->job.profile.tx_id == 0x701 &&
             capture->job.profile.rx_id == 0x761 &&
             capture->job.entry_mode == L"ft" &&
+            capture->job.update_public_key &&
             capture->job.security_dll ==
                 std::filesystem::path(L"security.dll") &&
             std::filesystem::is_regular_file(trace_path) &&
             std::filesystem::is_regular_file(blf_trace_path) &&
             trace_path.stem() == blf_trace_path.stem(),
         "flash controller did not assemble FlashJob correctly");
-  check(log_count == 1 && progress == 25 && audit_logs.size() == 10,
+  check(log_count == 1 && progress == 25 && audit_logs.size() == 11,
         "flash controller did not adapt workflow callbacks");
   check(!result.report_path.empty() &&
              std::filesystem::is_regular_file(result.report_path),

@@ -45,8 +45,8 @@ signals:
                       unsigned channel, quint32 tx_id, quint32 rx_id);
   void flashRequested(int profile_index, const QString& target_id,
                       const QString& entry_mode,
-                      unsigned repeat_count, unsigned channel, quint32 tx_id,
-                      quint32 rx_id,
+                      bool update_public_key, unsigned repeat_count,
+                      unsigned channel, quint32 tx_id, quint32 rx_id,
                       const QString& driver_path, const QString& app_path,
                       const QString& cal_path,
                       const QString& driver_verify_path,

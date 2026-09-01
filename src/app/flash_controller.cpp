@@ -367,10 +367,16 @@ void FlashController::execute(FlashRequest request,
                "Configured repetitions=" + std::to_string(repeat_count) +
                    "; each repetition runs the complete workflow; stop on first failure",
                FlashStage::configuration);
+    record_snapshot("Update_PublicKey",
+                    request.update_public_key
+                        ? "Enabled by operator"
+                        : "Disabled (CANoe Panel default)",
+                    FlashStage::configuration);
 
     FlashJob job;
     job.profile = request.profile;
     job.entry_mode = request.entry_mode;
+    job.update_public_key = request.update_public_key;
     job.executable_directory = request.executable_directory;
     job.driver_file = request.driver_file;
     job.app_file = request.app_file;

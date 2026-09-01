@@ -2054,6 +2054,15 @@ void test_chery_ars131_project_contracts() {
                                       0xC0, 0x08, 0x00, 0x00, 0x00,
                                       0x0F, 0x50, 0x00}),
         "Chery ARS1.31 common address encoding mismatch");
+  const auto public_key_request = uds::chery_e0y_update_public_key_request();
+  check(public_key_request.size() == 517 &&
+            public_key_request[0] == 0x2E &&
+            public_key_request[1] == 0x6F &&
+            public_key_request[2] == 0x00 &&
+            uds::to_hex(uds::sha256(std::span(public_key_request).subspan(3))) ==
+                "51 7F B5 82 90 44 5B AC CA 04 2A 72 59 45 44 EB "
+                "64 E5 A4 1C D3 4A 9E 4A 4E 72 43 EA 66 E6 07 62",
+        "E0Y Update_PublicKey request differs from CANoe publickeydata[514]");
   const auto t1ej_app = uds::resolve_chery_ars1_31_download_plan(
       uds::CheryArs131Project::t1ej, L"app");
   const auto t1ej_cal = uds::resolve_chery_ars1_31_download_plan(
