@@ -300,23 +300,23 @@ void MainWindow::scheduleExecutionLogTailFollow() {
 
 void MainWindow::appendUiLogEntryToView(const UiLogEntry& entry) {
   QTextCharFormat timestamp_format;
-  timestamp_format.setForeground(QColor(QStringLiteral("#6B7280")));
+  timestamp_format.setForeground(QColor(QStringLiteral("#70757A")));
 
   QTextCharFormat normal_format;
-  normal_format.setForeground(QColor(QStringLiteral("#263238")));
+  normal_format.setForeground(QColor(QStringLiteral("#303030")));
 
   QTextCharFormat semantic_format = normal_format;
   switch (entry.tone) {
   case UiLogTone::Success:
-    semantic_format.setForeground(QColor(QStringLiteral("#16803C")));
+    semantic_format.setForeground(QColor(QStringLiteral("#188038")));
     semantic_format.setFontWeight(QFont::Bold);
     break;
   case UiLogTone::Failure:
-    semantic_format.setForeground(QColor(QStringLiteral("#C62828")));
+    semantic_format.setForeground(QColor(QStringLiteral("#D93025")));
     semantic_format.setFontWeight(QFont::Bold);
     break;
   case UiLogTone::Pending:
-    semantic_format.setForeground(QColor(QStringLiteral("#A85D00")));
+    semantic_format.setForeground(QColor(QStringLiteral("#C25E00")));
     semantic_format.setFontWeight(QFont::Bold);
     break;
   case UiLogTone::Normal:
@@ -355,17 +355,21 @@ void MainWindow::appendUiLogEntryToView(const UiLogEntry& entry) {
     }
 
     QTextCharFormat direction_format = semantic_format;
+    QTextCharFormat payload_format = semantic_format;
     if (entry.tone == UiLogTone::Normal) {
-      direction_format.setForeground(QColor(
+      const QColor direction_color(
           entry.parsed.direction == LogDirection::Tx
               ? QStringLiteral("#1565C0")
-              : QStringLiteral("#00897B")));
+              : QStringLiteral("#8E24AA"));
+      direction_format.setForeground(direction_color);
       direction_format.setFontWeight(QFont::Bold);
+      payload_format.setForeground(direction_color);
+      payload_format.setFontWeight(QFont::Normal);
     }
     cursor.insertText(entry.parsed.directionAndCanId, direction_format);
     if (!entry.parsed.payload.isEmpty()) {
       cursor.insertText(QStringLiteral(" "), normal_format);
-      cursor.insertText(entry.parsed.payload, semantic_format);
+      cursor.insertText(entry.parsed.payload, payload_format);
     }
   }
   ui_->logPlainTextEdit->setTextCursor(cursor);
