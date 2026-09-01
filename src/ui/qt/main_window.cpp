@@ -599,7 +599,11 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
   }
   if (watched == ui_->logPlainTextEdit && event->type() == QEvent::KeyPress) {
     const auto* key_event = static_cast<QKeyEvent*>(event);
-    const auto modifiers = key_event->modifiers();
+    auto modifiers = key_event->modifiers();
+    // Windows reports End from the numeric keypad (and some laptop Fn key
+    // layouts) with KeypadModifier. It identifies the physical key source,
+    // not an alternate navigation command, so keep handling it as plain End.
+    modifiers.setFlag(Qt::KeypadModifier, false);
     if (modifiers == Qt::NoModifier || modifiers == Qt::ControlModifier) {
       auto cursor = ui_->logPlainTextEdit->textCursor();
       if (key_event->key() == Qt::Key_Home) {
@@ -613,7 +617,8 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
         execution_log_follow_tail_ = true;
         cursor.movePosition(QTextCursor::End);
         ui_->logPlainTextEdit->setTextCursor(cursor);
-        ui_->logPlainTextEdit->ensureCursorVisible();
+        auto* scrollbar = ui_->logPlainTextEdit->verticalScrollBar();
+        scrollbar->setValue(scrollbar->maximum());
         scheduleExecutionLogTailFollow();
         return true;
       }

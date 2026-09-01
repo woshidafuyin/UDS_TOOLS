@@ -1414,11 +1414,24 @@ int main(int argc, char* argv[]) {
       QApplication::sendEvent(log_view, &home_event);
       check(log_view->textCursor().position() == 0,
             "Home did not navigate to the beginning of the execution log");
-      QKeyEvent end_event(QEvent::KeyPress, Qt::Key_End, Qt::NoModifier);
+      QKeyEvent end_event(QEvent::KeyPress, Qt::Key_End,
+                          Qt::KeypadModifier);
       QApplication::sendEvent(log_view, &end_event);
-       check(log_view->textCursor().position() ==
-                 log_view->document()->characterCount() - 1,
-             "End did not navigate to the end of the execution log");
+      application.processEvents();
+      const auto end_cursor_rect = log_view->cursorRect(log_view->textCursor());
+      const auto end_bottom_gap =
+          log_view->viewport()->height() - end_cursor_rect.bottom();
+      check(log_view->textCursor().position() ==
+                log_view->document()->characterCount() - 1 &&
+                log_view->verticalScrollBar()->value() ==
+                    log_view->verticalScrollBar()->maximum(),
+            "End did not navigate to the bottom of the execution log");
+      check(end_cursor_rect.isValid() && end_cursor_rect.top() > 0 &&
+                end_bottom_gap >= 0 &&
+                end_bottom_gap <= end_cursor_rect.height() * 2 &&
+                log_view->cursorForPosition(QPoint(0, 0)).blockNumber() <
+                    log_view->document()->lastBlock().blockNumber(),
+            "End placed the final log at the top or left blank space below it");
       const auto invoke_flash_result = [&](bool success, bool cancelled) {
         return QMetaObject::invokeMethod(
             &window, "handleFlashFinished", Qt::DirectConnection,
