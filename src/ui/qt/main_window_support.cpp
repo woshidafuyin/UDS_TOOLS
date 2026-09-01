@@ -7,7 +7,9 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QLineEdit>
+#include <QPlainTextEdit>
 #include <QRegularExpression>
+#include <QTextCursor>
 #include <QUrl>
 #include <QVariant>
 #include <QWidget>
@@ -121,6 +123,23 @@ QString newestReportPath() {
   return reports.isEmpty()
              ? QString{}
              : QDir::toNativeSeparators(reports.front().absoluteFilePath());
+}
+
+std::optional<QString> localFileLinkAt(
+    const QPlainTextEdit* log_view, const QPoint& viewport_position) {
+  if (!log_view) return std::nullopt;
+  auto cursor = log_view->cursorForPosition(viewport_position);
+  auto format = cursor.charFormat();
+  if (!format.isAnchor() && cursor.movePosition(QTextCursor::NextCharacter)) {
+    format = cursor.charFormat();
+  }
+  if (!format.isAnchor()) return std::nullopt;
+
+  const QUrl link(format.anchorHref());
+  if (!link.isLocalFile()) return std::nullopt;
+  const auto path = QDir::toNativeSeparators(link.toLocalFile());
+  return path.isEmpty() ? std::nullopt
+                        : std::optional<QString>(path);
 }
 
 QString canVendorKey(CanVendor vendor) {

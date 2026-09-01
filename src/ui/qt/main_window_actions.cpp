@@ -203,6 +203,8 @@ void MainWindow::connectActions() {
           &MainWindow::clearActiveUiLog);
   ui_->logPlainTextEdit->setContextMenuPolicy(Qt::CustomContextMenu);
   ui_->logPlainTextEdit->installEventFilter(this);
+  ui_->logPlainTextEdit->viewport()->installEventFilter(this);
+  ui_->logPlainTextEdit->viewport()->setMouseTracking(true);
   auto* log_scrollbar = ui_->logPlainTextEdit->verticalScrollBar();
   connect(log_scrollbar, &QScrollBar::actionTriggered, this,
           [this, log_scrollbar](int) {
@@ -213,7 +215,8 @@ void MainWindow::connectActions() {
                 log_scrollbar->sliderPosition() >= log_scrollbar->maximum();
           });
   ui_->logPlainTextEdit->setToolTip(QStringLiteral(
-      "Home：日志开头；End：日志末尾；PageUp/PageDown及方向键保持系统默认行为"));
+      "点击报告路径可打开本地HTML；Home：日志开头；End：日志末尾；"
+      "PageUp/PageDown及方向键保持系统默认行为"));
   connect(ui_->logPlainTextEdit, &QPlainTextEdit::customContextMenuRequested,
           this, [this, clear_log_action](const QPoint& position) {
             std::unique_ptr<QMenu> menu(

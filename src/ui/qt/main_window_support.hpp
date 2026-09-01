@@ -9,6 +9,8 @@
 #include <optional>
 
 class QLineEdit;
+class QPlainTextEdit;
+class QPoint;
 class QWidget;
 
 namespace uds::ui::qt::main_window_support {
@@ -29,6 +31,8 @@ void showPath(QLineEdit* path_edit, const QString& path);
 QString selectFile(QWidget* parent, const QLineEdit* path_edit,
                    const QString& caption, const QString& filter);
 QString newestReportPath();
+std::optional<QString> localFileLinkAt(const QPlainTextEdit* log_view,
+                                       const QPoint& viewport_position);
 
 QString canVendorKey(CanVendor vendor);
 CanVendor canVendorFromKey(const QString& key);

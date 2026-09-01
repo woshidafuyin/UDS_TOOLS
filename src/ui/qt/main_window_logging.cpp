@@ -88,7 +88,8 @@ void MainWindow::refreshLatestReportPath() {
 }
 
 void MainWindow::appendUiLog(const QString& message, UiLogTone tone,
-                             UiLogDestination destination) {
+                             UiLogDestination destination,
+                             const QString& local_file_link) {
   const auto now = QDateTime::currentDateTime();
   auto displayed_message = message;
   const auto nrc = nrcFromLogLine(displayed_message);
@@ -147,7 +148,9 @@ void MainWindow::appendUiLog(const QString& message, UiLogTone tone,
     auto& target_entries = target_log_entries_[active_log_target_key_];
     target_entries.push_back(UiLogEntry{display_timestamp, displayed_message,
                                         tone,
-                                        parseUiLogMessage(displayed_message)});
+                                        parseUiLogMessage(displayed_message),
+                                        QDir::toNativeSeparators(
+                                            local_file_link)});
     constexpr qsizetype kMaximumUiLogLinesPerTarget = 5000;
     while (target_entries.size() > kMaximumUiLogLinesPerTarget) {
       target_entries.removeFirst();
@@ -327,7 +330,24 @@ void MainWindow::appendUiLogEntryToView(const UiLogEntry& entry) {
   cursor.insertText(QStringLiteral(" "), normal_format);
 
   if (entry.parsed.direction == LogDirection::None) {
-    cursor.insertText(entry.message, semantic_format);
+    const auto link_start = entry.local_file_link.isEmpty()
+                                ? -1
+                                : entry.message.indexOf(entry.local_file_link);
+    if (link_start < 0) {
+      cursor.insertText(entry.message, semantic_format);
+    } else {
+      cursor.insertText(entry.message.left(link_start), semantic_format);
+      QTextCharFormat link_format = semantic_format;
+      link_format.setAnchor(true);
+      link_format.setAnchorHref(
+          QUrl::fromLocalFile(entry.local_file_link).toString());
+      link_format.setForeground(QColor(QStringLiteral("#1565C0")));
+      link_format.setFontUnderline(true);
+      cursor.insertText(entry.local_file_link, link_format);
+      cursor.insertText(
+          entry.message.mid(link_start + entry.local_file_link.size()),
+          semantic_format);
+    }
   } else {
     if (!entry.parsed.leadingPrefix.isEmpty()) {
       cursor.insertText(entry.parsed.leadingPrefix, timestamp_format);
@@ -370,7 +390,10 @@ void MainWindow::handleFlashFinished(bool success, bool cancelled,
   ui_->progressStatusLabel->setText(message);
   appendUiLog(message, success ? UiLogTone::Success : UiLogTone::Failure);
   if (!report_path.isEmpty()) {
-    appendUiLog(QStringLiteral("报告：%1").arg(report_path));
+    const auto local_report_path = QDir::toNativeSeparators(report_path);
+    appendUiLog(QStringLiteral("报告：%1").arg(local_report_path),
+                UiLogTone::Normal, UiLogDestination::ViewAndFile,
+                local_report_path);
   }
 
   // Keep the final result visible in the execution log.  This remains a UI

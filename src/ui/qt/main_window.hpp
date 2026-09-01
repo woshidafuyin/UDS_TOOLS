@@ -86,6 +86,7 @@ private:
     QString message;
     UiLogTone tone{UiLogTone::Normal};
     ParsedUiLogMessage parsed;
+    QString local_file_link;
   };
 
   struct RuntimeFileSelection {
@@ -139,7 +140,8 @@ private:
   void appendUiLog(const QString& message,
                    UiLogTone tone = UiLogTone::Normal,
                    UiLogDestination destination =
-                       UiLogDestination::ViewAndFile);
+                       UiLogDestination::ViewAndFile,
+                   const QString& local_file_link = {});
   void appendProbeLogMessage(const QString& message);
   void appendFlashLogMessage(const QString& message);
   void flushPendingFlashPreparationSummary();

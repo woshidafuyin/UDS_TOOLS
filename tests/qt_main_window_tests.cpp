@@ -34,6 +34,8 @@
 #include <QTemporaryDir>
 #include <QTextBlock>
 #include <QTextFragment>
+#include <QTextCursor>
+#include <QUrl>
 #include <QVariantMap>
 #include <QWheelEvent>
 
@@ -116,6 +118,17 @@ QTextCharFormat log_fragment_format(const QTextBlock& block,
     }
   }
   return {};
+}
+
+int log_fragment_position(const QTextBlock& block, const QString& needle) {
+  for (auto iterator = block.begin(); !iterator.atEnd(); ++iterator) {
+    const auto fragment = iterator.fragment();
+    const auto offset = fragment.text().indexOf(needle);
+    if (fragment.isValid() && offset >= 0) {
+      return fragment.position() + offset;
+    }
+  }
+  return -1;
 }
 
 QString target_id(const QComboBox* combo, int index) {
@@ -1384,10 +1397,47 @@ int main(int argc, char* argv[]) {
       result_format = log_fragment_format(
           result_block, QStringLiteral("========== 刷写失败 =========="));
       check(result_block.text().contains(QStringLiteral("刷写失败")) &&
-                result_format.foreground().color() ==
-                    QColor(QStringLiteral("#C62828")) &&
-                result_format.fontWeight() == QFont::Bold,
-            "Failed flash result is not a bold red log entry");
+                 result_format.foreground().color() ==
+                     QColor(QStringLiteral("#C62828")) &&
+                 result_format.fontWeight() == QFont::Bold,
+             "Failed flash result is not a bold red log entry");
+
+      QTemporaryDir report_directory;
+      check(report_directory.isValid(),
+            "Could not create a report-link test directory");
+      const auto clickable_report =
+          report_directory.filePath(QStringLiteral("latest_report.html"));
+      QFile report_file(clickable_report);
+      check(report_file.open(QIODevice::WriteOnly) &&
+                report_file.write("<!doctype html><title>report</title>") > 0,
+            "Could not create the clickable report fixture");
+      report_file.close();
+      check(QMetaObject::invokeMethod(
+                &window, "handleFlashFinished", Qt::DirectConnection,
+                Q_ARG(bool, true), Q_ARG(bool, false),
+                Q_ARG(QString, QStringLiteral("test report link")),
+                Q_ARG(QString, clickable_report)),
+            "Flash result handler rejected a report path");
+      application.processEvents();
+      const auto report_block = find_log_block(
+          log_view->document(), QStringLiteral("报告："));
+      const auto native_report = QDir::toNativeSeparators(clickable_report);
+      const auto report_link_format =
+          log_fragment_format(report_block, native_report);
+      const auto report_link_position =
+          log_fragment_position(report_block, native_report);
+      QTextCursor report_link_cursor(log_view->document());
+      report_link_cursor.setPosition(report_link_position + 1);
+      const auto detected_report =
+          uds::ui::qt::main_window_support::localFileLinkAt(
+              log_view, log_view->cursorRect(report_link_cursor).center());
+      check(report_block.isValid() && report_link_position >= 0 &&
+                report_link_format.isAnchor() &&
+                QUrl(report_link_format.anchorHref()).isLocalFile() &&
+                detected_report &&
+                QDir::cleanPath(*detected_report) ==
+                    QDir::cleanPath(native_report),
+            "Report path is not rendered and detected as a clickable local-file link");
 
       progress_status->setText(QStringLiteral("最近一次刷写成功"));
       check(QMetaObject::invokeMethod(

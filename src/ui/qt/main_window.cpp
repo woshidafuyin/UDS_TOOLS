@@ -35,6 +35,7 @@
 #include <QMap>
 #include <QMenu>
 #include <QMenuBar>
+#include <QMouseEvent>
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -533,6 +534,29 @@ void MainWindow::installWheelMutationGuards() {
 }
 
 bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
+  if (ui_ && watched == ui_->logPlainTextEdit->viewport()) {
+    const auto link_at_event = [&]() {
+      const auto* mouse_event = static_cast<QMouseEvent*>(event);
+      return localFileLinkAt(ui_->logPlainTextEdit, mouse_event->pos());
+    };
+    if (event->type() == QEvent::MouseMove) {
+      ui_->logPlainTextEdit->viewport()->setCursor(
+          link_at_event() ? Qt::PointingHandCursor : Qt::IBeamCursor);
+    } else if (event->type() == QEvent::MouseButtonRelease) {
+      const auto* mouse_event = static_cast<QMouseEvent*>(event);
+      if (mouse_event->button() == Qt::LeftButton) {
+        if (const auto path = link_at_event()) {
+          if (!QFileInfo(*path).isFile()) {
+            QMessageBox::warning(this, QStringLiteral("报告文件不存在"),
+                                 *path);
+          } else if (!QDesktopServices::openUrl(QUrl::fromLocalFile(*path))) {
+            QMessageBox::warning(this, QStringLiteral("打开报告失败"), *path);
+          }
+          return true;
+        }
+      }
+    }
+  }
   if (event->type() == QEvent::MouseButtonDblClick) {
     if (watched == ui_->txIdLabel) {
       restoreDefaultDiagnosticId(true);
