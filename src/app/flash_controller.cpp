@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <exception>
 #include <iomanip>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -230,19 +231,23 @@ FlashController::~FlashController() {
 }
 
 bool FlashController::start(FlashRequest request,
-                            OperationCallbacks callbacks) {
+                            OperationCallbacks callbacks,
+                            OperationId* started_id) {
   std::scoped_lock lock(worker_mutex_);
-  if (!state_.try_start(OperationKind::flash)) return false;
+  OperationId operation_id{};
+  if (!state_.try_start(OperationKind::flash, &operation_id)) return false;
+  if (started_id) *started_id = operation_id;
 
   try {
     if (worker_.joinable()) worker_.join();
     worker_ = std::jthread(
-        [this, request = std::move(request), callbacks = std::move(callbacks)](
+        [this, request = std::move(request), callbacks = std::move(callbacks),
+         operation_id](
             std::stop_token stop) mutable {
-          execute(std::move(request), std::move(callbacks), stop);
+          execute(std::move(request), std::move(callbacks), stop, operation_id);
         });
   } catch (...) {
-    state_.finish();
+    state_.finish(operation_id);
     throw;
   }
   return true;
@@ -273,12 +278,24 @@ bool FlashController::is_active() const {
 
 void FlashController::execute(FlashRequest request,
                               OperationCallbacks callbacks,
-                              std::stop_token stop) {
+                              std::stop_token stop,
+                              OperationId operation_id) {
   HtmlReport report;
   auto add_report = [&](int percent, std::string step, std::string verdict,
-                         std::string detail) {
+                         std::string detail,
+                         FlashStage stage = FlashStage::unspecified,
+                         unsigned cycle = 0,
+                         std::optional<std::uint8_t> uds_service = {},
+                         FlashImageRole image_role = FlashImageRole::none) {
     static_cast<void>(percent);
-    report.add({{}, std::move(step), std::move(verdict), std::move(detail)});
+    if (stage == FlashStage::unspecified) {
+      report.add({{}, std::move(step), std::move(verdict), std::move(detail),
+                  stage, cycle, uds_service, image_role});
+      return;
+    }
+    report.add_event({{}, cycle, stage, uds_service, image_role,
+                      std::move(step), std::move(verdict),
+                      std::move(detail)});
   };
 
   OperationResult result;
@@ -312,31 +329,44 @@ void FlashController::execute(FlashRequest request,
     }
 
     add_report(0, "Diagnostic IDs", "INFO",
-               diagnostic_endpoint_detail(request));
-    const auto record_snapshot = [&](std::string step, std::string detail) {
+               diagnostic_endpoint_detail(request),
+               FlashStage::configuration);
+    const auto record_snapshot = [&](std::string step, std::string detail,
+                                     FlashStage stage) {
       if (callbacks.onLog) callbacks.onLog(step + ": " + detail);
-      add_report(0, std::move(step), "INFO", std::move(detail));
+      add_report(0, std::move(step), "INFO", std::move(detail), stage);
     };
-    record_snapshot("Flash target", request.target_description);
-    record_snapshot("Pre-flash qualification", qualification_detail(request));
-    record_snapshot("CAN configuration", can_configuration_detail(request));
+    record_snapshot("Flash target", request.target_description,
+                    FlashStage::configuration);
+    record_snapshot("Pre-flash qualification", qualification_detail(request),
+                    FlashStage::pre_flash_check);
+    record_snapshot("CAN configuration", can_configuration_detail(request),
+                    FlashStage::configuration);
     record_snapshot("Flash file", file_configuration_detail(
-                                      "Boot Driver", request.driver_file));
+                                      "Boot Driver", request.driver_file),
+                    FlashStage::configuration);
     record_snapshot("Flash file", file_configuration_detail(
-                                      "Driver Data", request.driver_verify_file));
+                                      "Driver Data", request.driver_verify_file),
+                    FlashStage::configuration);
     record_snapshot("Flash file",
-                    file_configuration_detail("APP", request.app_file));
+                    file_configuration_detail("APP", request.app_file),
+                    FlashStage::configuration);
     record_snapshot("Flash file", file_configuration_detail(
-                                      "APP Data", request.app_verify_file));
+                                      "APP Data", request.app_verify_file),
+                    FlashStage::configuration);
     record_snapshot("Flash file",
-                    file_configuration_detail("CAL", request.cal_file));
+                    file_configuration_detail("CAL", request.cal_file),
+                    FlashStage::configuration);
     record_snapshot("Flash file", file_configuration_detail(
-                                      "CAL Data", request.cal_verify_file));
+                                      "CAL Data", request.cal_verify_file),
+                    FlashStage::configuration);
     record_snapshot("Flash file", file_configuration_detail(
-                                      "SeedKey", request.security_dll));
+                                      "SeedKey", request.security_dll),
+                    FlashStage::configuration);
     add_report(0, "Flash count", "INFO",
                "Configured repetitions=" + std::to_string(repeat_count) +
-                   "; each repetition runs the complete workflow; stop on first failure");
+                   "; each repetition runs the complete workflow; stop on first failure",
+               FlashStage::configuration);
 
     FlashJob job;
     job.profile = request.profile;
@@ -383,7 +413,7 @@ void FlashController::execute(FlashRequest request,
                        std::to_string(active_cycle) + "/" +
                        std::to_string(repeat_count),
                    tracing_provider->trace_is_open() ? "INFO" : "WARN",
-                   trace_detail);
+                   trace_detail, FlashStage::trace_evidence, active_cycle);
       }
       if (callbacks.onLog) callbacks.onLog(cycle_tag + "完整刷写开始");
       add_report(repeat_count == 1 ? 0 :
@@ -391,7 +421,8 @@ void FlashController::execute(FlashRequest request,
                                       repeat_count),
                  "Flash cycle " + std::to_string(active_cycle) + "/" +
                      std::to_string(repeat_count),
-                 "INFO", "Complete workflow started");
+                 "INFO", "Complete workflow started",
+                 FlashStage::cycle_overview, active_cycle);
 
       FlashWorkflowCallbacks workflow_callbacks;
       workflow_callbacks.log = [&](const std::string& line) {
@@ -400,7 +431,8 @@ void FlashController::execute(FlashRequest request,
                                    : "[" + cycle_tag + "] " + line;
         if (callbacks.onLog) callbacks.onLog(decorated);
         report.add_transcript(
-            {{}, transcript_type(line), transcript_verdict(line), decorated});
+            {{}, transcript_type(line), transcript_verdict(line), decorated,
+             FlashStage::unspecified, active_cycle});
       };
       workflow_callbacks.progress = [&](int percent,
                                         const std::string& line) {
@@ -424,8 +456,13 @@ void FlashController::execute(FlashRequest request,
               detail = "[" + cycle_tag + "] " + detail;
             }
             add_report(0, std::move(step), std::move(verdict),
-                       std::move(detail));
+                       std::move(detail), FlashStage::unspecified,
+                       active_cycle);
           };
+      workflow_callbacks.event = [&](FlashEvent event) {
+        if (event.cycle == 0) event.cycle = active_cycle;
+        report.add_event(std::move(event));
+      };
 
       try {
         workflow->run(job, workflow_callbacks, stop);
@@ -440,7 +477,8 @@ void FlashController::execute(FlashRequest request,
       add_report(static_cast<int>(active_cycle * 100U / repeat_count),
                  "Flash cycle " + std::to_string(active_cycle) + "/" +
                      std::to_string(repeat_count),
-                 "PASS", "Complete workflow passed");
+                 "PASS", "Complete workflow passed",
+                 FlashStage::cycle_overview, active_cycle);
       if (repeat_count > 1 && callbacks.onProgress) {
         callbacks.onProgress(
             static_cast<int>(active_cycle * 100U / repeat_count),
@@ -460,22 +498,28 @@ void FlashController::execute(FlashRequest request,
             : std::string{};
     if (result.cancelled) {
       add_report(0, "Download", "FAIL",
-                 cycle_prefix + "User requested abort: " + error.what());
+                 cycle_prefix + "User requested abort: " + error.what(),
+                 FlashStage::cycle_overview, active_cycle);
       report.add_transcript(
           {{}, "Controller", "FAIL",
-           cycle_prefix + "User requested abort: " + error.what()});
+           cycle_prefix + "User requested abort: " + error.what(),
+           FlashStage::cycle_overview, active_cycle});
       result.message = request.profile.name + L" 刷写已中断：" +
                        widen_utf8(cycle_prefix + error.what());
     } else {
-      add_report(0, "Download", "FAIL", cycle_prefix + error.what());
+      add_report(0, "Download", "FAIL", cycle_prefix + error.what(),
+                 FlashStage::cycle_overview, active_cycle);
       report.add_transcript(
-          {{}, "Controller", "FAIL", cycle_prefix + error.what()});
+          {{}, "Controller", "FAIL", cycle_prefix + error.what(),
+           FlashStage::cycle_overview, active_cycle});
       result.message = request.profile.name + L" 刷写失败：" +
                        widen_utf8(cycle_prefix + error.what());
     }
   } catch (...) {
-    add_report(0, "Download", "FAIL", "unknown exception");
-    report.add_transcript({{}, "Controller", "FAIL", "unknown exception"});
+    add_report(0, "Download", "FAIL", "unknown exception",
+               FlashStage::cycle_overview, active_cycle);
+    report.add_transcript({{}, "Controller", "FAIL", "unknown exception",
+                           FlashStage::cycle_overview, active_cycle});
     result.cancelled = stop.stop_requested();
     result.message = request.profile.name +
                      (result.cancelled ? L" 刷写已中断：unknown exception"
@@ -491,7 +535,7 @@ void FlashController::execute(FlashRequest request,
                       widen_utf8(error.what());
   }
 
-  state_.finish();
+  state_.finish(operation_id);
   if (callbacks.onFinished) {
     try {
       callbacks.onFinished(std::move(result));

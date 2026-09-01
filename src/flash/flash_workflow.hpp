@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/flash_event.hpp"
 #include "core/profile.hpp"
 #include "drivers/can/can_bus_provider.hpp"
 
@@ -34,6 +35,9 @@ struct FlashWorkflowCallbacks {
   std::function<void(const std::string&)> log;
   std::function<void(int, const std::string&)> progress;
   std::function<void(std::string, std::string, std::string)> report;
+  // Optional structured report channel. Existing workflows and integrations
+  // may keep using report; migrated workflows prefer event when it is set.
+  std::function<void(FlashEvent)> event;
 };
 
 class FlashWorkflow {

@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <condition_variable>
 #include <deque>
+#include <exception>
 #include <mutex>
 #include <stdexcept>
 #include <thread>
@@ -26,6 +27,7 @@ struct Subscriber {
   std::mutex mutex;
   std::condition_variable condition;
   std::deque<CanFrame> frames;
+  std::exception_ptr receive_failure;
   bool open{};
 };
 
@@ -37,11 +39,14 @@ public:
   ~SharedChannel() { stop(); }
 
   std::shared_ptr<Subscriber> subscribe() {
-    std::scoped_lock lock(mutex_);
+    std::scoped_lock lifecycle_lock(lifecycle_mutex_);
     ensureStartedLocked();
     auto subscriber = std::make_shared<Subscriber>();
     subscriber->open = true;
-    subscribers_.push_back(subscriber);
+    {
+      std::scoped_lock lock(mutex_);
+      subscribers_.push_back(subscriber);
+    }
     return subscriber;
   }
 
@@ -53,6 +58,7 @@ public:
       subscriber->frames.clear();
     }
     subscriber->condition.notify_all();
+    std::scoped_lock lifecycle_lock(lifecycle_mutex_);
     bool stop_channel{};
     {
       std::scoped_lock lock(mutex_);
@@ -65,13 +71,14 @@ public:
           subscribers_.end());
       stop_channel = subscribers_.empty();
     }
-    if (stop_channel) stop();
+    if (stop_channel) stopLocked();
   }
 
   void send(const CanFrame& frame) {
     std::scoped_lock tx_lock(transmit_mutex_);
+    std::scoped_lock lifecycle_lock(lifecycle_mutex_);
     try {
-      ensureStarted();
+      ensureStartedLocked();
       bus_->send(frame);
     } catch (const CanAdapterException& error) {
       if (error.error().code !=
@@ -83,8 +90,8 @@ public:
       // controller is not reused forever.  The adapter confirmed zero frames,
       // therefore retrying this one frame once cannot duplicate a successful
       // transmission.  Never repeat an uncertain or partially sent batch.
-      stop();
-      ensureStarted();
+      stopLocked();
+      ensureStartedLocked();
       bus_->send(frame);
     }
     publishTransmitted(frame);
@@ -93,8 +100,9 @@ public:
   void sendBatch(std::span<const CanFrame> frames) {
     if (frames.empty()) return;
     std::scoped_lock tx_lock(transmit_mutex_);
+    std::scoped_lock lifecycle_lock(lifecycle_mutex_);
     try {
-      ensureStarted();
+      ensureStartedLocked();
       if (bus_->supports_batch_transmit()) bus_->send_batch(frames);
       else for (const auto& frame : frames) bus_->send(frame);
     } catch (const CanAdapterException& error) {
@@ -103,7 +111,7 @@ public:
         // The failing position of a multi-frame transfer is not a safe retry
         // boundary.  Reset for the next explicit operation, then preserve the
         // failure for the workflow/report instead of replaying the batch.
-        stop();
+        stopLocked();
       }
       throw;
     }
@@ -111,37 +119,58 @@ public:
   }
 
   bool supportsBatchTransmit() {
-    ensureStarted();
-    std::scoped_lock lock(mutex_);
+    std::scoped_lock lifecycle_lock(lifecycle_mutex_);
+    ensureStartedLocked();
     return bus_ && bus_->supports_batch_transmit();
   }
 
   bool isOpen() const noexcept {
+    std::scoped_lock lifecycle_lock(lifecycle_mutex_);
     std::scoped_lock lock(mutex_);
-    return bus_ && bus_->is_open();
+    return !receive_failure_ && bus_ && bus_->is_open();
   }
 
-private:
-  void ensureStarted() {
-    std::scoped_lock lock(mutex_);
+  void prepareReceive() {
+    std::scoped_lock lifecycle_lock(lifecycle_mutex_);
     ensureStartedLocked();
   }
 
+private:
   void ensureStartedLocked() {
-    if (bus_ && bus_->is_open()) return;
+    bool receive_failed{};
+    {
+      std::scoped_lock lock(mutex_);
+      receive_failed = static_cast<bool>(receive_failure_);
+    }
+    if (receive_failed) {
+      // The reader has already exited. Join it and recreate the vendor channel
+      // before accepting another receive or transmit operation.
+      stopLocked();
+    }
+    if (bus_ && bus_->is_open() && reader_.joinable()) return;
     if (!inner_) throw std::runtime_error("shared CAN provider has no inner provider");
     bus_ = inner_->create(config_);
     if (!bus_) throw std::runtime_error("inner CAN provider returned null");
     bus_->open();
+    {
+      std::scoped_lock lock(mutex_);
+      receive_failure_ = nullptr;
+    }
     reader_ = std::jthread([this](std::stop_token stop) { receiveLoop(stop); });
   }
 
   void stop() noexcept {
+    std::scoped_lock lifecycle_lock(lifecycle_mutex_);
+    stopLocked();
+  }
+
+  // lifecycle_mutex_ must be held. Do not hold mutex_ while joining because
+  // the reader may be finishing a publish operation that needs mutex_.
+  void stopLocked() noexcept {
     if (reader_.joinable()) {
       reader_.request_stop();
       reader_.join();
     }
-    std::scoped_lock lock(mutex_);
     if (bus_) bus_->close();
     bus_.reset();
   }
@@ -153,7 +182,7 @@ private:
         if (!frame) continue;
         publish(*frame);
       } catch (...) {
-        // The next send/receive reports adapter errors through its own path.
+        if (!stop.stop_requested()) publishReceiveFailure(std::current_exception());
         return;
       }
     }
@@ -162,6 +191,30 @@ private:
   void publishTransmitted(CanFrame frame) {
     frame.transmitted = true;
     publish(frame);
+  }
+
+  void publishReceiveFailure(std::exception_ptr failure) noexcept {
+    std::vector<std::shared_ptr<Subscriber>> targets;
+    {
+      std::scoped_lock lock(mutex_);
+      receive_failure_ = failure;
+      for (auto iterator = subscribers_.begin(); iterator != subscribers_.end();) {
+        if (auto subscriber = iterator->lock()) {
+          targets.push_back(std::move(subscriber));
+          ++iterator;
+        } else {
+          iterator = subscribers_.erase(iterator);
+        }
+      }
+    }
+    for (const auto& subscriber : targets) {
+      {
+        std::scoped_lock lock(subscriber->mutex);
+        if (!subscriber->open) continue;
+        subscriber->receive_failure = failure;
+      }
+      subscriber->condition.notify_all();
+    }
   }
 
   void publish(const CanFrame& frame) {
@@ -191,10 +244,12 @@ private:
 
   std::shared_ptr<ICanBusProvider> inner_;
   CanChannelConfig config_;
+  mutable std::mutex lifecycle_mutex_;
   mutable std::mutex mutex_;
   std::mutex transmit_mutex_;
   std::unique_ptr<ICanBus> bus_;
   std::jthread reader_;
+  std::exception_ptr receive_failure_;
   std::vector<std::weak_ptr<Subscriber>> subscribers_;
 };
 
@@ -220,10 +275,18 @@ public:
   void send_batch(std::span<const CanFrame> frames) override { open(); channel_->sendBatch(frames); }
   std::optional<CanFrame> receive(std::chrono::milliseconds timeout) override {
     open();
+    channel_->prepareReceive();
     std::unique_lock lock(subscriber_->mutex);
     if (!subscriber_->condition.wait_for(lock, timeout, [this] {
-          return !subscriber_->frames.empty() || !subscriber_->open;
+          return !subscriber_->frames.empty() || subscriber_->receive_failure ||
+                 !subscriber_->open;
         })) return std::nullopt;
+    if (subscriber_->receive_failure) {
+      const auto failure = subscriber_->receive_failure;
+      subscriber_->receive_failure = nullptr;
+      lock.unlock();
+      std::rethrow_exception(failure);
+    }
     if (subscriber_->frames.empty()) return std::nullopt;
     auto frame = std::move(subscriber_->frames.front());
     subscriber_->frames.pop_front();

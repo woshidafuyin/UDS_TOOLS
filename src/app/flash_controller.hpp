@@ -26,7 +26,8 @@ public:
   FlashController(const FlashController&) = delete;
   FlashController& operator=(const FlashController&) = delete;
 
-  bool start(FlashRequest request, OperationCallbacks callbacks);
+  bool start(FlashRequest request, OperationCallbacks callbacks,
+             OperationId* started_id = nullptr);
   bool request_stop();
   void wait();
 
@@ -34,7 +35,7 @@ public:
 
 private:
   void execute(FlashRequest request, OperationCallbacks callbacks,
-               std::stop_token stop);
+               std::stop_token stop, OperationId operation_id);
 
   OperationState& state_;
   WorkflowFactory workflow_factory_;

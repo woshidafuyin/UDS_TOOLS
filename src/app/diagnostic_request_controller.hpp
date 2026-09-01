@@ -16,7 +16,8 @@ public:
       OperationState& state,
       DiagnosticRequestService service = DiagnosticRequestService{});
   ~DiagnosticRequestController();
-  bool start(DiagnosticRequest request, Finished finished);
+  bool start(DiagnosticRequest request, Finished finished,
+             OperationId* started_id = nullptr);
   bool request_stop();
   void wait();
 

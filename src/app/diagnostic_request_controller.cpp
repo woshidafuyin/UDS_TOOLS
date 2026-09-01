@@ -12,15 +12,20 @@ DiagnosticRequestController::~DiagnosticRequestController() {
 }
 
 bool DiagnosticRequestController::start(DiagnosticRequest request,
-                                        Finished finished) {
+                                        Finished finished,
+                                        OperationId* started_id) {
   std::scoped_lock lock(mutex_);
-  if (!state_.try_start(OperationKind::diagnostic_request)) return false;
+  OperationId operation_id{};
+  if (!state_.try_start(OperationKind::diagnostic_request, &operation_id))
+    return false;
+  if (started_id) *started_id = operation_id;
   if (worker_.joinable()) worker_.join();
   worker_ = std::jthread(
-      [this, request = std::move(request), finished = std::move(finished)](
+      [this, request = std::move(request), finished = std::move(finished),
+       operation_id](
           std::stop_token stop) mutable {
         auto result = service_.run(request, stop);
-        state_.finish();
+        state_.finish(operation_id);
         if (finished) finished(std::move(result));
       });
   return true;

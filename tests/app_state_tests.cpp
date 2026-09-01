@@ -20,6 +20,7 @@
 #include <future>
 #include <iostream>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -98,13 +99,15 @@ void test_chuneng_ft_entry_configuration() {
 
 void test_operation_state_transitions() {
   uds::app::OperationState state;
+  uds::app::OperationId operation_id{};
   auto value = state.snapshot();
   check(value.kind == uds::app::OperationKind::none &&
             value.phase == uds::app::OperationPhase::idle,
         "operation state did not start idle");
   check(!state.try_start(uds::app::OperationKind::none),
         "operation state accepted an empty operation");
-  check(state.try_start(uds::app::OperationKind::flash),
+  check(state.try_start(uds::app::OperationKind::flash, &operation_id) &&
+            operation_id != 0,
         "operation state rejected the first operation");
   check(!state.try_start(uds::app::OperationKind::probe),
         "operation state allowed concurrent operations");
@@ -116,7 +119,8 @@ void test_operation_state_transitions() {
             value.phase == uds::app::OperationPhase::stopping,
         "operation state stopping snapshot mismatch");
   check(state.request_stop(), "operation state stop was not idempotent");
-  state.finish();
+  check(state.finish(operation_id),
+        "operation state rejected the matching completion token");
   check(!state.is_active() && !state.request_stop(),
         "operation state did not return to idle");
 }
@@ -132,7 +136,47 @@ void test_operation_state_concurrent_start() {
   }
   for (auto& worker : workers) worker.join();
   check(accepted == 1, "operation state accepted multiple concurrent starts");
-  state.finish();
+  check(state.finish(state.snapshot().id),
+        "operation state rejected concurrent-start winner completion");
+}
+
+void test_operation_state_rejects_stale_completion() {
+  uds::app::OperationState state;
+  uds::app::OperationId first{};
+  uds::app::OperationId second{};
+  check(state.try_start(uds::app::OperationKind::probe, &first) && first != 0,
+        "operation state did not issue the first operation ID");
+  check(state.finish(first), "first operation did not finish");
+  check(state.try_start(uds::app::OperationKind::probe, &second) &&
+            second != 0 && second != first,
+        "operation state did not issue a distinct second operation ID");
+  check(!state.finish(0), "operation state accepted the reserved zero ID");
+  check(!state.finish(first),
+        "stale completion was allowed to finish the next operation");
+  const auto active = state.snapshot();
+  check(active.kind == uds::app::OperationKind::probe &&
+            active.phase == uds::app::OperationPhase::running &&
+            active.id == second,
+        "stale completion corrupted the active operation snapshot");
+  check(state.is_latest(second) && !state.is_latest(first) &&
+            !state.is_latest(0),
+        "operation state latest-ID predicate is incorrect");
+  check(state.finish(second), "second operation did not finish");
+}
+
+void test_operation_state_id_wrap_skips_reserved_zero() {
+  uds::app::OperationState state(
+      std::numeric_limits<uds::app::OperationId>::max() - 1);
+  uds::app::OperationId maximum{};
+  uds::app::OperationId wrapped{};
+  check(state.try_start(uds::app::OperationKind::flash, &maximum) &&
+            maximum == std::numeric_limits<uds::app::OperationId>::max(),
+        "operation ID did not reach the maximum boundary");
+  check(state.finish(maximum), "maximum operation ID did not finish");
+  check(state.try_start(uds::app::OperationKind::version_check, &wrapped) &&
+            wrapped == 1,
+        "operation ID wrap did not skip the reserved zero value");
+  check(state.finish(wrapped), "wrapped operation ID did not finish");
 }
 
 void test_operation_callbacks() {
@@ -182,8 +226,15 @@ public:
     ++capture_->run_count;
     if (callbacks.log) callbacks.log("fake log");
     if (callbacks.progress) callbacks.progress(25, "fake progress");
-    if (callbacks.report)
+    if (callbacks.event) {
+      callbacks.event({{}, 0, uds::FlashStage::app_transfer,
+                       static_cast<std::uint8_t>(0x36),
+                       uds::FlashImageRole::app,
+                       "27 SecurityAccess misleading event", "PASS",
+                       "STRUCTURED_FLASH_EVENT"});
+    } else if (callbacks.report) {
       callbacks.report("Fake", "INFO", "fake report row");
+    }
     if (behavior_ == Behavior::failure)
       throw std::runtime_error("synthetic workflow failure");
     if (behavior_ == Behavior::wait_for_stop) {
@@ -335,6 +386,25 @@ void test_flash_controller_success() {
                 report_text,
                 std::regex(R"(<td>\d{2}:\d{2}:\d{2}\.\d{3}</td>)")),
         "flash report is missing the top result/time summary or exposes C++");
+  const auto app_transfer_anchor =
+      report_text.find("id='cycle-1-app-transfer'");
+  const auto security_anchor =
+      report_text.find("id='cycle-1-security-access'");
+  const auto app_transfer_heading_end =
+      report_text.find("</h5>", app_transfer_anchor);
+  const auto security_heading_end =
+      report_text.find("</h4>", security_anchor);
+  check(app_transfer_anchor != std::string::npos &&
+            app_transfer_heading_end != std::string::npos &&
+            report_text.substr(app_transfer_anchor,
+                               app_transfer_heading_end - app_transfer_anchor)
+                    .find("status PASS") != std::string::npos &&
+            security_anchor != std::string::npos &&
+            security_heading_end != std::string::npos &&
+            report_text.substr(security_anchor,
+                               security_heading_end - security_anchor)
+                    .find("status NOT_RUN") != std::string::npos,
+        "FlashController did not route the structured FlashEvent by stage");
   std::size_t html_count{};
   for (const auto& entry :
        std::filesystem::directory_iterator(directory / "logs" / "reports")) {
@@ -1751,6 +1821,8 @@ int main() {
     test_chuneng_ft_entry_configuration();
     test_operation_state_transitions();
     test_operation_state_concurrent_start();
+    test_operation_state_rejects_stale_completion();
+    test_operation_state_id_wrap_skips_reserved_zero();
     test_operation_callbacks();
     test_flash_controller_success();
     test_flash_controller_exception_conversion();

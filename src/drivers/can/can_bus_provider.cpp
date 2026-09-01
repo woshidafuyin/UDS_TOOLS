@@ -4,6 +4,7 @@
 #include "drivers/can/can_bus_session.hpp"
 #include "drivers/can/shared_can_bus_provider.hpp"
 
+#include <array>
 #include <atomic>
 #include <utility>
 
@@ -16,9 +17,25 @@ class SelectedCanBusProvider final : public ICanBusProvider {
 public:
   [[nodiscard]] std::unique_ptr<ICanBus> create(
       CanChannelConfig config) const override {
-    return std::make_unique<CanBusSession>(
-        CanAdapterFactory::create(selected_vendor.load(std::memory_order_relaxed)),
-        std::move(config));
+    const auto vendor = selected_vendor.load(std::memory_order_relaxed);
+    return provider(vendor)->create(std::move(config));
+  }
+
+private:
+  static const std::shared_ptr<ICanBusProvider>& provider(CanVendor vendor) {
+    static const std::array<std::shared_ptr<ICanBusProvider>, 5> providers{
+        std::make_shared<SharedCanBusProvider>(
+            std::make_shared<DefaultCanBusProvider>(CanVendor::Vector)),
+        std::make_shared<SharedCanBusProvider>(
+            std::make_shared<DefaultCanBusProvider>(CanVendor::Zlg)),
+        std::make_shared<SharedCanBusProvider>(
+            std::make_shared<DefaultCanBusProvider>(CanVendor::Tosun)),
+        std::make_shared<SharedCanBusProvider>(
+            std::make_shared<DefaultCanBusProvider>(CanVendor::Kvaser)),
+        std::make_shared<SharedCanBusProvider>(
+            std::make_shared<DefaultCanBusProvider>(CanVendor::Other)),
+    };
+    return providers.at(static_cast<std::size_t>(vendor));
   }
 };
 
@@ -31,8 +48,7 @@ std::unique_ptr<ICanBus> DefaultCanBusProvider::create(
 }
 
 std::shared_ptr<ICanBusProvider> default_can_bus_provider() {
-  static const auto provider = std::make_shared<SharedCanBusProvider>(
-      std::make_shared<SelectedCanBusProvider>());
+  static const auto provider = std::make_shared<SelectedCanBusProvider>();
   return provider;
 }
 

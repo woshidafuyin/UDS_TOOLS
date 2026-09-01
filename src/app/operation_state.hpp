@@ -1,11 +1,14 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <mutex>
 #include <string>
 
 namespace uds::app {
+
+using OperationId = std::uint64_t;
 
 enum class OperationKind {
   none,
@@ -24,6 +27,7 @@ enum class OperationPhase {
 struct OperationSnapshot {
   OperationKind kind{OperationKind::none};
   OperationPhase phase{OperationPhase::idle};
+  OperationId id{};
 };
 
 struct OperationResult {
@@ -45,18 +49,22 @@ struct OperationCallbacks {
 // hardware operations from running concurrently without a UI dependency.
 class OperationState {
 public:
-  bool try_start(OperationKind kind);
+  explicit OperationState(OperationId initial_id = 0) : latest_id_(initial_id) {}
+
+  bool try_start(OperationKind kind, OperationId* started_id = nullptr);
   bool request_stop();
-  void finish();
+  bool finish(OperationId id);
 
   [[nodiscard]] OperationSnapshot snapshot() const;
   [[nodiscard]] bool is_active() const;
   [[nodiscard]] bool is_running() const;
+  [[nodiscard]] bool is_latest(OperationId id) const;
 
 private:
   mutable std::mutex mutex_;
   OperationKind kind_{OperationKind::none};
   OperationPhase phase_{OperationPhase::idle};
+  OperationId latest_id_{};
 };
 
 } // namespace uds::app

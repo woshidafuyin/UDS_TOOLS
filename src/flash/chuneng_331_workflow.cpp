@@ -15,6 +15,7 @@
 #include <cwctype>
 #include <filesystem>
 #include <iomanip>
+#include <optional>
 #include <span>
 #include <sstream>
 #include <stdexcept>
@@ -25,8 +26,16 @@ namespace {
 using namespace std::chrono_literals;
 
 void record(const FlashWorkflowCallbacks& callbacks, int percent, std::string step,
-            std::string verdict, std::string detail) {
+            std::string verdict, std::string detail,
+            FlashStage stage = FlashStage::unspecified,
+            std::optional<std::uint8_t> uds_service = {},
+            FlashImageRole image_role = FlashImageRole::none) {
   static_cast<void>(percent);
+  if (stage != FlashStage::unspecified && callbacks.event) {
+    callbacks.event({{}, 0, stage, uds_service, image_role, std::move(step),
+                     std::move(verdict), std::move(detail)});
+    return;
+  }
   if (callbacks.report) {
     callbacks.report(std::move(step), std::move(verdict), std::move(detail));
   }
@@ -161,7 +170,9 @@ void ChunengArc331Workflow::run(const FlashJob& job,
         "256-byte 0202 "
         "verification, and LP 6000/6001 certificate routines are not used");
   }
-  record(callbacks, 0, "Preflight", "INFO", "Loading and validating Driver/APP/verification files");
+  record(callbacks, 0, "Preflight", "INFO",
+         "Loading and validating Driver/APP/verification files",
+         FlashStage::pre_flash_check);
   log(callbacks, "预检查：加载并校验刷写文件……");
 
   Chuneng331Images images;
@@ -196,7 +207,8 @@ void ChunengArc331Workflow::run(const FlashJob& job,
     log(callbacks, "Driver CBF identity: " + identity);
     record(callbacks, 0, "Driver CBF", "PASS",
            identity + "; main and ABT extracted and integrity-checked; "
-           "transfer address=0x00000000; 256-byte dev_signature extracted");
+           "transfer address=0x00000000; 256-byte dev_signature extracted",
+           FlashStage::configuration, {}, FlashImageRole::driver);
   } else {
     if (job.driver_verify_file.empty() || job.app_verify_file.empty()) {
       throw std::runtime_error(
@@ -221,7 +233,8 @@ void ChunengArc331Workflow::run(const FlashJob& job,
     record(callbacks, 0, "Driver S-record", "PASS",
            "source=" + hex_u32(driver_abt.source_address) +
                "/0x4000; transfer=0x00000000; ABT SHA-256 matched; "
-               "256-byte verification data loaded");
+               "256-byte verification data loaded",
+           FlashStage::configuration, {}, FlashImageRole::driver);
   }
 
   if (cbf_pair) {
@@ -242,7 +255,8 @@ void ChunengArc331Workflow::run(const FlashJob& job,
     log(callbacks, "APP CBF identity: " + identity);
     record(callbacks, 0, "APP CBF", "PASS",
            identity + "; main and ABT extracted and integrity-checked; "
-           "source equals transfer window; 256-byte dev_signature extracted");
+           "source equals transfer window; 256-byte dev_signature extracted",
+           FlashStage::configuration, {}, FlashImageRole::app);
   } else {
     const auto app_verification_path = resolve(job.app_verify_file);
     const auto app_abt_path =
@@ -258,7 +272,8 @@ void ChunengArc331Workflow::run(const FlashJob& job,
     record(callbacks, 0, "APP S-record", "PASS",
            "source=" + hex_u32(app_abt.source_address) +
                "/0x180000; ABT SHA-256 matched; 256-byte verification "
-               "data loaded");
+               "data loaded",
+           FlashStage::configuration, {}, FlashImageRole::app);
   }
   log(callbacks,
       std::string("ChuNeng ARC331 paired input preflight passed: mode=") +
@@ -268,18 +283,20 @@ void ChunengArc331Workflow::run(const FlashJob& job,
           "machine");
   record(callbacks, 0, "Preflight", "PASS",
          "Files validated: Driver=0x4000+ABT, APP=0x180000+ABT, "
-         "verification=256+256");
+         "verification=256+256", FlashStage::pre_flash_check);
   if (stop.stop_requested()) throw std::runtime_error("operation cancelled by user");
 
   if (job.profile.power_control) {
     log(callbacks, "上电：写 CANoe IO::VN1600_1::DOUT=1");
     const auto power = set_canoe_dout(1);
     record(callbacks, 0, "PowerOn", "PASS",
-           "IO::VN1600_1::DOUT=" + std::to_string(power.value));
+           "IO::VN1600_1::DOUT=" + std::to_string(power.value),
+           FlashStage::pre_flash_check);
     std::this_thread::sleep_for(std::chrono::seconds(1));
   } else {
     log(callbacks, "供电：保持台架现有外部供电状态");
-    record(callbacks, 0, "Power", "INFO", "External power unchanged");
+    record(callbacks, 0, "Power", "INFO", "External power unchanged",
+           FlashStage::pre_flash_check);
   }
 
   if (!job.can_bus_provider) {
@@ -337,7 +354,8 @@ void ChunengArc331Workflow::run(const FlashJob& job,
     }, keygen);
   flow.run(images, job.entry_mode, stop);
   record(callbacks, 100, "Download", "PASS",
-         "Q/CN A201-2025 compliant ChuNeng ARC331 sequence completed");
+         "Q/CN A201-2025 compliant ChuNeng ARC331 sequence completed",
+         FlashStage::cycle_overview);
 }
 
 } // namespace uds

@@ -103,6 +103,47 @@ private:
   bool opened_{};
 };
 
+struct GenerationProbeCapture {
+  std::atomic_int created{};
+  std::atomic_int destroyed{};
+};
+
+class GenerationProbeBus final : public uds::ICanBus {
+public:
+  GenerationProbeBus(std::shared_ptr<GenerationProbeCapture> capture,
+                     std::uint32_t response_id)
+      : capture_(std::move(capture)), response_id_(response_id) {
+    ++capture_->created;
+  }
+  ~GenerationProbeBus() override { ++capture_->destroyed; }
+
+  void open() override { open_ = true; }
+  void close() noexcept override { open_ = false; }
+  bool is_open() const noexcept override { return open_; }
+  void send(const uds::CanFrame& frame) override {
+    subfunction_ = frame.data.size() > 2 ? frame.data[2] : 0;
+  }
+  std::optional<uds::CanFrame> receive(
+      std::chrono::milliseconds timeout) override {
+    if (!response_sent_) {
+      response_sent_ = true;
+      return uds::CanFrame{response_id_,
+                           {0x02, 0x50, subfunction_, 0, 0, 0, 0, 0},
+                           false, false, false};
+    }
+    std::this_thread::sleep_for(
+        std::min(timeout, std::chrono::milliseconds(2)));
+    return std::nullopt;
+  }
+
+private:
+  std::shared_ptr<GenerationProbeCapture> capture_;
+  std::uint32_t response_id_{};
+  std::uint8_t subfunction_{};
+  bool response_sent_{};
+  bool open_{};
+};
+
 uds::FlashProfileRecord makeProfile() {
   uds::FlashProfile profile;
   profile.id = L"qt_probe_test";
@@ -188,11 +229,70 @@ uds::FlashProfileRecord makeC857Profile(
   return record;
 }
 
+void test_stale_queued_callbacks_do_not_pollute_next_operation(
+    QCoreApplication& application) {
+  auto capture = std::make_shared<GenerationProbeCapture>();
+  uds::app::ProbeService service(
+      [capture](const uds::app::ProbeRequest& request) {
+        return std::make_unique<GenerationProbeBus>(capture, request.rx_id);
+      });
+  std::vector<uds::FlashProfileRecord> profiles;
+  profiles.push_back(makeProfile());
+  auto flash_capture = std::make_shared<FlashCapture>();
+  uds::ui::qt::ControllerBridge bridge(
+      std::move(profiles), std::move(service),
+      [flash_capture](std::wstring_view) {
+        return std::make_unique<FakeFlashWorkflow>(flash_capture);
+      });
+
+  int finished_count{};
+  int stopped_count{};
+  QObject::connect(
+      &bridge, &uds::ui::qt::ControllerBridge::probeFinished, &application,
+      [&](bool, bool, const QString&) { ++finished_count; });
+  QObject::connect(
+      &bridge, &uds::ui::qt::ControllerBridge::probeRunningChanged,
+      &application,
+      [&](bool running) {
+        if (!running) ++stopped_count;
+      });
+
+  const auto wait_for_destroyed = [&](int expected) {
+    const auto deadline = std::chrono::steady_clock::now() +
+                          std::chrono::seconds(2);
+    while (capture->destroyed.load() < expected &&
+           std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    check(capture->destroyed.load() >= expected,
+          "generation probe worker did not finish before timeout");
+    // The bus is destroyed immediately before ProbeService returns. Give the
+    // controller worker time to finish its matching Operation ID, but do not
+    // process the queued Qt callback yet.
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  };
+
+  bridge.startProbe(0, {}, QStringLiteral("app"), 2, 0x702, 0x762);
+  wait_for_destroyed(1);
+  bridge.startProbe(0, {}, QStringLiteral("app"), 2, 0x702, 0x762);
+  wait_for_destroyed(2);
+
+  for (int count = 0; count < 10; ++count) {
+    application.processEvents();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  check(capture->created.load() == 2,
+        "second generation probe did not start");
+  check(finished_count == 1 && stopped_count == 1,
+        "stale queued completion changed the next operation UI state");
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
   try {
     QCoreApplication application(argc, argv);
+    test_stale_queued_callbacks_do_not_pollute_next_operation(application);
     auto capture = std::make_shared<BusCapture>();
     auto flash_capture = std::make_shared<FlashCapture>();
     uds::app::ProbeService service(

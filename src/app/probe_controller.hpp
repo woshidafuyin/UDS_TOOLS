@@ -26,7 +26,8 @@ public:
   ProbeController(const ProbeController&) = delete;
   ProbeController& operator=(const ProbeController&) = delete;
 
-  bool start(ProbeRequest request, ProbeControllerCallbacks callbacks);
+  bool start(ProbeRequest request, ProbeControllerCallbacks callbacks,
+             OperationId* started_id = nullptr);
   bool request_stop();
   void wait();
 
@@ -34,7 +35,7 @@ public:
 
 private:
   void execute(ProbeRequest request, ProbeControllerCallbacks callbacks,
-               std::stop_token stop);
+               std::stop_token stop, OperationId operation_id);
 
   OperationState& state_;
   ProbeService service_;

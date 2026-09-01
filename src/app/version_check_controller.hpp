@@ -26,7 +26,8 @@ public:
   VersionCheckController& operator=(const VersionCheckController&) = delete;
 
   bool start(VersionCheckRequest request,
-             VersionCheckControllerCallbacks callbacks);
+             VersionCheckControllerCallbacks callbacks,
+             OperationId* started_id = nullptr);
   bool request_stop();
   void wait();
   [[nodiscard]] bool is_active() const;
@@ -34,7 +35,7 @@ public:
 private:
   void execute(VersionCheckRequest request,
                VersionCheckControllerCallbacks callbacks,
-               std::stop_token stop);
+               std::stop_token stop, OperationId operation_id);
 
   OperationState& state_;
   VersionCheckService service_;

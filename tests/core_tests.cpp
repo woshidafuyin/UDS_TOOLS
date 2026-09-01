@@ -276,6 +276,11 @@ void test_html_report_navigation_and_transfer_aggregation() {
   report.add({at(35), "ASC + BLF Trace cycle 2/2", "INFO",
               "Cycle 2/2 raw ASC PASS: " + asc2.string() +
                   "; raw BLF PASS: " + blf2.string()});
+  report.add_event({at(36), 2, uds::FlashStage::app_transfer,
+                    static_cast<std::uint8_t>(0x36),
+                    uds::FlashImageRole::app,
+                    "27 SecurityAccess misleading text", "WARN",
+                    "STRUCTURED_STAGE_OVERRIDES_TEXT"});
 
   report.add_transcript({at(10), "Workflow", "INFO",
                          "[第1/2次] 36 APP block 1/2"});
@@ -325,6 +330,21 @@ void test_html_report_navigation_and_transfer_aggregation() {
             html.find("<script") == std::string::npos &&
             html.find("cdn") == std::string::npos,
         "HTML report details are not offline-safe or default-collapsed");
+  const auto structured_anchor = html.find("id='cycle-2-app-transfer'");
+  const auto structured_heading_end = html.find("</h5>", structured_anchor);
+  const auto misleading_anchor = html.find("id='cycle-2-security-access'");
+  const auto misleading_heading_end = html.find("</h4>", misleading_anchor);
+  check(structured_anchor != std::string::npos &&
+            structured_heading_end != std::string::npos &&
+            html.substr(structured_anchor,
+                        structured_heading_end - structured_anchor)
+                    .find("status WARN") != std::string::npos &&
+            misleading_anchor != std::string::npos &&
+            misleading_heading_end != std::string::npos &&
+            html.substr(misleading_anchor,
+                        misleading_heading_end - misleading_anchor)
+                    .find("status NOT_RUN") != std::string::npos,
+        "structured report stage did not override misleading log text");
 
   std::set<std::string> ids;
   std::smatch match;

@@ -14,18 +14,22 @@ VersionCheckController::~VersionCheckController() {
 }
 
 bool VersionCheckController::start(
-    VersionCheckRequest request, VersionCheckControllerCallbacks callbacks) {
+    VersionCheckRequest request, VersionCheckControllerCallbacks callbacks,
+    OperationId* started_id) {
   std::scoped_lock lock(worker_mutex_);
-  if (!state_.try_start(OperationKind::version_check)) return false;
+  OperationId operation_id{};
+  if (!state_.try_start(OperationKind::version_check, &operation_id))
+    return false;
+  if (started_id) *started_id = operation_id;
   try {
     if (worker_.joinable()) worker_.join();
     worker_ = std::jthread(
         [this, request = std::move(request),
-         callbacks = std::move(callbacks)](std::stop_token stop) mutable {
-          execute(std::move(request), std::move(callbacks), stop);
+         callbacks = std::move(callbacks), operation_id](std::stop_token stop) mutable {
+          execute(std::move(request), std::move(callbacks), stop, operation_id);
         });
   } catch (...) {
-    state_.finish();
+    state_.finish(operation_id);
     throw;
   }
   return true;
@@ -56,7 +60,7 @@ bool VersionCheckController::is_active() const {
 
 void VersionCheckController::execute(
     VersionCheckRequest request, VersionCheckControllerCallbacks callbacks,
-    std::stop_token stop) {
+    std::stop_token stop, OperationId operation_id) {
   VersionCheckCallbacks service_callbacks;
   service_callbacks.onLog = callbacks.onLog;
   service_callbacks.onProgress = callbacks.onProgress;
@@ -69,7 +73,7 @@ void VersionCheckController::execute(
                          ? "版本读取已停止"
                          : "ERROR：版本读取失败：unknown exception";
   }
-  state_.finish();
+  state_.finish(operation_id);
   if (callbacks.onFinished) {
     try {
       callbacks.onFinished(std::move(result));

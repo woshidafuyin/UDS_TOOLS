@@ -224,24 +224,27 @@ void ControllerBridge::startProbe(int profile_index, const QString& target_id,
       QCoreApplication::applicationDirPath().toStdWString(), profile.id,
       target_id.toStdWString(), L"probe");
 
+  const auto operation_id = std::make_shared<app::OperationId>();
   app::ProbeControllerCallbacks callbacks;
-  callbacks.onLog = [this](const std::string& line) {
+  callbacks.onLog = [this, operation_id](const std::string& line) {
     if (shutting_down_.load()) return;
     const auto message = fromUtf8(line);
     QMetaObject::invokeMethod(
         this,
-        [this, message] {
-          if (!shutting_down_.load()) emit logMessage(message);
+        [this, message, id = *operation_id] {
+          if (!shutting_down_.load() && operation_state_.is_latest(id))
+            emit logMessage(message);
         },
         Qt::QueuedConnection);
   };
-  callbacks.onProgress = [this](int percent, const std::string& line) {
+  callbacks.onProgress = [this, operation_id](int percent, const std::string& line) {
     if (shutting_down_.load()) return;
     const auto message = fromUtf8(line);
     QMetaObject::invokeMethod(
         this,
-        [this, percent, message] {
-          if (!shutting_down_.load()) emit progressChanged(percent, message);
+        [this, percent, message, id = *operation_id] {
+          if (!shutting_down_.load() && operation_state_.is_latest(id))
+            emit progressChanged(percent, message);
         },
         Qt::QueuedConnection);
   };
@@ -254,15 +257,16 @@ void ControllerBridge::startProbe(int profile_index, const QString& target_id,
       [this, audit_key, audit_backend, audit_entry_mode, channel, tx_id, rx_id,
        nominal_bitrate = request.nominal_bitrate,
        data_bitrate = request.data_bitrate,
-       audit_can_fd](app::ProbeResult result) {
+       audit_can_fd, operation_id](app::ProbeResult result) {
     if (shutting_down_.load()) return;
     const auto message = fromUtf8(result.message);
     QMetaObject::invokeMethod(
         this,
         [this, success = result.success, cancelled = result.cancelled,
          message, audit_key, audit_backend, audit_entry_mode, channel, tx_id,
-         rx_id, nominal_bitrate, data_bitrate, audit_can_fd] {
-          if (shutting_down_.load()) return;
+         rx_id, nominal_bitrate, data_bitrate, audit_can_fd,
+         id = *operation_id] {
+          if (shutting_down_.load() || !operation_state_.is_latest(id)) return;
           probe_audit_records_.insert(
               audit_key,
               {audit_backend, audit_entry_mode,
@@ -276,7 +280,8 @@ void ControllerBridge::startProbe(int profile_index, const QString& target_id,
   };
 
   try {
-    if (!probe_controller_.start(std::move(request), std::move(callbacks))) {
+    if (!probe_controller_.start(std::move(request), std::move(callbacks),
+                                 operation_id.get())) {
       emit probeFinished(false, false,
                          QStringLiteral("已有操作正在运行，不能启动在线探测。"));
       return;
@@ -406,28 +411,31 @@ void ControllerBridge::startFlash(
       request.executable_directory, profile.id, request.target_id,
       request.entry_mode);
 
+  const auto operation_id = std::make_shared<app::OperationId>();
   app::OperationCallbacks callbacks;
-  callbacks.onLog = [this](const std::string& line) {
+  callbacks.onLog = [this, operation_id](const std::string& line) {
     if (shutting_down_.load()) return;
     const auto message = fromUtf8(line);
     QMetaObject::invokeMethod(
         this,
-        [this, message] {
-          if (!shutting_down_.load()) emit logMessage(message);
+        [this, message, id = *operation_id] {
+          if (!shutting_down_.load() && operation_state_.is_latest(id))
+            emit logMessage(message);
         },
         Qt::QueuedConnection);
   };
-  callbacks.onProgress = [this](int percent, const std::string& line) {
+  callbacks.onProgress = [this, operation_id](int percent, const std::string& line) {
     if (shutting_down_.load()) return;
     const auto message = fromUtf8(line);
     QMetaObject::invokeMethod(
         this,
-        [this, percent, message] {
-          if (!shutting_down_.load()) emit progressChanged(percent, message);
+        [this, percent, message, id = *operation_id] {
+          if (!shutting_down_.load() && operation_state_.is_latest(id))
+            emit progressChanged(percent, message);
         },
         Qt::QueuedConnection);
   };
-  callbacks.onFinished = [this](app::OperationResult result) {
+  callbacks.onFinished = [this, operation_id](app::OperationResult result) {
     if (shutting_down_.load()) return;
     const auto message = fromWide(result.message);
     const auto report_path =
@@ -435,8 +443,8 @@ void ControllerBridge::startFlash(
     QMetaObject::invokeMethod(
         this,
         [this, success = result.success, cancelled = result.cancelled, message,
-         report_path] {
-          if (shutting_down_.load()) return;
+         report_path, id = *operation_id] {
+          if (shutting_down_.load() || !operation_state_.is_latest(id)) return;
           emit flashRunningChanged(false);
           emit flashFinished(success, cancelled, message, report_path);
         },
@@ -444,7 +452,8 @@ void ControllerBridge::startFlash(
   };
 
   try {
-    if (!flash_controller_.start(std::move(request), std::move(callbacks))) {
+    if (!flash_controller_.start(std::move(request), std::move(callbacks),
+                                 operation_id.get())) {
       emit flashFinished(false, false,
                          QStringLiteral("已有操作正在运行，不能启动刷写。"), {});
       return;
@@ -505,34 +514,37 @@ void ControllerBridge::startVersionCheck(int profile_index,
       QCoreApplication::applicationDirPath().toStdWString(), record.profile.id,
       request.target_id, L"version");
 
+  const auto operation_id = std::make_shared<app::OperationId>();
   app::VersionCheckControllerCallbacks callbacks;
-  callbacks.onLog = [this](const std::string& line) {
+  callbacks.onLog = [this, operation_id](const std::string& line) {
     if (shutting_down_.load()) return;
     const auto message = fromUtf8(line);
     QMetaObject::invokeMethod(
         this,
-        [this, message] {
-          if (!shutting_down_.load()) emit logMessage(message);
+        [this, message, id = *operation_id] {
+          if (!shutting_down_.load() && operation_state_.is_latest(id))
+            emit logMessage(message);
         },
         Qt::QueuedConnection);
   };
-  callbacks.onProgress = [this](int percent, const std::string& line) {
+  callbacks.onProgress = [this, operation_id](int percent, const std::string& line) {
     if (shutting_down_.load()) return;
     const auto message = fromUtf8(line);
     QMetaObject::invokeMethod(
         this,
-        [this, percent, message] {
-          if (!shutting_down_.load()) emit progressChanged(percent, message);
+        [this, percent, message, id = *operation_id] {
+          if (!shutting_down_.load() && operation_state_.is_latest(id))
+            emit progressChanged(percent, message);
         },
         Qt::QueuedConnection);
   };
-  callbacks.onFinished = [this](app::VersionCheckResult result) {
+  callbacks.onFinished = [this, operation_id](app::VersionCheckResult result) {
     if (shutting_down_.load()) return;
     const auto message = fromUtf8(result.message);
     QMetaObject::invokeMethod(
         this,
-        [this, result = std::move(result), message] {
-          if (shutting_down_.load()) return;
+        [this, result = std::move(result), message, id = *operation_id] {
+          if (shutting_down_.load() || !operation_state_.is_latest(id)) return;
           for (const auto& item : result.items) {
             emit versionCheckRow(
                 versionStatus(item.status), fromUtf8(item.request_hex),
@@ -547,7 +559,8 @@ void ControllerBridge::startVersionCheck(int profile_index,
 
   try {
     if (!version_check_controller_.start(std::move(request),
-                                         std::move(callbacks))) {
+                                         std::move(callbacks),
+                                         operation_id.get())) {
       emit versionCheckFinished(
           false, false,
           QStringLiteral("已有操作正在运行，不能启动版本读取。"));
@@ -591,13 +604,16 @@ void ControllerBridge::startDiagnosticRequest(
     request.trace_file = make_asc_trace_path(
         QCoreApplication::applicationDirPath().toStdWString(),
         request.profile.id, target_id.toStdWString(), L"diagnostic");
+    const auto operation_id = std::make_shared<app::OperationId>();
     if (!diagnostic_request_controller_.start(
-            std::move(request), [this](app::DiagnosticRequestResult result) {
+            std::move(request), [this, operation_id](app::DiagnosticRequestResult result) {
               if (shutting_down_.load()) return;
               QMetaObject::invokeMethod(
                   this,
-                  [this, result = std::move(result)] {
-                    if (shutting_down_.load()) return;
+                  [this, result = std::move(result), id = *operation_id] {
+                    if (shutting_down_.load() ||
+                        !operation_state_.is_latest(id))
+                      return;
                     emit diagnosticRunningChanged(false);
                     emit diagnosticFinished(
                         result.success, result.cancelled,
@@ -605,7 +621,7 @@ void ControllerBridge::startDiagnosticRequest(
                         fromUtf8(result.message), result.elapsed_ms, result.nrc);
                   },
                   Qt::QueuedConnection);
-            })) {
+            }, operation_id.get())) {
       emit diagnosticFinished(false, false, payload, {},
                               QStringLiteral("已有操作正在运行，不能发送诊断请求。"), 0, 0);
       return;

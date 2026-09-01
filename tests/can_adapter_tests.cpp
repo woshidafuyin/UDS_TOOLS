@@ -17,6 +17,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -318,6 +319,10 @@ struct SharedBusTrace {
   unsigned created{};
   unsigned closed{};
   bool fail_first_send_without_frames{};
+  bool fail_next_receive{};
+  bool block_receive{};
+  bool reader_waiting{};
+  bool release_receive{};
 };
 
 class SharedTestBus final : public uds::ICanBus {
@@ -343,6 +348,16 @@ public:
   }
   std::optional<uds::CanFrame> receive(std::chrono::milliseconds timeout) override {
     std::unique_lock lock(trace_->mutex);
+    if (trace_->block_receive && !trace_->release_receive) {
+      trace_->reader_waiting = true;
+      trace_->condition.notify_all();
+      trace_->condition.wait(lock,
+                             [this] { return trace_->release_receive; });
+    }
+    if (trace_->fail_next_receive) {
+      trace_->fail_next_receive = false;
+      throw std::runtime_error("fake CAN receive failure");
+    }
     trace_->condition.wait_for(lock, timeout,
                                [this] { return !trace_->incoming.empty(); });
     if (trace_->incoming.empty()) return std::nullopt;
@@ -423,6 +438,84 @@ void test_shared_provider_recovers_zero_frame_transmit_with_listener_alive() {
         "shared provider recovery duplicated or lost the retried frame");
 }
 
+void test_shared_provider_surfaces_receive_failure_and_recovers() {
+  const auto trace = std::make_shared<SharedBusTrace>();
+  auto provider = std::make_shared<uds::SharedCanBusProvider>(
+      std::make_shared<SharedTestProvider>(trace));
+  const uds::CanChannelConfig config{"", 3, 500000, 2000000, true,
+                                     L"ReceiveRecoveryTest"};
+  auto session = provider->create(config);
+  session->open();
+  {
+    std::scoped_lock lock(trace->mutex);
+    trace->fail_next_receive = true;
+  }
+  trace->condition.notify_all();
+
+  bool failure_observed{};
+  try {
+    (void)session->receive(std::chrono::milliseconds(300));
+  } catch (const std::runtime_error& error) {
+    failure_observed = std::string(error.what()) == "fake CAN receive failure";
+  }
+  check(failure_observed,
+        "shared provider hid the hardware receive-loop failure");
+
+  const uds::CanFrame expected{
+      0x77A, {0x02, 0x50, 0x03, 0, 0, 0, 0, 0}, false, false, false};
+  {
+    std::scoped_lock lock(trace->mutex);
+    trace->incoming.push_back(expected);
+  }
+  trace->condition.notify_all();
+  const auto recovered = session->receive(std::chrono::milliseconds(300));
+  {
+    std::scoped_lock lock(trace->mutex);
+    check(trace->created == 2 && trace->closed >= 1,
+          "shared provider did not recreate a receive-faulted channel");
+  }
+  check(recovered && recovered->id == expected.id &&
+            recovered->data == expected.data,
+        "shared provider did not receive after channel recreation");
+}
+
+void test_shared_provider_does_not_close_a_concurrent_new_subscriber() {
+  const auto trace = std::make_shared<SharedBusTrace>();
+  trace->block_receive = true;
+  auto provider = std::make_shared<uds::SharedCanBusProvider>(
+      std::make_shared<SharedTestProvider>(trace));
+  const uds::CanChannelConfig config{"", 4, 500000, 2000000, true,
+                                     L"ConcurrentSubscriberTest"};
+  auto first = provider->create(config);
+  auto second = provider->create(config);
+  first->open();
+  {
+    std::unique_lock lock(trace->mutex);
+    check(trace->condition.wait_for(
+              lock, std::chrono::milliseconds(300),
+              [&trace] { return trace->reader_waiting; }),
+          "fake receive loop did not enter its blocking point");
+  }
+
+  std::thread closing([&first] { first->close(); });
+  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  std::thread opening([&second] { second->open(); });
+  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  {
+    std::scoped_lock lock(trace->mutex);
+    trace->release_receive = true;
+  }
+  trace->condition.notify_all();
+  closing.join();
+  opening.join();
+
+  check(second->is_open(),
+        "last unsubscribe closed a concurrently added subscriber");
+  std::scoped_lock lock(trace->mutex);
+  check(trace->created == 2 && trace->closed >= 1,
+        "concurrent subscriber did not reopen after the old channel stopped");
+}
+
 } // namespace
 
 int main() {
@@ -443,6 +536,10 @@ int main() {
         test_shared_provider_fans_out_without_consuming_diagnostic_frames);
     run("shared_provider_recovers_zero_frame_transmit_with_listener_alive",
         test_shared_provider_recovers_zero_frame_transmit_with_listener_alive);
+    run("shared_provider_surfaces_receive_failure_and_recovers",
+        test_shared_provider_surfaces_receive_failure_and_recovers);
+    run("shared_provider_does_not_close_a_concurrent_new_subscriber",
+        test_shared_provider_does_not_close_a_concurrent_new_subscriber);
     std::cout << "can_adapter_tests: PASS\n";
     return 0;
   } catch (const std::exception& error) {

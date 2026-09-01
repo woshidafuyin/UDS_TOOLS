@@ -18,26 +18,7 @@
 namespace uds {
 namespace {
 
-enum class Stage {
-  configuration,
-  pre_flash_check,
-  programming_session,
-  security_access,
-  driver_request_download,
-  driver_transfer,
-  driver_transfer_exit,
-  driver_verification,
-  app_request_download,
-  app_transfer,
-  app_transfer_exit,
-  app_verification,
-  dependency_check,
-  ecu_reset_recovery,
-  post_flash_verification,
-  trace_evidence,
-  cycle_overview,
-  other,
-};
+using Stage = FlashStage;
 
 struct CycleRef {
   unsigned index{1};
@@ -47,7 +28,7 @@ struct CycleRef {
 
 struct ClassifiedRow {
   const ReportRow* row{};
-  Stage stage{Stage::other};
+  Stage stage{Stage::unspecified};
   unsigned cycle{1};
 };
 
@@ -183,6 +164,7 @@ unsigned repeat_count(const std::vector<ReportRow>& rows,
   unsigned total = 1;
   const auto inspect = [&](const auto& source) {
     for (const auto& row : source) {
+      total = std::max(total, row.cycle);
       const auto ref = cycle_ref(row.step + " " + row.detail);
       total = std::max(total, ref.total);
     }
@@ -201,6 +183,7 @@ bool role_app(std::string_view text) {
 }
 
 Stage classify_direct(const ReportRow& row) {
+  if (row.stage != FlashStage::unspecified) return row.stage;
   const auto text = lower_ascii(row.step + " " + row.detail);
   if (contains_any(text, {"asc + blf trace", "raw asc", "raw blf"}))
     return Stage::trace_evidence;
@@ -249,7 +232,7 @@ Stage classify_direct(const ReportRow& row) {
   if (app && transfer_exit) return Stage::app_transfer_exit;
   if (app && transfer) return Stage::app_transfer;
   if (app && verification) return Stage::app_verification;
-  return Stage::other;
+  return Stage::unspecified;
 }
 
 std::vector<ClassifiedRow> classify_summary(
@@ -258,7 +241,8 @@ std::vector<ClassifiedRow> classify_summary(
   result.reserve(rows.size());
   for (const auto& row : rows) {
     const auto ref = cycle_ref(row.step + " " + row.detail);
-    result.push_back({&row, classify_direct(row), ref.index});
+    result.push_back(
+        {&row, classify_direct(row), row.cycle == 0 ? ref.index : row.cycle});
   }
   return result;
 }
@@ -271,9 +255,10 @@ std::vector<ClassifiedRow> classify_transcript(
   for (const auto& row : rows) {
     const auto text = row.step + " " + row.detail;
     const auto ref = cycle_ref(text);
-    const auto cycle = ref.explicit_cycle ? ref.index : 1U;
+    const auto cycle = row.cycle != 0 ? row.cycle
+                                     : (ref.explicit_cycle ? ref.index : 1U);
     auto stage = classify_direct(row);
-    if (stage != Stage::other && stage != Stage::cycle_overview) {
+    if (stage != Stage::unspecified && stage != Stage::cycle_overview) {
       active_stage[cycle] = stage;
     } else {
       const auto lower = lower_ascii(text);
@@ -890,8 +875,21 @@ void HtmlReport::append_row(std::vector<ReportRow>& rows, ReportRow row) {
 
 void HtmlReport::add(ReportRow row) { append_row(rows_, std::move(row)); }
 
+void HtmlReport::add_event(FlashEvent event) {
+  add({event.timestamp, std::move(event.step), std::move(event.verdict),
+       std::move(event.detail), event.stage, event.cycle, event.uds_service,
+       event.image_role});
+}
+
 void HtmlReport::add_transcript(ReportRow row) {
   append_row(transcript_rows_, std::move(row));
+}
+
+void HtmlReport::add_transcript_event(FlashEvent event) {
+  add_transcript(
+      {event.timestamp, std::move(event.step), std::move(event.verdict),
+       std::move(event.detail), event.stage, event.cycle, event.uds_service,
+       event.image_role});
 }
 
 std::filesystem::path HtmlReport::write(const std::filesystem::path& directory,
@@ -992,7 +990,7 @@ std::filesystem::path HtmlReport::write(const std::filesystem::path& directory,
   for (unsigned cycle = 1; cycle <= cycles; ++cycle)
     append_cycle(html, summary, transcript, cycle, cycles);
   append_trace_section(html, traces, cycles);
-  const auto other_rows = rows_for(summary, Stage::other);
+  const auto other_rows = rows_for(summary, Stage::unspecified);
   if (!other_rows.empty())
     append_simple_stage(html, "other-records", "其他执行摘要",
                         status_from_rank(1), other_rows);
