@@ -70,44 +70,7 @@ set(UDS_CORE_SOURCES
   ${UDS_CAN_ADAPTER_SOURCES}
 )
 
-add_library(uds_core STATIC ${UDS_CORE_SOURCES})
-target_include_directories(uds_core PUBLIC src)
-if(ENABLE_TOSUN)
-  target_include_directories(uds_core PRIVATE
-    third_party/tosun/sdk/include)
-endif()
-if(ENABLE_ZLG)
-  if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-    set(UDS_ZLG_SDK_DIR
-      "${CMAKE_CURRENT_SOURCE_DIR}/third_party/zlg/sdk/zlgcan_x64")
-  else()
-    set(UDS_ZLG_SDK_DIR
-      "${CMAKE_CURRENT_SOURCE_DIR}/third_party/zlg/sdk/zlgcan_x86")
-  endif()
-  target_include_directories(uds_core PRIVATE "${UDS_ZLG_SDK_DIR}")
-endif()
-if(ENABLE_KVASER)
-  target_include_directories(uds_core PRIVATE
-    third_party/kvaser/sdk/include)
-endif()
-if(ENABLE_TOSUN)
-  if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-    set(UDS_TOSUN_RUNTIME_DIR
-      "${CMAKE_CURRENT_SOURCE_DIR}/third_party/tosun/sdk/bin/x64")
-  else()
-    set(UDS_TOSUN_RUNTIME_DIR
-      "${CMAKE_CURRENT_SOURCE_DIR}/third_party/tosun/sdk/lib/windows/x86")
-  endif()
-endif()
-target_link_libraries(uds_core PUBLIC bcrypt)
-target_compile_definitions(uds_core PUBLIC
-  UDS_ENABLE_VECTOR=$<BOOL:${ENABLE_VECTOR}>
-  UDS_ENABLE_TOSUN=$<BOOL:${ENABLE_TOSUN}>
-  UDS_ENABLE_ZLG=$<BOOL:${ENABLE_ZLG}>
-  UDS_ENABLE_KVASER=$<BOOL:${ENABLE_KVASER}>
-)
-
-add_library(uds_flash STATIC
+set(UDS_FLASH_SOURCES
   src/flash/baic_radar_flow.cpp
   src/flash/baic_radar_workflows.cpp
   src/flash/chery_ars1_33_flow.cpp
@@ -134,10 +97,8 @@ add_library(uds_flash STATIC
   src/flash/chuneng_331_workflow.cpp
   src/flash/flash_workflow.cpp
 )
-target_include_directories(uds_flash PUBLIC src)
-target_link_libraries(uds_flash PUBLIC uds_core)
 
-add_library(uds_app STATIC
+set(UDS_APP_SOURCES
   src/app/flash_controller.cpp
   src/app/operation_state.cpp
   src/app/probe_controller.cpp
@@ -152,8 +113,66 @@ add_library(uds_app STATIC
   src/app/diagnostic_request_controller.cpp
   src/app/diagnostic_request_service.cpp
 )
-target_include_directories(uds_app PUBLIC src)
-target_link_libraries(uds_app PUBLIC uds_flash uds_core)
+
+function(configure_uds_core_target target)
+  target_include_directories(${target} PUBLIC src)
+  if(ENABLE_TOSUN)
+    target_include_directories(${target} PRIVATE
+      third_party/tosun/sdk/include)
+  endif()
+  if(ENABLE_ZLG)
+    target_include_directories(${target} PRIVATE "${UDS_ZLG_SDK_DIR}")
+  endif()
+  if(ENABLE_KVASER)
+    target_include_directories(${target} PRIVATE
+      third_party/kvaser/sdk/include)
+  endif()
+  target_link_libraries(${target} PUBLIC bcrypt)
+  target_compile_definitions(${target} PUBLIC
+    UDS_ENABLE_VECTOR=$<BOOL:${ENABLE_VECTOR}>
+    UDS_ENABLE_TOSUN=$<BOOL:${ENABLE_TOSUN}>
+    UDS_ENABLE_ZLG=$<BOOL:${ENABLE_ZLG}>
+    UDS_ENABLE_KVASER=$<BOOL:${ENABLE_KVASER}>
+  )
+endfunction()
+
+function(configure_uds_flash_target target core_target)
+  target_include_directories(${target} PUBLIC src)
+  target_link_libraries(${target} PUBLIC ${core_target})
+endfunction()
+
+function(configure_uds_app_target target flash_target core_target)
+  target_include_directories(${target} PUBLIC src)
+  target_link_libraries(${target} PUBLIC ${flash_target} ${core_target})
+endfunction()
+
+if(ENABLE_ZLG)
+  if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(UDS_ZLG_SDK_DIR
+      "${CMAKE_CURRENT_SOURCE_DIR}/third_party/zlg/sdk/zlgcan_x64")
+  else()
+    set(UDS_ZLG_SDK_DIR
+      "${CMAKE_CURRENT_SOURCE_DIR}/third_party/zlg/sdk/zlgcan_x86")
+  endif()
+endif()
+if(ENABLE_TOSUN)
+  if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(UDS_TOSUN_RUNTIME_DIR
+      "${CMAKE_CURRENT_SOURCE_DIR}/third_party/tosun/sdk/bin/x64")
+  else()
+    set(UDS_TOSUN_RUNTIME_DIR
+      "${CMAKE_CURRENT_SOURCE_DIR}/third_party/tosun/sdk/lib/windows/x86")
+  endif()
+endif()
+
+add_library(uds_core STATIC ${UDS_CORE_SOURCES})
+configure_uds_core_target(uds_core)
+
+add_library(uds_flash STATIC ${UDS_FLASH_SOURCES})
+configure_uds_flash_target(uds_flash uds_core)
+
+add_library(uds_app STATIC ${UDS_APP_SOURCES})
+configure_uds_app_target(uds_app uds_flash uds_core)
 
 if(WIN32)
   add_executable(c857_bench_validation
@@ -212,79 +231,19 @@ if(UDS_BUILD_QT_UI AND CMAKE_SIZEOF_VOID_P EQUAL 8)
     # full application stack with the same runtime instead of mixing it with
     # the /MT libraries used by non-Qt core tests.
     add_library(uds_core_qt STATIC ${UDS_CORE_SOURCES})
-    target_include_directories(uds_core_qt PUBLIC src)
-    if(ENABLE_TOSUN)
-      target_include_directories(uds_core_qt PRIVATE
-        third_party/tosun/sdk/include)
-    endif()
-    if(ENABLE_ZLG)
-      target_include_directories(uds_core_qt PRIVATE "${UDS_ZLG_SDK_DIR}")
-    endif()
-    if(ENABLE_KVASER)
-      target_include_directories(uds_core_qt PRIVATE
-        third_party/kvaser/sdk/include)
-    endif()
-    target_link_libraries(uds_core_qt PUBLIC bcrypt)
-    target_compile_definitions(uds_core_qt PUBLIC
-      UDS_ENABLE_VECTOR=$<BOOL:${ENABLE_VECTOR}>
-      UDS_ENABLE_TOSUN=$<BOOL:${ENABLE_TOSUN}>
-      UDS_ENABLE_ZLG=$<BOOL:${ENABLE_ZLG}>
-      UDS_ENABLE_KVASER=$<BOOL:${ENABLE_KVASER}>
-    )
+    configure_uds_core_target(uds_core_qt)
     set_target_properties(uds_core_qt PROPERTIES
       MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
     )
 
-    add_library(uds_flash_qt STATIC
-      src/flash/baic_radar_flow.cpp
-      src/flash/baic_radar_workflows.cpp
-      src/flash/chery_ars1_33_flow.cpp
-      src/flash/chery_ars1_33_workflow.cpp
-      src/flash/chery_ars1_31_app_flow.cpp
-      src/flash/chery_ars1_31_project_workflows.cpp
-      src/flash/chery_kp31_flow.cpp
-      src/flash/chery_kp31_workflow.cpp
-      src/flash/c857_project_workflows.cpp
-      src/flash/longma_ars1_31_flow.cpp
-      src/flash/longma_ars1_31_workflow.cpp
-      src/flash/lingpao_radar_flow.cpp
-      src/flash/lp_arc_flow_configurable.cpp
-      src/flash/lp_arc_workflow.cpp
-      src/flash/lp_arf_flow.cpp
-      src/flash/lp_arf_workflow.cpp
-      src/flash/geely_p416_flow.cpp
-      src/flash/geely_p416_workflow.cpp
-      src/flash/shidaixinan_hjzj_fmr_flow.cpp
-      src/flash/shidaixinan_hjzj_fmr_workflow.cpp
-      src/flash/xizhong_rsmr_flow.cpp
-      src/flash/xizhong_rsmr_workflow.cpp
-      src/flash/chuneng_331_flow.cpp
-      src/flash/chuneng_331_workflow.cpp
-      src/flash/flash_workflow.cpp
-    )
-    target_include_directories(uds_flash_qt PUBLIC src)
-    target_link_libraries(uds_flash_qt PUBLIC uds_core_qt)
+    add_library(uds_flash_qt STATIC ${UDS_FLASH_SOURCES})
+    configure_uds_flash_target(uds_flash_qt uds_core_qt)
     set_target_properties(uds_flash_qt PROPERTIES
       MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
     )
 
-    add_library(uds_app_qt STATIC
-      src/app/flash_controller.cpp
-      src/app/operation_state.cpp
-      src/app/probe_controller.cpp
-      src/app/probe_plan.cpp
-      src/app/probe_preconditions.cpp
-      src/app/probe_service.cpp
-      src/app/probe_session.cpp
-      src/app/probe_support.cpp
-      src/app/version_check_controller.cpp
-      src/app/version_check_service.cpp
-      src/app/version_value_decoder.cpp
-      src/app/diagnostic_request_controller.cpp
-      src/app/diagnostic_request_service.cpp
-    )
-    target_include_directories(uds_app_qt PUBLIC src)
-    target_link_libraries(uds_app_qt PUBLIC uds_flash_qt uds_core_qt)
+    add_library(uds_app_qt STATIC ${UDS_APP_SOURCES})
+    configure_uds_app_target(uds_app_qt uds_flash_qt uds_core_qt)
     set_target_properties(uds_app_qt PROPERTIES
       MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
     )
@@ -310,15 +269,7 @@ if(UDS_BUILD_QT_UI AND CMAKE_SIZEOF_VOID_P EQUAL 8)
     qt5_add_resources(UDS_TOOL_QT_RESOURCE_SOURCES
       src/ui/qt/uds_tool_qt.qrc
     )
-    # The Windows resource compiler does not discover files referenced from an
-    # .rc file as build dependencies.  Keep the Explorer/EXE icon in sync with
-    # the same ICO embedded by Qt whenever the centralized icon asset changes.
-    set_property(SOURCE src/app/uds_tool.rc APPEND PROPERTY OBJECT_DEPENDS
-      "${CMAKE_CURRENT_SOURCE_DIR}/assets/uds_flash_tool.ico"
-    )
-    add_executable(uds_tool_qt WIN32
-      src/app/uds_tool.rc
-      src/ui/qt/main_qt.cpp
+    set(UDS_QT_WINDOW_SOURCES
       src/ui/qt/startup_window_presenter.cpp
       src/ui/qt/startup_window_presenter.hpp
       src/ui/qt/main_window.cpp
@@ -349,6 +300,17 @@ if(UDS_BUILD_QT_UI AND CMAKE_SIZEOF_VOID_P EQUAL 8)
       ${UDS_QT_BUS_MONITOR_PAGE_MOC_SOURCES}
       ${UDS_QT_DIAGNOSTIC_PAGE_MOC_SOURCES}
       ${UDS_TOOL_QT_UI_SOURCES}
+    )
+    # The Windows resource compiler does not discover files referenced from an
+    # .rc file as build dependencies.  Keep the Explorer/EXE icon in sync with
+    # the same ICO embedded by Qt whenever the centralized icon asset changes.
+    set_property(SOURCE src/app/uds_tool.rc APPEND PROPERTY OBJECT_DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/assets/uds_flash_tool.ico"
+    )
+    add_executable(uds_tool_qt WIN32
+      src/app/uds_tool.rc
+      src/ui/qt/main_qt.cpp
+      ${UDS_QT_WINDOW_SOURCES}
       ${UDS_TOOL_QT_RESOURCE_SOURCES}
     )
     target_include_directories(uds_tool_qt PRIVATE
@@ -589,36 +551,7 @@ if(TARGET uds_tool_qt)
 
   add_executable(qt_main_window_tests
     tests/qt_main_window_tests.cpp
-    src/ui/qt/startup_window_presenter.cpp
-    src/ui/qt/startup_window_presenter.hpp
-    src/ui/qt/main_window.cpp
-    src/ui/qt/main_window_actions.cpp
-    src/ui/qt/main_window_context.cpp
-    src/ui/qt/main_window_files.cpp
-    src/ui/qt/main_window_logging.cpp
-    src/ui/qt/main_window_operations.cpp
-    src/ui/qt/main_window_profiles.cpp
-    src/ui/qt/main_window_support.cpp
-    src/ui/qt/main_window_support.hpp
-    src/ui/qt/ui_log_message_parser.cpp
-    src/ui/qt/ui_log_message_parser.hpp
-    src/ui/qt/resource_file_store.cpp
-    src/ui/qt/main_window.hpp
-    src/ui/qt/main_window.ui
-    src/ui/qt/version_confirmation_page.cpp
-    src/ui/qt/version_confirmation_page.hpp
-    src/ui/qt/bus_monitor_page.cpp
-    src/ui/qt/bus_monitor_page.hpp
-    src/ui/qt/diagnostic_request_page.cpp
-    src/ui/qt/diagnostic_request_page.hpp
-    src/ui/qt/controller_bridge.cpp
-    src/ui/qt/controller_bridge.hpp
-    ${UDS_QT_MAIN_WINDOW_MOC_SOURCES}
-    ${UDS_QT_CONTROLLER_BRIDGE_MOC_SOURCES}
-    ${UDS_QT_VERSION_PAGE_MOC_SOURCES}
-    ${UDS_QT_BUS_MONITOR_PAGE_MOC_SOURCES}
-    ${UDS_QT_DIAGNOSTIC_PAGE_MOC_SOURCES}
-    ${UDS_TOOL_QT_UI_SOURCES}
+    ${UDS_QT_WINDOW_SOURCES}
   )
   target_include_directories(qt_main_window_tests PRIVATE
     src
