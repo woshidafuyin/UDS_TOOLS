@@ -79,12 +79,14 @@ Chuneng331Flow::Chuneng331Flow(UdsClient& physical, UdsClient& functional,
 
 Chuneng331Flow::Chuneng331Flow(
     UdsClient& physical, UdsClient& functional, UdsClient& ft_physical,
+    UdsClient& ft_functional,
     IsoTpSession& physical_transport, IsoTpSession& functional_transport,
     Log log, KeyGenerator key_generator)
     : Chuneng331Flow(physical, functional, physical_transport,
                      functional_transport, std::move(log),
                      std::move(key_generator)) {
   ft_physical_ = &ft_physical;
+  ft_functional_ = &ft_functional;
 }
 
 UdsResponse Chuneng331Flow::expect(UdsClient& client, std::span<const std::uint8_t> request,
@@ -213,9 +215,21 @@ void Chuneng331Flow::enter_programming_session(
     return;
   }
 
+  // Flash20230727.can::Download FT branch first restores the default session
+  // and then enters the extended session through the functional endpoint.
+  // The subsequent 0x701/0x761 10 02 transition may acknowledge with NRC 0x78
+  // on 0x761 and publish its final 50 02 on the selected APP response ID.
+  expect(*ft_functional_, kChuneng331FtFunctionalSessionPreamble[0],
+         std::array<std::uint8_t, 2>{0x50, 0x01}, 2,
+         "FT 10 01 Functional DefaultSession (0x7DF/0x761)");
+  expect(*ft_functional_, kChuneng331FtFunctionalSessionPreamble[1],
+         extended_response, 4,
+         "FT 10 03 Functional ExtendedSession (0x7DF/0x761)");
   expect(*ft_physical_, kChuneng331ProgrammingSession,
          programming_response, 12,
-         "FT 10 02 ProgrammingSession (0x701/0x761)");
+         "FT 10 02 ProgrammingSession (0x701 -> selected APP response)");
+  std::this_thread::sleep_for(kChuneng331FtProgrammingTransitionDelay);
+  check_cancelled();
 }
 
 void Chuneng331Flow::restore_after_reset() {
@@ -299,7 +313,8 @@ void Chuneng331Flow::run(const Chuneng331Images& images,
                          std::stop_token stop) {
   using namespace std::chrono_literals;
   const auto entry = resolve_chuneng_331_entry_plan(entry_mode);
-  if (entry.use_ft_endpoint && ft_physical_ == nullptr) {
+  if (entry.use_ft_endpoint &&
+      (ft_physical_ == nullptr || ft_functional_ == nullptr)) {
     throw std::runtime_error("Chuneng 331 FT entry endpoint is not configured");
   }
   stop_ = stop;

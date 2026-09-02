@@ -6,9 +6,24 @@
 
 namespace uds {
 
+struct Chuneng331FtTransitionEndpoints {
+  std::uint32_t request_id{};
+  std::uint32_t pending_response_id{};
+  std::uint32_t final_response_id{};
+};
+
+inline constexpr Chuneng331FtTransitionEndpoints
+chuneng_331_ft_transition_endpoints(std::uint32_t ft_request_id,
+                                    std::uint32_t ft_response_id,
+                                    std::uint32_t app_response_id) noexcept {
+  return {ft_request_id, ft_response_id, app_response_id};
+}
+
 inline constexpr std::chrono::milliseconds kChuneng331TesterPresentPeriod{2000};
 inline constexpr std::chrono::milliseconds kChuneng331SessionControlDelay{50};
 inline constexpr std::chrono::milliseconds kChuneng331FunctionalControlDelay{100};
+inline constexpr std::chrono::milliseconds
+    kChuneng331FtProgrammingTransitionDelay{2000};
 inline constexpr std::uint8_t kChuneng331RoutineStatusPassed = 0x04;
 inline constexpr std::uint8_t
     kChuneng331UnsupportedProgrammingPreconditionNrc = 0x31;
@@ -25,6 +40,10 @@ inline constexpr std::array<std::uint8_t, 2>
     kChuneng331FunctionalDefaultSessionRequest{0x10, 0x01};
 inline constexpr std::array<std::uint8_t, 2>
     kChuneng331ExtendedSessionRequest{0x10, 0x03};
+inline constexpr std::array<std::array<std::uint8_t, 2>, 2>
+    kChuneng331FtFunctionalSessionPreamble{
+        kChuneng331FunctionalDefaultSessionRequest,
+        kChuneng331ExtendedSessionRequest};
 inline constexpr std::array<std::uint8_t, 4>
     kChuneng331ProgrammingPrecondition{0x31, 0x01, 0x02, 0x03};
 inline constexpr std::array<std::uint8_t, 2>

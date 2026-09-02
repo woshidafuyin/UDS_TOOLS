@@ -540,6 +540,68 @@ void test_uds_response_pending_and_nrc() {
         "negative UDS response did not retain the concrete NRC meaning");
 }
 
+void test_chuneng_ft_pending_switches_to_selected_app_response() {
+  using namespace std::chrono_literals;
+  for (const auto app_response_id : {0x72DU, 0x72FU}) {
+    MockBus bus;
+    bus.rx.push_back(uds::CanFrame{
+        0x761, {0x03, 0x7F, 0x10, 0x78, 0, 0, 0, 0},
+        false, false, false});
+    bus.rx.push_back(uds::CanFrame{
+        app_response_id,
+        {0x06, 0x50, 0x02, 0x00, 0x32, 0x01, 0x5E, 0x00},
+        false, true, false});
+
+    uds::IsoTpConfig config{0x701, 0x761, 0x55};
+    config.alternate_rx_id = app_response_id;
+    uds::IsoTpSession transport(bus, config);
+    std::vector<std::string> logs;
+    uds::UdsClient client(
+        transport,
+        [&logs](const std::string& line) { logs.push_back(line); });
+    const auto result = client.request(
+        std::array<std::uint8_t, 2>{0x10, 0x02}, 2ms, 2ms);
+
+    check(result.success &&
+              result.response == std::vector<std::uint8_t>(
+                                     {0x50, 0x02, 0x00, 0x32, 0x01, 0x5E}) &&
+              transport.last_rx_id() == app_response_id,
+          "ChuNeng FT transition did not accept 50 02 on the selected APP response ID");
+    const auto app_id_was_logged = std::any_of(
+        logs.begin(), logs.end(), [app_response_id](const std::string& line) {
+          const auto expected = app_response_id == 0x72DU
+                                    ? std::string{"RX [0x72D] 50 02"}
+                                    : std::string{"RX [0x72F] 50 02"};
+          return line.find(expected) != std::string::npos;
+        });
+    check(app_id_was_logged,
+          "ChuNeng FT transition log lost the final APP response ID");
+  }
+
+  MockBus wrong_side_bus;
+  wrong_side_bus.rx.push_back(uds::CanFrame{
+      0x761, {0x03, 0x7F, 0x10, 0x78, 0, 0, 0, 0},
+      false, false, false});
+  wrong_side_bus.rx.push_back(uds::CanFrame{
+      0x72D, {0x06, 0x50, 0x02, 0x00, 0x32, 0x01, 0x5E, 0x00},
+      false, true, false});
+  uds::IsoTpConfig left_config{0x701, 0x761, 0x55};
+  left_config.alternate_rx_id = 0x72F;
+  uds::IsoTpSession left_transport(wrong_side_bus, left_config);
+  uds::UdsClient left_client(left_transport);
+  bool wrong_side_rejected = false;
+  try {
+    static_cast<void>(left_client.request(
+        std::array<std::uint8_t, 2>{0x10, 0x02}, 2ms, 2ms));
+  } catch (const std::runtime_error& error) {
+    wrong_side_rejected =
+        std::string_view(error.what()).find("ISO-TP receive timeout") !=
+        std::string_view::npos;
+  }
+  check(wrong_side_rejected,
+        "ChuNeng left-rear FT transition accepted the right-rear response ID");
+}
+
 void test_uds_observe_consumes_non_gating_responses() {
   using namespace std::chrono_literals;
 
@@ -1418,12 +1480,29 @@ void test_chuneng_331_updated_protocol_contract() {
             uds::kChuneng331SessionControlDelay ==
                 std::chrono::milliseconds(50) &&
             uds::kChuneng331FunctionalControlDelay ==
-                std::chrono::milliseconds(100),
+                std::chrono::milliseconds(100) &&
+            uds::kChuneng331FtProgrammingTransitionDelay ==
+                std::chrono::milliseconds(2000),
         "ChuNeng standard timing contract mismatch");
+  const auto left_ft = uds::chuneng_331_ft_transition_endpoints(
+      0x701, 0x761, 0x72F);
+  const auto right_ft = uds::chuneng_331_ft_transition_endpoints(
+      0x701, 0x761, 0x72D);
+  check(left_ft.request_id == 0x701 &&
+            left_ft.pending_response_id == 0x761 &&
+            left_ft.final_response_id == 0x72F &&
+            right_ft.request_id == 0x701 &&
+            right_ft.pending_response_id == 0x761 &&
+            right_ft.final_response_id == 0x72D,
+        "ChuNeng FT transition endpoint mapping mismatch");
   check(uds::kChuneng331FunctionalDefaultSessionRequest ==
             std::array<std::uint8_t, 2>{0x10, 0x01} &&
             uds::kChuneng331ExtendedSessionRequest ==
                 std::array<std::uint8_t, 2>{0x10, 0x03} &&
+            uds::kChuneng331FtFunctionalSessionPreamble ==
+                std::array<std::array<std::uint8_t, 2>, 2>{
+                    std::array<std::uint8_t, 2>{0x10, 0x01},
+                    std::array<std::uint8_t, 2>{0x10, 0x03}} &&
             uds::kChuneng331ProgrammingPrecondition ==
                 std::array<std::uint8_t, 4>{0x31, 0x01, 0x02, 0x03} &&
             uds::kChuneng331FunctionalExtendedSession ==
@@ -3584,6 +3663,8 @@ int main() {
     run("isotp_drains_stale_receive_queue_before_request",
         test_isotp_drains_stale_receive_queue_before_request);
     run("uds_response_pending_and_nrc", test_uds_response_pending_and_nrc);
+    run("chuneng_ft_pending_switches_to_selected_app_response",
+        test_chuneng_ft_pending_switches_to_selected_app_response);
     run("uds_nrc_diagnostics", test_uds_nrc_diagnostics);
     run("uds_wait_can_be_cancelled", test_uds_wait_can_be_cancelled);
     run("isotp_multiframe_receive", test_isotp_multiframe_receive);

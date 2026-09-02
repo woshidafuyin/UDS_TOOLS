@@ -56,7 +56,8 @@ public:
   Chuneng331Flow(UdsClient& physical, UdsClient& functional, IsoTpSession& physical_transport,
                  IsoTpSession& functional_transport,
                  Log log, KeyGenerator key_generator);
-  Chuneng331Flow(UdsClient& physical, UdsClient& functional, UdsClient& ft_physical,
+  Chuneng331Flow(UdsClient& physical, UdsClient& functional,
+                 UdsClient& ft_physical, UdsClient& ft_functional,
                  IsoTpSession& physical_transport, IsoTpSession& functional_transport,
                  Log log, KeyGenerator key_generator);
   void run(const Chuneng331Images& images, std::stop_token stop = {});
@@ -84,6 +85,7 @@ private:
   UdsClient& physical_;
   UdsClient& functional_;
   UdsClient* ft_physical_{};
+  UdsClient* ft_functional_{};
   IsoTpSession& physical_transport_;
   IsoTpSession& functional_transport_;
   Log log_;

@@ -363,12 +363,26 @@ void ChunengArc331Workflow::run(const FlashJob& job,
     throw std::runtime_error(
         "Chuneng ARC331 FT endpoint 0x701/0x761 is not configured");
   }
-  IsoTpSession ft_transport(
-      *bus, {job.profile.ft_tx_id, job.profile.ft_rx_id,
-            job.profile.ft_padding, 0, job.profile.isotp_st_min, 1000ms,
-            1000ms, job.profile.ft_extended_id,
-            job.profile.ft_extended_id, job.profile.ft_uds_fd,
-            job.profile.ft_uds_brs});
+  const auto ft_endpoints = chuneng_331_ft_transition_endpoints(
+      job.profile.ft_tx_id, job.profile.ft_rx_id, physical_config.rx_id);
+  IsoTpConfig ft_config{
+      ft_endpoints.request_id, ft_endpoints.pending_response_id,
+      job.profile.ft_padding, 0, job.profile.isotp_st_min, 1000ms,
+      1000ms, job.profile.ft_extended_id,
+      job.profile.ft_extended_id, job.profile.ft_uds_fd,
+      job.profile.ft_uds_brs};
+  // ARC331 FT 10 02 first reports NRC 0x78 on 0x761, then switches
+  // its final 50 02 to the selected radar's APP response ID (0x72D/0x72F).
+  // Limit the alternate endpoint to the selected target so a wrong-side radar
+  // cannot silently qualify the flash job.
+  if (ft_endpoints.pending_response_id != ft_endpoints.final_response_id) {
+    ft_config.alternate_rx_id = ft_endpoints.final_response_id;
+  }
+  IsoTpSession ft_transport(*bus, ft_config);
+  auto ft_functional_config = ft_config;
+  ft_functional_config.tx_id = job.profile.functional_id;
+  ft_functional_config.alternate_rx_id = 0;
+  IsoTpSession ft_functional_transport(*bus, ft_functional_config);
   auto uds_log = [&](const std::string& line) {
     log(callbacks, line);
     record(callbacks, 0, "UDS", "INFO", line);
@@ -376,6 +390,7 @@ void ChunengArc331Workflow::run(const FlashJob& job,
   UdsClient physical(physical_transport, uds_log, stop);
   UdsClient functional(functional_transport, uds_log, stop);
   UdsClient ft_physical(ft_transport, uds_log, stop);
+  UdsClient ft_functional(ft_functional_transport, uds_log, stop);
   const auto broker = job.executable_directory / L"keygen_broker.exe";
   const auto security_dll = job.security_dll.is_absolute()
                                 ? job.security_dll
@@ -386,7 +401,8 @@ void ChunengArc331Workflow::run(const FlashJob& job,
     return generate_key_x86(broker, dll, seed, level, variant);
   };
 
-  Chuneng331Flow flow(physical, functional, ft_physical, physical_transport,
+  Chuneng331Flow flow(physical, functional, ft_physical, ft_functional,
+    physical_transport,
     functional_transport,
     [&](int percent, const std::string& line) {
       if (callbacks.progress) callbacks.progress(percent, line);
