@@ -317,8 +317,9 @@ void MainWindow::applySelectedProfile(int device_index) {
       QStringLiteral("0x%1").arg(QString::number(profile.rx_id, 16).toUpper()));
   ui_->entryModeComboBox->clear();
   // Flash entry is an operator decision. Never infer it from the Profile or a
-  // previous run: every Profile/target selection starts from this empty item.
-  ui_->entryModeComboBox->addItem(QStringLiteral("请选择"), QString{});
+  // previous run. Use QComboBox's non-selectable placeholder so the popup only
+  // contains real operation modes.
+  ui_->entryModeComboBox->setPlaceholderText(QStringLiteral("请选择"));
   if (profile.supports_ft_entry &&
       profile.default_entry_mode == QStringLiteral("auto")) {
     ui_->entryModeComboBox->addItem(QStringLiteral("自动检测"),
@@ -348,7 +349,7 @@ void MainWindow::applySelectedProfile(int device_index) {
     ui_->entryModeComboBox->addItem(QStringLiteral("APP+CAL"),
                                     QStringLiteral("app_cal"));
   }
-  ui_->entryModeComboBox->setCurrentIndex(0);
+  ui_->entryModeComboBox->setCurrentIndex(-1);
   showPath(ui_->driverPathLineEdit, profile.driver_path);
   showPath(ui_->appPathLineEdit, profile.app_path);
   showPath(ui_->calPathLineEdit, profile.cal_path);
@@ -429,9 +430,10 @@ void MainWindow::restoreCurrentProfileState() {
                    settings.value(QStringLiteral("selectors/profile_id"))
                            .toString() == profiles[profile_index].profile_id;
   }
-  // Do not restore the previous entry mode. The combo was rebuilt with the
-  // empty "请选择" item selected by applySelectedProfile(). Remove obsolete
-  // persisted values so older releases cannot reintroduce a hidden default.
+  // Do not restore the previous entry mode. The combo was reset to its
+  // non-selectable "请选择" placeholder by applySelectedProfile(). Remove
+  // obsolete persisted values so older releases cannot reintroduce a hidden
+  // default.
   settings.remove(state_group + QStringLiteral("/entry_mode"));
   settings.remove(QStringLiteral("selectors/entry_mode"));
 

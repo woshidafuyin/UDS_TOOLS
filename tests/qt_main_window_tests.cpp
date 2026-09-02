@@ -791,7 +791,9 @@ int main(int argc, char* argv[]) {
       check(channels->isEnabled(),
             "Idle CAN channel selector must remain operator-selectable");
       check(probe && start_flash &&
-                entries->currentText() == QStringLiteral("请选择") &&
+                entries->currentIndex() == -1 &&
+                entries->placeholderText() == QStringLiteral("请选择") &&
+                entries->findText(QStringLiteral("请选择")) == -1 &&
                 entries->currentData().toString().isEmpty() &&
                 entries->property("modeUnselected").toBool() &&
                 !probe->isEnabled() && !start_flash->isEnabled(),
@@ -1936,7 +1938,7 @@ int main(int argc, char* argv[]) {
       const auto chery_cal = entries->findData(QStringLiteral("cal"));
       const auto chery_app_cal =
           entries->findData(QStringLiteral("app_cal"));
-      check(entries->count() == 4 && chery_app >= 0 && chery_cal >= 0 &&
+      check(entries->count() == 3 && chery_app >= 0 && chery_cal >= 0 &&
                 chery_app_cal >= 0 &&
                 entries->itemText(chery_app) ==
                     QStringLiteral("APP") &&
@@ -1945,7 +1947,9 @@ int main(int argc, char* argv[]) {
                 entries->itemText(chery_app_cal) ==
                     QStringLiteral("APP+CAL") &&
                 entries->currentData().toString().isEmpty() &&
-                entries->currentText() == QStringLiteral("请选择"),
+                entries->currentIndex() == -1 &&
+                entries->placeholderText() == QStringLiteral("请选择") &&
+                entries->findText(QStringLiteral("请选择")) == -1,
             "Chery ARS1.33 concise flashing modes are not exposed");
       radar->setCurrentIndex(find_text(radar, QStringLiteral("主雷达")));
       application.processEvents();
@@ -1972,14 +1976,16 @@ int main(int argc, char* argv[]) {
                 !tx_id->isReadOnly() && !rx_id->isReadOnly() &&
                 tx_id->text() == QStringLiteral("0x70D") &&
                 rx_id->text() == QStringLiteral("0x78D") &&
-                entries->count() == 4 && kp31_app >= 0 && kp31_cal >= 0 &&
+                entries->count() == 3 && kp31_app >= 0 && kp31_cal >= 0 &&
                 kp31_app_cal >= 0 &&
                 entries->itemText(kp31_app) == QStringLiteral("APP") &&
                 entries->itemText(kp31_cal) == QStringLiteral("CAL") &&
                 entries->itemText(kp31_app_cal) ==
                     QStringLiteral("APP+CAL") &&
                 entries->currentData().toString().isEmpty() &&
-                entries->currentText() == QStringLiteral("请选择"),
+                entries->currentIndex() == -1 &&
+                entries->placeholderText() == QStringLiteral("请选择") &&
+                entries->findText(QStringLiteral("请选择")) == -1,
             "Chery KP31 project/endpoint/mode mapping mismatch");
       const std::array chery_editable_endpoints{
           std::pair{QStringLiteral("T1EJ"),
@@ -2003,7 +2009,7 @@ int main(int argc, char* argv[]) {
            const auto t1ej_cal = entries->findData(QStringLiteral("cal"));
            const auto t1ej_app_cal =
                entries->findData(QStringLiteral("app_cal"));
-           check(entries->count() == 4 && t1ej_app >= 0 && t1ej_cal >= 0 &&
+           check(entries->count() == 3 && t1ej_app >= 0 && t1ej_cal >= 0 &&
                      t1ej_app_cal >= 0 &&
                      entries->itemText(t1ej_cal) == QStringLiteral("CAL") &&
                      entries->itemText(t1ej_app_cal) ==
@@ -2042,7 +2048,7 @@ int main(int argc, char* argv[]) {
                              {QStringLiteral("J90K")});
       const auto longma_app = entries->findData(QStringLiteral("app"));
       const auto longma_ft = entries->findData(QStringLiteral("ft"));
-      check(entries->count() == 3 && longma_app >= 0 && longma_ft >= 0 &&
+      check(entries->count() == 2 && longma_app >= 0 && longma_ft >= 0 &&
                 entries->itemText(longma_app) ==
                     QStringLiteral("APP") &&
                 entries->itemText(longma_ft) ==
@@ -2223,7 +2229,7 @@ int main(int argc, char* argv[]) {
                 !tx_id->isReadOnly() && !rx_id->isReadOnly() &&
                 tx_id->text() == QStringLiteral("0x7A4") &&
                 rx_id->text() == QStringLiteral("0x7AC") &&
-                entries->count() == 3 &&
+                entries->count() == 2 &&
                 entries->currentData().toString().isEmpty() &&
                 entries->findData(QStringLiteral("ft")) >= 0 &&
                 entries->itemText(
@@ -2249,7 +2255,7 @@ int main(int argc, char* argv[]) {
                   !tx_id->isReadOnly() && !rx_id->isReadOnly() &&
                   tx_id->text() == QStringLiteral("0x7A4") &&
                   rx_id->text() == QStringLiteral("0x7AC") &&
-                  entries->count() == 3 &&
+                  entries->count() == 2 &&
                   entries->currentData().toString().isEmpty() &&
                   entries->findData(QStringLiteral("ft")) >= 0 &&
                   driver_path->text() ==
@@ -2276,7 +2282,7 @@ int main(int argc, char* argv[]) {
                 tx_id->text() == QStringLiteral("0x772") &&
                 rx_id->text() == QStringLiteral("0x77A") &&
                 radar->isEnabled() &&
-                entries->isEnabled() && entries->count() == 3 &&
+                entries->isEnabled() && entries->count() == 2 &&
                 entries->itemText(entries->findData(QStringLiteral("app"))) ==
                     QStringLiteral("APP") &&
                 entries->itemText(entries->findData(QStringLiteral("ft"))) ==
@@ -2351,12 +2357,16 @@ int main(int argc, char* argv[]) {
       radar->setCurrentIndex(3);
       application.processEvents();
       check(entries->currentData().toString().isEmpty() &&
-                entries->currentText() == QStringLiteral("请选择"),
+                entries->currentIndex() == -1 &&
+                entries->placeholderText() == QStringLiteral("请选择") &&
+                entries->findText(QStringLiteral("请选择")) == -1,
             "ARC target 3 did not reset the entry mode");
       radar->setCurrentIndex(0);
       application.processEvents();
       check(entries->currentData().toString().isEmpty() &&
-                entries->currentText() == QStringLiteral("请选择"),
+                entries->currentIndex() == -1 &&
+                entries->placeholderText() == QStringLiteral("请选择") &&
+                entries->findText(QStringLiteral("请选择")) == -1,
             "Returning to ARC target 0 restored a previous entry mode");
 
       // Profile changes also reset the mode, including when returning to a
@@ -2386,9 +2396,11 @@ int main(int argc, char* argv[]) {
                  !rx_id->isReadOnly() &&
                 tx_id->text() == QStringLiteral("0x751") &&
                 rx_id->text() == QStringLiteral("0x759") &&
-                entries->count() == 3 &&
+                entries->count() == 2 &&
                 entries->currentData().toString().isEmpty() &&
-                entries->currentText() == QStringLiteral("请选择") &&
+                entries->currentIndex() == -1 &&
+                entries->placeholderText() == QStringLiteral("请选择") &&
+                entries->findText(QStringLiteral("请选择")) == -1 &&
                  entries->itemText(
                      entries->findData(QStringLiteral("app"))) ==
                      QStringLiteral("APP") &&
@@ -2583,7 +2595,9 @@ int main(int argc, char* argv[]) {
             check(devices->currentText() == project_name &&
                       radar->currentIndex() == target &&
                       entries->currentData().toString().isEmpty() &&
-                      entries->currentText() == QStringLiteral("请选择") &&
+                      entries->currentIndex() == -1 &&
+                      entries->placeholderText() == QStringLiteral("请选择") &&
+                      entries->findText(QStringLiteral("请选择")) == -1 &&
                       repeat_count->value() == expected_repeat &&
                       channels->currentData().toUInt() == expected_channel &&
                       tx_id->text() == expected_tx &&
@@ -2774,7 +2788,9 @@ int main(int argc, char* argv[]) {
       check(channels->currentData().toUInt() == 4U,
             "Qt ZLG channel selection was not restored");
       check(entries->currentData().toString().isEmpty() &&
-                entries->currentText() == QStringLiteral("请选择") &&
+                entries->currentIndex() == -1 &&
+                entries->placeholderText() == QStringLiteral("请选择") &&
+                entries->findText(QStringLiteral("请选择")) == -1 &&
                 entries->property("modeUnselected").toBool() &&
                 !probe->isEnabled() && !start_flash->isEnabled(),
             "Qt entry selection was restored instead of reset");
