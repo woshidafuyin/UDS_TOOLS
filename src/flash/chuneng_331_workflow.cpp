@@ -261,26 +261,57 @@ void ChunengArc331Workflow::run(const FlashJob& job,
            "source equals transfer window; 256-byte dev_signature extracted",
            FlashStage::configuration, {}, FlashImageRole::app);
   } else {
-    if (job.app_verify_file.empty()) {
-      throw std::runtime_error(
-          "ChuNeng APP S-record requires an APP verification ASC");
+    const auto use_mixed_fallback =
+        input_mode == Chuneng331InputMode::driver_cbf_app_srecord &&
+        job.app_verify_file.empty();
+    if (use_mixed_fallback) {
+      constexpr auto kPackagedAppCbf =
+          L"resources/chuneng_d7_arc331_zip/CBF/APP/7052A5023002AB.cbf";
+      const auto fallback =
+          load_chuneng_cbf(job.executable_directory / kPackagedAppCbf);
+      if (!is_supported_chuneng_app_cbf_type(fallback.software_type) ||
+          fallback.main.address != 0x000C0000U ||
+          fallback.main.data.size() != 0x180000U) {
+        throw std::runtime_error(
+            "ChuNeng packaged APP CBF fallback has an unsupported layout");
+      }
+      images.app = load_srecord_window(resolve(job.app_file),
+                                       0x000C0000U, 0x180000U);
+      images.app_verification = fallback.device_signature;
+      images.app_abt_address = fallback.abt.address;
+      images.app_abt = fallback.abt.data;
+      log(callbacks,
+          "WARNING: APP S-record verification ASC is empty; using packaged "
+          "APP CBF ABT/signature without local S-record binding validation; "
+          "ECU RoutineControl 0202 decides compatibility");
+      record(callbacks, 0, "APP S-record", "WARN",
+             "APP window loaded; packaged APP CBF ABT and 256-byte signature "
+             "used without local hash binding; ECU 0202 remains authoritative",
+             FlashStage::configuration, {}, FlashImageRole::app);
+    } else {
+      if (job.app_verify_file.empty()) {
+        throw std::runtime_error(
+            "ChuNeng APP S-record requires an APP verification ASC");
+      }
+      const auto app_verification_path = resolve(job.app_verify_file);
+      const auto app_abt_path =
+          chuneng_331_abt_sidecar_path(app_verification_path);
+      images.app_abt = load_asc_hex(app_abt_path, 0x2C, 0x2C);
+      const auto app_source_address = read_be32(images.app_abt, 4U);
+      images.app = load_srecord_window(resolve(job.app_file),
+                                       app_source_address, 0x180000);
+      const auto app_abt =
+          validate_chuneng_331_abt(images.app_abt, images.app);
+      images.app_abt_address = 0x000C0000U;
+      images.app_verification =
+          load_asc_hex(app_verification_path, 256, 256);
+      log(callbacks, "APP S-record ABT sidecar: " + app_abt_path.string());
+      record(callbacks, 0, "APP S-record", "PASS",
+             "source=" + hex_u32(app_abt.source_address) +
+                 "/0x180000; ABT SHA-256 matched; 256-byte verification "
+                 "data loaded",
+             FlashStage::configuration, {}, FlashImageRole::app);
     }
-    const auto app_verification_path = resolve(job.app_verify_file);
-    const auto app_abt_path =
-        chuneng_331_abt_sidecar_path(app_verification_path);
-    images.app_abt = load_asc_hex(app_abt_path, 0x2C, 0x2C);
-    const auto app_source_address = read_be32(images.app_abt, 4U);
-    images.app = load_srecord_window(resolve(job.app_file),
-                                     app_source_address, 0x180000);
-    const auto app_abt = validate_chuneng_331_abt(images.app_abt, images.app);
-    images.app_abt_address = 0x000C0000U;
-    images.app_verification = load_asc_hex(app_verification_path, 256, 256);
-    log(callbacks, "APP S-record ABT sidecar: " + app_abt_path.string());
-    record(callbacks, 0, "APP S-record", "PASS",
-           "source=" + hex_u32(app_abt.source_address) +
-               "/0x180000; ABT SHA-256 matched; 256-byte verification "
-               "data loaded",
-           FlashStage::configuration, {}, FlashImageRole::app);
   }
   log(callbacks,
       std::string("ChuNeng ARC331 input preflight passed: mode=") +

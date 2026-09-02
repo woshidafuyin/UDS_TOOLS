@@ -205,7 +205,7 @@
 ## 12. 楚能 ARC331 专项说明
 
 - 当前目标为右后 `0x72C/0x72D` 和左后 `0x72E/0x72F`，目标切换同步影响探测、版本读取、刷写、监听过滤、日志和报告；
-- 支持 Driver CBF + APP CBF、Driver S19/SREC + Driver ASC + APP S19/SREC + APP ASC，以及现场需要的 Driver CBF + APP S19/SREC + APP ASC；混合模式不再要求 Driver 与 APP 来自同一种容器，但每个角色仍执行自身的格式、窗口、ABT、摘要和 256 字节验签数据检查；反向的 Driver S19 + APP CBF 未开放；
+- 支持 Driver CBF + APP CBF、Driver S19/SREC + Driver ASC + APP S19/SREC + APP ASC，以及现场需要的 Driver CBF + APP S19/SREC；混合模式的 APP 校验栏允许留空，此时使用发布包内默认 APP CBF 的 ABT 与 256 字节签名，不在本地校验它们与所选 S19 的摘要绑定，最终兼容性由 ECU `31 01 02 02` 判定；显式选择 APP ASC 时仍执行 ABT/S19 摘要校验；反向的 Driver S19 + APP CBF 未开放；
 - CBF 预检覆盖版本、Header、类型、数据格式、地址、长度、段 CRC16、整体 CRC32、ABT Hash、主数据 SHA-256、256 字节签名和固定刷写窗口；
 - APP“能否刷写”在 `10 03` 后继续执行 `31 01 02 03`；NRC `0x31` 会提示可能处于擦除中断后的 Boot/SBL 恢复态，并阻止把它误判为普通 APP 可刷写；
 - 正式刷写维持 10 ms 周期 `0x520`，执行项目规定的前置条件、安全访问、Driver/APP 下载、签名校验、SBL 激活、指纹、复位和恢复；

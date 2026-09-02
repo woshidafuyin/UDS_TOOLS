@@ -3307,13 +3307,19 @@ void test_lp_arc_protocol_and_resources() {
   mixed_preflight_job.driver_file =
       L"resources/chuneng_d7_arc331_zip/CBF/Driver/driver_712345678AB.cbf";
   mixed_preflight_job.driver_verify_file.clear();
+  mixed_preflight_job.app_verify_file.clear();
   std::vector<std::string> mixed_preflight_reports;
+  std::vector<std::string> mixed_preflight_logs;
   uds::FlashWorkflowCallbacks mixed_preflight_callbacks;
   mixed_preflight_callbacks.report =
       [&mixed_preflight_reports](std::string step, std::string verdict,
                                  std::string detail) {
         mixed_preflight_reports.push_back(step + ":" + verdict + ":" +
                                           detail);
+      };
+  mixed_preflight_callbacks.log =
+      [&mixed_preflight_logs](const std::string& line) {
+        mixed_preflight_logs.push_back(line);
       };
   bool mixed_stopped_before_can = false;
   try {
@@ -3331,9 +3337,16 @@ void test_lp_arc_protocol_and_resources() {
                           return line.find("Preflight:PASS:Files validated: "
                                            "Driver=0x4000+ABT") !=
                                  std::string::npos;
+                        }) &&
+            std::any_of(mixed_preflight_logs.cbegin(),
+                        mixed_preflight_logs.cend(),
+                        [](const std::string& line) {
+                          return line.find("without local S-record binding "
+                                           "validation") !=
+                                 std::string::npos;
                         }),
         "ChuNeng Driver CBF + APP S19 did not pass workflow preflight "
-        "before CAN access");
+        "without a manually selected APP ASC before CAN access");
   bool rejected = false;
   try {
     static_cast<void>(uds::resolve_lp_arc_entry_mode(L"auto"));
