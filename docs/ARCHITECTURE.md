@@ -2,7 +2,7 @@
 
 更新日期：2026-08-19
 
-本文只记录当前通用版 `UDS_Tool.exe` 的模块边界、依赖方向和运行期协作关系。
+本文只记录当前通用版 `CH_Diagnostic_Studio.exe` 的模块边界、依赖方向和运行期协作关系。
 
 ## 总体结构
 
@@ -32,7 +32,7 @@ CanBusSession
        ├─ KvaserCanAdapter -> canlib32.dll
        └─ OtherCanAdapter -> Unsupported/NotImplemented
 
-UDS_Tool.exe (x64，CMake 内部目标：uds_tool_qt)
+CH_Diagnostic_Studio.exe (x64，CMake 内部目标：uds_tool_qt)
   └─ keygen_broker.exe (x86)
        └─ OEM GenerateKeyEx DLL (x86)
 ```

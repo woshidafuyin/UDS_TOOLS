@@ -63,7 +63,7 @@ SeedKey/身份契约、缺文件和非法入口失败关闭、离线单元测试
 仍需真实 LSMR ECU 验收：
 
 1. 冻结同一发布包的 Driver、APP、Hash 和各自 SHA-256；
-2. 使用当前 `UDS_Tool.exe`、`xizhong_lsmr.ini` 和 LSMR SeedKey DLL；
+2. 使用当前 `CH_Diagnostic_Studio.exe`、`xizhong_lsmr.ini` 和 LSMR SeedKey DLL；
 3. 记录硬件后端、设备、通道、位率和供电条件；
 4. 完整执行 APP 下载并保存 ASC、HTML 报告和执行日志；
 5. 核对刷前身份、所有最终 Routine 状态、复位后的恢复服务和刷后版本；

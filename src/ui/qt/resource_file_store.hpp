@@ -17,12 +17,12 @@ struct PersistedResourcePathResolution {
 };
 
 // Stores files managed under <application_directory>/resources as portable
-// paths relative to CH_FLASH_tools.exe. Paths outside the managed resources
+// paths relative to CH_Diagnostic_Studio.exe. Paths outside the managed resources
 // tree remain absolute so external-file semantics are not changed.
 [[nodiscard]] QString resourcePathForPersistence(
     const QString& path, const QString& application_directory);
 
-// Resolves a persisted path against the current CH_FLASH_tools.exe directory.
+// Resolves a persisted path against the current CH_Diagnostic_Studio.exe directory.
 // Legacy absolute paths from a moved dist are migrated only when their
 // resources/... suffix exists under the current application directory.
 [[nodiscard]] PersistedResourcePathResolution resolvePersistedResourcePath(

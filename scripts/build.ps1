@@ -153,7 +153,7 @@ $x86Build=Join-Path $resolvedBuildRoot 'nmake-x86'
 $x64Build=Join-Path $resolvedBuildRoot 'nmake-x64'
 $x86Output=Join-Path $x86Build $Config
 $x64Output=Join-Path $x64Build $Config
-$qtExecutableName='CH_FLASH_tools.exe'
+$qtExecutableName='CH_Diagnostic_Studio.exe'
 $dist=if([string]::IsNullOrWhiteSpace($DistPath)){
   Join-Path $root 'dist'
 } else {

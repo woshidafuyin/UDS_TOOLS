@@ -324,7 +324,7 @@ if(UDS_BUILD_QT_UI AND CMAKE_SIZEOF_VOID_P EQUAL 8)
       oleaut32
     )
     set_target_properties(uds_tool_qt PROPERTIES
-      OUTPUT_NAME "CH_FLASH_tools"
+      OUTPUT_NAME "CH_Diagnostic_Studio"
       MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
     )
     add_custom_command(TARGET uds_tool_qt POST_BUILD

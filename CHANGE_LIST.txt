@@ -1,7 +1,7 @@
 UDS 通用刷写工具 Change List
 ========================================
 
-发布日期：2026-09-01
+发布日期：2026-09-02
 
 文档职责：
 - 本文件只记录当前发布包相对 8.19 正式包的变化。
@@ -19,7 +19,7 @@ UDS 通用刷写工具 Change List
 - 文件大小：1,551,360 bytes
 - SHA-256：4A7E87ECC57A041C9A188B95E0D1269A2D77367B82CC3E7C050CFBA23FBACECB
 
-本次正式主程序：CH_FLASH_tools.exe
+本次正式主程序：CH_Diagnostic_Studio.exe
 - 文件大小：1,853,952 bytes
 - SHA-256：50F2940F39E4E45CE26D6842EAFC3E4C5759EE219DCD63C3286B54249BD60E38
 
@@ -30,6 +30,12 @@ UDS 通用刷写工具 Change List
 
 二、功能变化
 ----------------------------------------
+
+0. 正式主程序命名
+
+- 正式主程序由 `CH_FLASH_tools.exe` 更名为 `CH_Diagnostic_Studio.exe`。
+- CMake 输出名、构建发布脚本和当前使用文档已同步，后续构建不会恢复旧名。
+- 仅更改文件名，正式 EXE 内容、大小和 SHA-256 保持不变。
 
 0. 奇瑞 E0Y Update_PublicKey 可选步骤
 
@@ -178,7 +184,7 @@ UDS 通用刷写工具 Change List
 
 正式包继续保留：
 
-- CH_FLASH_tools.exe 和 32 位 SeedKey 代理 keygen_broker.exe。
+- CH_Diagnostic_Studio.exe 和 32 位 SeedKey 代理 keygen_broker.exe。
 - Qt、VC Runtime、OpenGL 软件回退等运行依赖。
 - 21 个可执行 Profile 文件。
 - Profile 明确引用的 Driver、APP、CAL、CBF、VBF、校验文件和 SeedKey DLL。
@@ -191,7 +197,7 @@ UDS 通用刷写工具 Change List
 - 与上一正式包内容完全相同：307 个。
 - 同路径内容变化：README.md。
 - 上一正式包独有：旧主程序及 60 个已清理的内部/非运行文件。
-- 本次正式包独有：CH_FLASH_tools.exe、CHANGE_LIST.txt 及 8.19 基线之后新增的运行资源。
+- 本次正式包独有：CH_Diagnostic_Studio.exe、CHANGE_LIST.txt 及 8.19 基线之后新增的运行资源。
 
 四、未变化的产品范围
 ----------------------------------------

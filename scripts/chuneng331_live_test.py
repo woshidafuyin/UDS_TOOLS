@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Chuneng ARC331 live bench test via pywinauto.
 
-Launches dist\\UDS_Tool.exe, selects ChuNeng ARC331 left-rear radar,
+Launches dist\\CH_Diagnostic_Studio.exe, selects ChuNeng ARC331 left-rear radar,
 runs online probe, then starts flashing, and collects evidence
 (screenshots, execution log, ASC trace, HTML report).
 Usage:
   set PYWIN32_DLL_DIR=<python site-packages\\win32>
-  python chuneng331_live_test.py --exe <dist\\UDS_Tool.exe> --evidence <dir>
+  python chuneng331_live_test.py --exe <dist\\CH_Diagnostic_Studio.exe> --evidence <dir>
 """
 import argparse
 import os

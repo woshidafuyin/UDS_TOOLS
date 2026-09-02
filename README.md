@@ -1,7 +1,7 @@
 # UDS 通用刷写工具
 
-更新日期：2026-08-31
-当前正式程序：`CH_FLASH_tools.exe`
+更新日期：2026-09-02
+当前正式程序：`CH_Diagnostic_Studio.exe`
 当前代码分支：`main`
 
 ## 1. 文档定位
@@ -16,7 +16,7 @@
 - 17 个已注册 Workflow ID；
 - 4 类 CAN 硬件后端：Vector XL、ZLG/ZCAN、TOSUN/TSMaster、Kvaser；
 - 4 个用户功能页：刷写作业、版本读取、诊断报文、总线监听；
-- 统一主程序 `CH_FLASH_tools.exe`；
+- 统一主程序 `CH_Diagnostic_Studio.exe`；
 - Profile、项目运行资源、硬件运行驱动和用户说明文档；
 - 当前交付目录为 `dist`，运行产生的 `logs` 和 `Configuration` 不预置在干净发布包中。
 
