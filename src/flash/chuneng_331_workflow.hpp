@@ -25,6 +25,7 @@ constexpr bool is_supported_chuneng_app_cbf_type(
 
 enum class Chuneng331InputMode {
   cbf_pair,
+  driver_cbf_app_srecord,
   srecord_pair,
 };
 
@@ -41,17 +42,17 @@ struct Chuneng331AbtMetadata {
     std::span<const std::uint8_t> abt,
     std::span<const std::uint8_t> image);
 
-// A ChuNeng package is an atomic Driver/APP pair. Mixing a CBF role with an
-// S-record role would also mix signature provenance, so reject it during
-// preflight before a CAN provider is created.
+// ARC331 accepts the established same-format pairs plus the field-required
+// Driver CBF + APP S-record combination. The inverse mixed direction remains
+// unsupported because no approved Driver S-record + APP CBF workflow exists.
 Chuneng331InputMode resolve_chuneng_331_input_mode(
     const std::filesystem::path& driver,
     const std::filesystem::path& app);
 
 // The current ARC331 profile is the only selectable ChuNeng workflow. It
-// accepts either a Driver+APP CBF pair or a Driver+APP S-record/ASC pair, then
-// runs both roles through the dedicated ARC331 state machine; it never enters
-// the LP radar certificate flow.
+// accepts a Driver+APP CBF pair, Driver CBF + APP S-record/ASC, or a
+// Driver+APP S-record/ASC pair, then runs both roles through the dedicated
+// ARC331 state machine; it never enters the LP radar certificate flow.
 class ChunengArc331Workflow final : public FlashWorkflow {
 public:
   std::wstring_view id() const noexcept override;

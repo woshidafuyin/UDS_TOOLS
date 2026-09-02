@@ -1338,18 +1338,20 @@ void test_chuneng_cbf_software_type_compatibility() {
 
   check(uds::resolve_chuneng_331_input_mode(L"driver.cbf", L"app.CBF") ==
                 uds::Chuneng331InputMode::cbf_pair &&
+            uds::resolve_chuneng_331_input_mode(L"driver.CBF", L"app.s19") ==
+                uds::Chuneng331InputMode::driver_cbf_app_srecord &&
             uds::resolve_chuneng_331_input_mode(L"driver.srec", L"app.S19") ==
                 uds::Chuneng331InputMode::srecord_pair,
-        "ChuNeng paired CBF/S-record mode detection mismatch");
-  bool rejected_mixed = false;
+        "ChuNeng CBF/S-record input mode detection mismatch");
+  bool rejected_inverse_mixed = false;
   try {
     static_cast<void>(uds::resolve_chuneng_331_input_mode(
-        L"driver.cbf", L"app.s19"));
+        L"driver.s19", L"app.cbf"));
   } catch (const std::invalid_argument&) {
-    rejected_mixed = true;
+    rejected_inverse_mixed = true;
   }
-  check(rejected_mixed,
-        "ChuNeng accepted a mixed Driver CBF + APP S-record input set");
+  check(rejected_inverse_mixed,
+        "ChuNeng accepted unsupported Driver S-record + APP CBF input");
   bool rejected_unknown = false;
   try {
     static_cast<void>(uds::resolve_chuneng_331_input_mode(
@@ -3300,6 +3302,37 @@ void test_lp_arc_protocol_and_resources() {
                                  std::string::npos;
                         }),
         "ChuNeng packaged S19 pair did not pass the real workflow preflight "
+        "before CAN access");
+  auto mixed_preflight_job = s19_preflight_job;
+  mixed_preflight_job.driver_file =
+      L"resources/chuneng_d7_arc331_zip/CBF/Driver/driver_712345678AB.cbf";
+  mixed_preflight_job.driver_verify_file.clear();
+  std::vector<std::string> mixed_preflight_reports;
+  uds::FlashWorkflowCallbacks mixed_preflight_callbacks;
+  mixed_preflight_callbacks.report =
+      [&mixed_preflight_reports](std::string step, std::string verdict,
+                                 std::string detail) {
+        mixed_preflight_reports.push_back(step + ":" + verdict + ":" +
+                                          detail);
+      };
+  bool mixed_stopped_before_can = false;
+  try {
+    uds::ChunengArc331Workflow mixed_workflow;
+    mixed_workflow.run(mixed_preflight_job, mixed_preflight_callbacks,
+                       stopped_preflight.get_token());
+  } catch (const std::runtime_error& error) {
+    mixed_stopped_before_can =
+        std::string(error.what()).find("cancelled") != std::string::npos;
+  }
+  check(mixed_stopped_before_can &&
+            std::any_of(mixed_preflight_reports.cbegin(),
+                        mixed_preflight_reports.cend(),
+                        [](const std::string& line) {
+                          return line.find("Preflight:PASS:Files validated: "
+                                           "Driver=0x4000+ABT") !=
+                                 std::string::npos;
+                        }),
+        "ChuNeng Driver CBF + APP S19 did not pass workflow preflight "
         "before CAN access");
   bool rejected = false;
   try {

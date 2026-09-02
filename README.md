@@ -172,7 +172,7 @@
 
 | 项目 | Profile / Workflow | 当前公开模式或特性 |
 | --- | --- | --- |
-| 楚能 ARC331 | `chuneng_331_left_rear.ini` / `chuneng_arc331` | 左/右后雷达；APP、FT；CBF 或成对 S19/ASC |
+| 楚能 ARC331 | `chuneng_331_left_rear.ini` / `chuneng_arc331` | 左/右后雷达；APP、FT；CBF、成对 S19/ASC，或 Driver CBF + APP S19/ASC |
 | 奇瑞 ARS1.33 | `chery_ars1_33.ini` / `chery_ars1_33` | APP、CAL、APP+CAL |
 | 奇瑞 KP31 | `chery_kp31.ini` / `chery_kp31` | APP、CAL、APP+CAL |
 | 奇瑞 E0Y、T22、T1EJ | 各自 Profile / Workflow | APP、CAL、APP+CAL；E0Y 的 APP/CAL 额外提供默认关闭的 `Update_PublicKey` Panel 同义开关 |
@@ -205,7 +205,7 @@
 ## 12. 楚能 ARC331 专项说明
 
 - 当前目标为右后 `0x72C/0x72D` 和左后 `0x72E/0x72F`，目标切换同步影响探测、版本读取、刷写、监听过滤、日志和报告；
-- CBF 输入必须为 Driver CBF + APP CBF；S-record 输入必须为 Driver S19/SREC + Driver ASC + APP S19/SREC + APP ASC；禁止两种来源混搭；
+- 支持 Driver CBF + APP CBF、Driver S19/SREC + Driver ASC + APP S19/SREC + APP ASC，以及现场需要的 Driver CBF + APP S19/SREC + APP ASC；混合模式不再要求 Driver 与 APP 来自同一种容器，但每个角色仍执行自身的格式、窗口、ABT、摘要和 256 字节验签数据检查；反向的 Driver S19 + APP CBF 未开放；
 - CBF 预检覆盖版本、Header、类型、数据格式、地址、长度、段 CRC16、整体 CRC32、ABT Hash、主数据 SHA-256、256 字节签名和固定刷写窗口；
 - APP“能否刷写”在 `10 03` 后继续执行 `31 01 02 03`；NRC `0x31` 会提示可能处于擦除中断后的 Boot/SBL 恢复态，并阻止把它误判为普通 APP 可刷写；
 - 正式刷写维持 10 ms 周期 `0x520`，执行项目规定的前置条件、安全访问、Driver/APP 下载、签名校验、SBL 激活、指纹、复位和恢复；

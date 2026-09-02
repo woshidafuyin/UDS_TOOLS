@@ -137,19 +137,21 @@ Chuneng331InputMode resolve_chuneng_331_input_mode(
     const std::filesystem::path& app) {
   const auto driver_is_cbf = is_cbf_file(driver);
   const auto app_is_cbf = is_cbf_file(app);
-  if (driver_is_cbf != app_is_cbf) {
-    throw std::invalid_argument(
-        "ChuNeng input must be a Driver CBF + APP CBF pair or a Driver "
-        "S-record + APP S-record pair; mixed CBF/S-record input is not "
-        "allowed");
+  if (driver_is_cbf && app_is_cbf) {
+    return Chuneng331InputMode::cbf_pair;
   }
-  if (driver_is_cbf) return Chuneng331InputMode::cbf_pair;
-  if (!is_srecord_file(driver) || !is_srecord_file(app)) {
-    throw std::invalid_argument(
-        "ChuNeng non-CBF input must use S19/SREC files for both Driver and "
-        "APP");
+  if (driver_is_cbf && is_srecord_file(app)) {
+    return Chuneng331InputMode::driver_cbf_app_srecord;
   }
-  return Chuneng331InputMode::srecord_pair;
+  if (is_srecord_file(driver) && is_srecord_file(app)) {
+    return Chuneng331InputMode::srecord_pair;
+  }
+  if (is_srecord_file(driver) && app_is_cbf) {
+    throw std::invalid_argument(
+        "ChuNeng Driver S-record + APP CBF input is not supported");
+  }
+  throw std::invalid_argument(
+      "ChuNeng Driver/APP input must use CBF or S19/SREC files");
 }
 
 std::wstring_view ChunengArc331Workflow::id() const noexcept {
@@ -165,9 +167,9 @@ void ChunengArc331Workflow::run(const FlashJob& job,
                                 std::stop_token stop) {
   if (callbacks.log) {
     callbacks.log(
-        "ChuNeng ARC331 dedicated flow selected: input is an atomic "
-        "Driver+APP CBF pair or Driver+APP S-record/ASC pair; both use "
-        "256-byte 0202 "
+        "ChuNeng ARC331 dedicated flow selected: input may be Driver+APP "
+        "CBF, Driver CBF + APP S-record/ASC, or Driver+APP S-record/ASC; "
+        "both roles use 256-byte 0202 "
         "verification, and LP 6000/6001 certificate routines are not used");
   }
   record(callbacks, 0, "Preflight", "INFO",
@@ -181,9 +183,11 @@ void ChunengArc331Workflow::run(const FlashJob& job,
   };
   const auto input_mode =
       resolve_chuneng_331_input_mode(job.driver_file, job.app_file);
-  const auto cbf_pair = input_mode == Chuneng331InputMode::cbf_pair;
+  const auto driver_is_cbf =
+      input_mode != Chuneng331InputMode::srecord_pair;
+  const auto app_is_cbf = input_mode == Chuneng331InputMode::cbf_pair;
 
-  if (cbf_pair) {
+  if (driver_is_cbf) {
     const auto driver = load_chuneng_cbf(resolve(job.driver_file));
     if (!is_supported_chuneng_driver_cbf_type(driver.software_type)) {
       throw std::runtime_error(
@@ -210,10 +214,9 @@ void ChunengArc331Workflow::run(const FlashJob& job,
            "transfer address=0x00000000; 256-byte dev_signature extracted",
            FlashStage::configuration, {}, FlashImageRole::driver);
   } else {
-    if (job.driver_verify_file.empty() || job.app_verify_file.empty()) {
+    if (job.driver_verify_file.empty()) {
       throw std::runtime_error(
-          "ChuNeng S-record mode requires both Driver verification ASC and "
-          "APP verification ASC");
+          "ChuNeng Driver S-record requires a Driver verification ASC");
     }
     const auto driver_verification_path = resolve(job.driver_verify_file);
     const auto driver_abt_path =
@@ -237,7 +240,7 @@ void ChunengArc331Workflow::run(const FlashJob& job,
            FlashStage::configuration, {}, FlashImageRole::driver);
   }
 
-  if (cbf_pair) {
+  if (app_is_cbf) {
     const auto app = load_chuneng_cbf(resolve(job.app_file));
     if (!is_supported_chuneng_app_cbf_type(app.software_type)) {
       throw std::runtime_error("ChuNeng APP CBF type must be DATA or APP");
@@ -258,6 +261,10 @@ void ChunengArc331Workflow::run(const FlashJob& job,
            "source equals transfer window; 256-byte dev_signature extracted",
            FlashStage::configuration, {}, FlashImageRole::app);
   } else {
+    if (job.app_verify_file.empty()) {
+      throw std::runtime_error(
+          "ChuNeng APP S-record requires an APP verification ASC");
+    }
     const auto app_verification_path = resolve(job.app_verify_file);
     const auto app_abt_path =
         chuneng_331_abt_sidecar_path(app_verification_path);
@@ -276,9 +283,12 @@ void ChunengArc331Workflow::run(const FlashJob& job,
            FlashStage::configuration, {}, FlashImageRole::app);
   }
   log(callbacks,
-      std::string("ChuNeng ARC331 paired input preflight passed: mode=") +
-          (cbf_pair ? "Driver CBF + APP CBF" :
-                      "Driver S-record/ASC + APP S-record/ASC") +
+      std::string("ChuNeng ARC331 input preflight passed: mode=") +
+          (input_mode == Chuneng331InputMode::cbf_pair
+               ? "Driver CBF + APP CBF"
+               : input_mode == Chuneng331InputMode::driver_cbf_app_srecord
+                     ? "Driver CBF + APP S-record/ASC"
+                     : "Driver S-record/ASC + APP S-record/ASC") +
           "; both roles enter the same 0202/256-byte-signature state "
           "machine");
   record(callbacks, 0, "Preflight", "PASS",
