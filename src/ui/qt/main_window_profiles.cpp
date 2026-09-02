@@ -316,6 +316,9 @@ void MainWindow::applySelectedProfile(int device_index) {
   ui_->rxIdLineEdit->setText(
       QStringLiteral("0x%1").arg(QString::number(profile.rx_id, 16).toUpper()));
   ui_->entryModeComboBox->clear();
+  // Flash entry is an operator decision. Never infer it from the Profile or a
+  // previous run: every Profile/target selection starts from this empty item.
+  ui_->entryModeComboBox->addItem(QStringLiteral("请选择"), QString{});
   if (profile.supports_ft_entry &&
       profile.default_entry_mode == QStringLiteral("auto")) {
     ui_->entryModeComboBox->addItem(QStringLiteral("自动检测"),
@@ -345,9 +348,7 @@ void MainWindow::applySelectedProfile(int device_index) {
     ui_->entryModeComboBox->addItem(QStringLiteral("APP+CAL"),
                                     QStringLiteral("app_cal"));
   }
-  const auto entry_index =
-      ui_->entryModeComboBox->findData(profile.default_entry_mode);
-  ui_->entryModeComboBox->setCurrentIndex(entry_index < 0 ? 0 : entry_index);
+  ui_->entryModeComboBox->setCurrentIndex(0);
   showPath(ui_->driverPathLineEdit, profile.driver_path);
   showPath(ui_->appPathLineEdit, profile.app_path);
   showPath(ui_->calPathLineEdit, profile.cal_path);
@@ -386,10 +387,9 @@ void MainWindow::saveActiveProfileState() const {
 
   QSettings settings;
   settings.beginGroup(profileStateSettingsGroup(active_profile_state_key_));
-  const auto entry_mode = ui_->entryModeComboBox->currentData().toString();
-  if (!entry_mode.isEmpty()) {
-    settings.setValue(QStringLiteral("entry_mode"), entry_mode);
-  }
+  // Entry mode is intentionally session-only and must be chosen again after
+  // every Profile/target change and every application restart.
+  settings.remove(QStringLiteral("entry_mode"));
   bool tx_valid{}, rx_valid{};
   const auto tx_text = ui_->txIdLineEdit->text().trimmed();
   const auto rx_text = ui_->rxIdLineEdit->text().trimmed();
@@ -408,6 +408,7 @@ void MainWindow::saveActiveProfileState() const {
                       channel);
   }
   settings.endGroup();
+  settings.remove(QStringLiteral("selectors/entry_mode"));
   settings.sync();
 }
 
@@ -428,21 +429,11 @@ void MainWindow::restoreCurrentProfileState() {
                    settings.value(QStringLiteral("selectors/profile_id"))
                            .toString() == profiles[profile_index].profile_id;
   }
-  auto saved_entry_mode =
-      settings.value(state_group + QStringLiteral("/entry_mode")).toString();
-
-  // Migrate the former single global mode only for the Profile that owned it.
-  if (saved_entry_mode.isEmpty() && legacy_owner) {
-    saved_entry_mode =
-        settings.value(QStringLiteral("selectors/entry_mode")).toString();
-  }
-
-  const auto entry_index =
-      ui_->entryModeComboBox->findData(saved_entry_mode);
-  if (entry_index >= 0) {
-    QSignalBlocker blocker(ui_->entryModeComboBox);
-    ui_->entryModeComboBox->setCurrentIndex(entry_index);
-  }
+  // Do not restore the previous entry mode. The combo was rebuilt with the
+  // empty "请选择" item selected by applySelectedProfile(). Remove obsolete
+  // persisted values so older releases cannot reintroduce a hidden default.
+  settings.remove(state_group + QStringLiteral("/entry_mode"));
+  settings.remove(QStringLiteral("selectors/entry_mode"));
 
   const auto restore_id = [&settings, &state_group](const QString& name,
                                                     QLineEdit* editor) {

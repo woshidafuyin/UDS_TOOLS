@@ -45,6 +45,7 @@
 #include <QSizePolicy>
 #include <QSpinBox>
 #include <QStatusBar>
+#include <QStyle>
 #include <QTextCursor>
 #include <QTextCharFormat>
 #include <QTimer>
@@ -66,6 +67,13 @@ namespace uds::ui::qt {
 using namespace main_window_support;
 
 void MainWindow::startProbeFromUi() {
+  const auto entry_mode = ui_->entryModeComboBox->currentData().toString();
+  if (entry_mode.isEmpty()) {
+    const auto message = QStringLiteral("请先选择刷写模式。");
+    ui_->progressStatusLabel->setText(message);
+    appendUiLog(message);
+    return;
+  }
   bool profile_valid{};
   const auto profile_index = selectedProfileIndex(&profile_valid);
   bool channel_valid{};
@@ -91,7 +99,6 @@ void MainWindow::startProbeFromUi() {
 
   ui_->progressBar->setValue(0);
   ui_->progressStatusLabel->setText(QStringLiteral("正在启动在线探测……"));
-  const auto entry_mode = ui_->entryModeComboBox->currentData().toString();
   const auto& profile = controller_bridge_->profileOptions()[
       static_cast<std::size_t>(profile_index)];
   const auto target_name = hasRadarSelector()
@@ -126,6 +133,13 @@ void MainWindow::startProbeFromUi() {
 }
 
 void MainWindow::startFlashFromUi() {
+  const auto entry_mode = ui_->entryModeComboBox->currentData().toString();
+  if (entry_mode.isEmpty()) {
+    QMessageBox::warning(
+        this, QStringLiteral("请选择刷写模式"),
+        QStringLiteral("请先选择 APP、FT 或其他可用刷写模式。"));
+    return;
+  }
   bool profile_valid{};
   const auto profile_index = selectedProfileIndex(&profile_valid);
   bool channel_valid{};
@@ -156,7 +170,6 @@ void MainWindow::startFlashFromUi() {
                                         "本次刷写已阻止。"));
     return;
   }
-  const auto entry_mode = ui_->entryModeComboBox->currentData().toString();
   const auto optional_lingpao_certificate =
       profile.flow_id == QStringLiteral("lp_arf") ||
       profile.flow_id == QStringLiteral("lp_arc");
@@ -299,6 +312,16 @@ void MainWindow::updateEnabledState() {
       static_cast<std::size_t>(profile_index) < profiles.size() &&
       ui_->radarComboBox->count() > 1;
   const auto has_profiles = !profiles.empty();
+  const auto entry_mode_selected =
+      !ui_->entryModeComboBox->currentData().toString().isEmpty();
+  const auto mode_unselected = !entry_mode_selected;
+  if (ui_->entryModeComboBox->property("modeUnselected").toBool() !=
+      mode_unselected) {
+    ui_->entryModeComboBox->setProperty("modeUnselected", mode_unselected);
+    ui_->entryModeComboBox->style()->unpolish(ui_->entryModeComboBox);
+    ui_->entryModeComboBox->style()->polish(ui_->entryModeComboBox);
+    ui_->entryModeComboBox->update();
+  }
 
   // A passive monitor may switch backends safely: the backend action stops the
   // old receive thread/trace and restarts on the new vendor. Keep switching
@@ -320,7 +343,8 @@ void MainWindow::updateEnabledState() {
   ui_->entryModeComboBox->setEnabled(!busy && profile_valid);
   ui_->repeatCountSpinBox->setEnabled(!busy && usable);
   const auto e0y_public_key_compatible =
-      usable && profiles[profile_index].flow_id == QStringLiteral("chery_e0y") &&
+      usable && entry_mode_selected &&
+      profiles[profile_index].flow_id == QStringLiteral("chery_e0y") &&
       ui_->entryModeComboBox->currentData().toString() !=
           QStringLiteral("app_cal");
   if (!e0y_public_key_compatible) {
@@ -331,8 +355,8 @@ void MainWindow::updateEnabledState() {
   // Placeholder profiles remain fail-closed for CAN operations, but file
   // selection is an offline preparation action and must stay available.
   ui_->filesGroupBox->setEnabled(!busy && profile_valid);
-  ui_->probeButton->setEnabled(!busy && usable);
-  ui_->startFlashButton->setEnabled(!busy && usable);
+  ui_->probeButton->setEnabled(!busy && usable && entry_mode_selected);
+  ui_->startFlashButton->setEnabled(!busy && usable && entry_mode_selected);
   ui_->startFlashButton->setText(flash_running_
                                      ? QStringLiteral("刷写中…")
                                      : QStringLiteral("开始刷写"));

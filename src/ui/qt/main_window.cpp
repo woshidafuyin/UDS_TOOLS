@@ -346,6 +346,10 @@ QLineEdit:focus,
 QSpinBox:focus {
   border: 1px solid #2878c7;
 }
+QComboBox#entryModeComboBox[modeUnselected="true"] {
+  background: #eef1f4;
+  color: #7b8490;
+}
 QComboBox::drop-down {
   width: 26px;
   border: none;

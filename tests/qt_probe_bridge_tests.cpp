@@ -368,6 +368,7 @@ int main(int argc, char* argv[]) {
     bool flash_succeeded{};
     bool flash_cancelled{};
     QString flash_report;
+    QString flash_message;
     QString probe_message;
     QStringList emitted_logs;
 
@@ -419,13 +420,14 @@ int main(int argc, char* argv[]) {
         });
     QObject::connect(
         &bridge, &uds::ui::qt::ControllerBridge::flashFinished, &application,
-        [&](bool success, bool was_cancelled, const QString&,
+        [&](bool success, bool was_cancelled, const QString& message,
             const QString& report_path) {
           callbacks_on_ui_thread &=
               QThread::currentThread() == application.thread();
           flash_finished = true;
           flash_succeeded = success;
           flash_cancelled = was_cancelled;
+          flash_message = message;
           flash_report = report_path;
           application.quit();
         });
@@ -591,6 +593,32 @@ int main(int argc, char* argv[]) {
               flash_capture->job.entry_mode == L"ft",
           "C857 secondary FT flash did not apply the target-specific "
           "0x714/0x71C recovery endpoint");
+
+    // Empty UI selections must fail at the bridge boundary as well. This
+    // prevents a caller from silently falling back to APP if a disabled button
+    // is triggered programmatically.
+    capture->opened = false;
+    finished = false;
+    succeeded = false;
+    probe_message.clear();
+    bridge.startProbe(0, {}, {}, 2, 0x702, 0x762);
+    check(finished && !succeeded &&
+              probe_message.contains(QStringLiteral("请选择刷写模式")) &&
+              !capture->opened,
+          "Qt probe bridge accepted an empty flash mode");
+
+    flash_capture->ran = false;
+    flash_finished = false;
+    flash_succeeded = false;
+    flash_message.clear();
+    bridge.startFlash(0, {}, {}, false, 1, 2, 0x703, 0x763,
+                      QStringLiteral("driver.s19"),
+                      QStringLiteral("app.s19"), {}, {}, {}, {},
+                      QStringLiteral("security.dll"));
+    check(flash_finished && !flash_succeeded &&
+              flash_message.contains(QStringLiteral("请选择刷写模式")) &&
+              !flash_capture->ran,
+          "Qt flash bridge accepted an empty flash mode");
     std::cout << "qt_probe_bridge_tests: PASS\n";
     return 0;
   } catch (const std::exception& error) {

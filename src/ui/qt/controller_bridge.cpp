@@ -178,6 +178,11 @@ void ControllerBridge::startProbe(int profile_index, const QString& target_id,
                        QStringLiteral("在线探测配置无效：未选择设备。"));
     return;
   }
+  if (entry_mode.trimmed().isEmpty()) {
+    emit probeFinished(false, false,
+                       QStringLiteral("在线探测配置无效：请选择刷写模式。"));
+    return;
+  }
 
   const auto& profile =
       profiles_[static_cast<std::size_t>(profile_index)].profile;
@@ -316,6 +321,11 @@ void ControllerBridge::startFlash(
       static_cast<std::size_t>(profile_index) >= profiles_.size()) {
     emit flashFinished(false, false,
                        QStringLiteral("刷写配置无效：未选择设备。"), {});
+    return;
+  }
+  if (entry_mode.trimmed().isEmpty()) {
+    emit flashFinished(false, false,
+                       QStringLiteral("刷写配置无效：请选择刷写模式。"), {});
     return;
   }
 

@@ -790,6 +790,12 @@ int main(int argc, char* argv[]) {
                "Qt selectors were not created");
       check(channels->isEnabled(),
             "Idle CAN channel selector must remain operator-selectable");
+      check(probe && start_flash &&
+                entries->currentText() == QStringLiteral("请选择") &&
+                entries->currentData().toString().isEmpty() &&
+                entries->property("modeUnselected").toBool() &&
+                !probe->isEnabled() && !start_flash->isEnabled(),
+            "Flash mode must start unselected and keep CAN actions disabled");
       check(QMetaObject::invokeMethod(
                 bus_monitor_page, "runningChanged", Qt::DirectConnection,
                 Q_ARG(bool, true)),
@@ -1930,7 +1936,7 @@ int main(int argc, char* argv[]) {
       const auto chery_cal = entries->findData(QStringLiteral("cal"));
       const auto chery_app_cal =
           entries->findData(QStringLiteral("app_cal"));
-      check(entries->count() == 3 && chery_app >= 0 && chery_cal >= 0 &&
+      check(entries->count() == 4 && chery_app >= 0 && chery_cal >= 0 &&
                 chery_app_cal >= 0 &&
                 entries->itemText(chery_app) ==
                     QStringLiteral("APP") &&
@@ -1938,8 +1944,8 @@ int main(int argc, char* argv[]) {
                     QStringLiteral("CAL") &&
                 entries->itemText(chery_app_cal) ==
                     QStringLiteral("APP+CAL") &&
-                entries->currentData().toString() ==
-                    QStringLiteral("app_cal"),
+                entries->currentData().toString().isEmpty() &&
+                entries->currentText() == QStringLiteral("请选择"),
             "Chery ARS1.33 concise flashing modes are not exposed");
       radar->setCurrentIndex(find_text(radar, QStringLiteral("主雷达")));
       application.processEvents();
@@ -1966,14 +1972,14 @@ int main(int argc, char* argv[]) {
                 !tx_id->isReadOnly() && !rx_id->isReadOnly() &&
                 tx_id->text() == QStringLiteral("0x70D") &&
                 rx_id->text() == QStringLiteral("0x78D") &&
-                entries->count() == 3 && kp31_app >= 0 && kp31_cal >= 0 &&
+                entries->count() == 4 && kp31_app >= 0 && kp31_cal >= 0 &&
                 kp31_app_cal >= 0 &&
                 entries->itemText(kp31_app) == QStringLiteral("APP") &&
                 entries->itemText(kp31_cal) == QStringLiteral("CAL") &&
                 entries->itemText(kp31_app_cal) ==
                     QStringLiteral("APP+CAL") &&
-                entries->currentData().toString() == QStringLiteral("app") &&
-                entries->currentText() == QStringLiteral("APP"),
+                entries->currentData().toString().isEmpty() &&
+                entries->currentText() == QStringLiteral("请选择"),
             "Chery KP31 project/endpoint/mode mapping mismatch");
       const std::array chery_editable_endpoints{
           std::pair{QStringLiteral("T1EJ"),
@@ -1997,7 +2003,7 @@ int main(int argc, char* argv[]) {
            const auto t1ej_cal = entries->findData(QStringLiteral("cal"));
            const auto t1ej_app_cal =
                entries->findData(QStringLiteral("app_cal"));
-           check(entries->count() == 3 && t1ej_app >= 0 && t1ej_cal >= 0 &&
+           check(entries->count() == 4 && t1ej_app >= 0 && t1ej_cal >= 0 &&
                      t1ej_app_cal >= 0 &&
                      entries->itemText(t1ej_cal) == QStringLiteral("CAL") &&
                      entries->itemText(t1ej_app_cal) ==
@@ -2010,8 +2016,12 @@ int main(int argc, char* argv[]) {
                     !update_public_key->isChecked(),
                 "Update_PublicKey must be visible only for E0Y and default off");
          if (is_e0y) {
+           check(!update_public_key->isEnabled(),
+                 "E0Y unselected mode enabled Update_PublicKey");
+           entries->setCurrentIndex(entries->findData(QStringLiteral("app")));
+           application.processEvents();
            check(update_public_key->isEnabled(),
-                  "E0Y APP did not enable Update_PublicKey");
+                 "E0Y explicit APP selection did not enable Update_PublicKey");
            update_public_key->setChecked(true);
            entries->setCurrentIndex(
                 entries->findData(QStringLiteral("app_cal")));
@@ -2032,13 +2042,13 @@ int main(int argc, char* argv[]) {
                              {QStringLiteral("J90K")});
       const auto longma_app = entries->findData(QStringLiteral("app"));
       const auto longma_ft = entries->findData(QStringLiteral("ft"));
-      check(entries->count() == 2 && longma_app >= 0 && longma_ft >= 0 &&
+      check(entries->count() == 3 && longma_app >= 0 && longma_ft >= 0 &&
                 entries->itemText(longma_app) ==
                     QStringLiteral("APP") &&
                 entries->itemText(longma_ft) ==
                     QStringLiteral("FT") &&
-                entries->currentData().toString() == QStringLiteral("app"),
-            "Longma APP/FT operation modes are incomplete or changed the APP default");
+                entries->currentData().toString().isEmpty(),
+            "Longma APP/FT operation modes are incomplete or not unselected");
       check(!radar->isHidden() && !radar_label->isHidden() &&
                 radar->count() == 2 &&
                 target_id(radar, radar->currentIndex()) ==
@@ -2080,13 +2090,13 @@ int main(int argc, char* argv[]) {
                 tx_id->text() == QStringLiteral("0x744") &&
                 rx_id->text() == QStringLiteral("0x74C"),
             "C857 main/front radar selector or endpoint mismatch");
-      check(entries->currentData().toString() == QStringLiteral("app") &&
+      check(entries->currentData().toString().isEmpty() &&
                 entries->findData(QStringLiteral("ft")) >= 0 &&
                 entries->findData(QStringLiteral("cal")) >= 0 &&
                 entries->findData(QStringLiteral("app_cal")) >= 0 &&
                 entries->itemText(entries->findData(QStringLiteral("ft")))
                     == QStringLiteral("FT"),
-            "C857 operation modes are incomplete or changed the APP default");
+            "C857 operation modes are incomplete or not unselected");
       auto* c857_app_path = window.findChild<QLineEdit*>(
           QStringLiteral("appPathLineEdit"));
       auto* c857_cal_path = window.findChild<QLineEdit*>(
@@ -2124,7 +2134,7 @@ int main(int argc, char* argv[]) {
       devices->setCurrentIndex(b216_project);
       application.processEvents();
       check(radar->count() == 2 &&
-                entries->currentData().toString() == QStringLiteral("app") &&
+                entries->currentData().toString().isEmpty() &&
                 entries->findData(QStringLiteral("ft")) >= 0 &&
                 entries->findData(QStringLiteral("cal")) >= 0 &&
                 entries->findData(QStringLiteral("app_cal")) >= 0 &&
@@ -2147,8 +2157,8 @@ int main(int argc, char* argv[]) {
                 !tx_id->isReadOnly() && !rx_id->isReadOnly(),
             "Xizhong diagnostic ID overrides are not editable");
       check_file_panel_is_stable();
-      check(entries->currentData().toString() == QStringLiteral("app"),
-            "Xizhong must default to the passing APP entry");
+      check(entries->currentData().toString().isEmpty(),
+            "Xizhong must require an explicit APP or FT entry selection");
       check(entries->findData(QStringLiteral("auto")) < 0,
             "Xizhong unsafe automatic APP-to-FT fallback is still offered");
       check(entries->findData(QStringLiteral("ft")) >= 0,
@@ -2180,7 +2190,7 @@ int main(int argc, char* argv[]) {
       check(radar->currentText() == QStringLiteral("LSMR 从雷达（待验证）") &&
                 tx_id->text() == QStringLiteral("0x18DAB6F1") &&
                 rx_id->text() == QStringLiteral("0x18DAF1B6") &&
-                entries->currentData().toString() == QStringLiteral("app") &&
+                entries->currentData().toString().isEmpty() &&
                 entries->findData(QStringLiteral("ft")) < 0 && app_path &&
                 app_path->text().isEmpty() &&
                 chuneng_driver_path->text().isEmpty(),
@@ -2213,8 +2223,8 @@ int main(int argc, char* argv[]) {
                 !tx_id->isReadOnly() && !rx_id->isReadOnly() &&
                 tx_id->text() == QStringLiteral("0x7A4") &&
                 rx_id->text() == QStringLiteral("0x7AC") &&
-                entries->count() == 2 &&
-                entries->currentData().toString() == QStringLiteral("app") &&
+                entries->count() == 3 &&
+                entries->currentData().toString().isEmpty() &&
                 entries->findData(QStringLiteral("ft")) >= 0 &&
                 entries->itemText(
                     entries->findData(QStringLiteral("ft"))) ==
@@ -2239,9 +2249,8 @@ int main(int argc, char* argv[]) {
                   !tx_id->isReadOnly() && !rx_id->isReadOnly() &&
                   tx_id->text() == QStringLiteral("0x7A4") &&
                   rx_id->text() == QStringLiteral("0x7AC") &&
-                  entries->count() == 2 &&
-                  entries->currentData().toString() ==
-                      QStringLiteral("app") &&
+                  entries->count() == 3 &&
+                  entries->currentData().toString().isEmpty() &&
                   entries->findData(QStringLiteral("ft")) >= 0 &&
                   driver_path->text() ==
                       QStringLiteral("ARF2_32_ERadar_FlashDrv.s19") &&
@@ -2267,7 +2276,7 @@ int main(int argc, char* argv[]) {
                 tx_id->text() == QStringLiteral("0x772") &&
                 rx_id->text() == QStringLiteral("0x77A") &&
                 radar->isEnabled() &&
-                entries->isEnabled() && entries->count() == 2 &&
+                entries->isEnabled() && entries->count() == 3 &&
                 entries->itemText(entries->findData(QStringLiteral("app"))) ==
                     QStringLiteral("APP") &&
                 entries->itemText(entries->findData(QStringLiteral("ft"))) ==
@@ -2332,23 +2341,26 @@ int main(int argc, char* argv[]) {
       entries->setCurrentIndex(entries->findData(QStringLiteral("ft")));
       application.processEvents();
       check(entries->currentData().toString() == QStringLiteral("ft") &&
-                entries->currentText() == QStringLiteral("FT"),
+                entries->currentText() == QStringLiteral("FT") &&
+                !entries->property("modeUnselected").toBool() &&
+                probe->isEnabled() && start_flash->isEnabled(),
             "ARC FT entry selection mismatch");
 
-      // Each target has independent operator state. A mode chosen for ARC
-      // target 0 must not leak to target 3, and returning restores target 0.
+      // Every target change requires a fresh operator choice. A mode chosen for
+      // ARC target 0 must neither leak to target 3 nor be restored on return.
       radar->setCurrentIndex(3);
       application.processEvents();
-      check(entries->currentData().toString() == QStringLiteral("app"),
-            "ARC target 0 FT mode leaked into target 3");
+      check(entries->currentData().toString().isEmpty() &&
+                entries->currentText() == QStringLiteral("请选择"),
+            "ARC target 3 did not reset the entry mode");
       radar->setCurrentIndex(0);
       application.processEvents();
-      check(entries->currentData().toString() == QStringLiteral("ft"),
-            "Returning to ARC target 0 did not restore its FT entry mode");
+      check(entries->currentData().toString().isEmpty() &&
+                entries->currentText() == QStringLiteral("请选择"),
+            "Returning to ARC target 0 restored a previous entry mode");
 
-      // Entry mode belongs to the selected Profile/target. A mode chosen for
-      // ARC must not leak into ARF, while returning to ARC must restore ARC's
-      // own selection.
+      // Profile changes also reset the mode, including when returning to a
+      // Profile that had an explicit mode selected earlier in this session.
       {
         QSettings isolated_mode_settings;
         isolated_mode_settings.remove(
@@ -2356,12 +2368,12 @@ int main(int argc, char* argv[]) {
       }
       devices->setCurrentIndex(find_text(devices, QStringLiteral("ARF")));
       application.processEvents();
-      check(entries->currentData().toString() == QStringLiteral("app"),
-            "ARC FT mode leaked into the independent ARF Profile");
+      check(entries->currentData().toString().isEmpty(),
+            "ARF did not start with an unselected entry mode");
       devices->setCurrentIndex(find_text(devices, QStringLiteral("ARC")));
       application.processEvents();
-      check(entries->currentData().toString() == QStringLiteral("ft"),
-            "Returning to ARC did not restore ARC's FT entry mode");
+      check(entries->currentData().toString().isEmpty(),
+            "Returning to ARC restored its earlier FT entry mode");
 
       entries->setCurrentIndex(entries->findData(QStringLiteral("app")));
       application.processEvents();
@@ -2374,9 +2386,9 @@ int main(int argc, char* argv[]) {
                  !rx_id->isReadOnly() &&
                 tx_id->text() == QStringLiteral("0x751") &&
                 rx_id->text() == QStringLiteral("0x759") &&
-                entries->count() == 2 &&
-                entries->currentData().toString() ==
-                    QStringLiteral("app") &&
+                entries->count() == 3 &&
+                entries->currentData().toString().isEmpty() &&
+                entries->currentText() == QStringLiteral("请选择") &&
                  entries->itemText(
                      entries->findData(QStringLiteral("app"))) ==
                      QStringLiteral("APP") &&
@@ -2414,6 +2426,8 @@ int main(int argc, char* argv[]) {
                  app_verify_label->text() == QStringLiteral("APP 验签（内置）"),
             "LP-ARF UI endpoint, entry names or resources mismatch");
       check_file_panel_is_stable(true);
+      entries->setCurrentIndex(entries->findData(QStringLiteral("app")));
+      application.processEvents();
 
       // Keep the green embedded-certificate summary in the UI, but never
       // forward it as an external verification-file path.
@@ -2472,30 +2486,30 @@ int main(int argc, char* argv[]) {
       application.processEvents();
       repeat_count->setValue(8);
       channels->setCurrentIndex(channels->findData(3U));
-      check(entries->currentData().toString() == QStringLiteral("app"),
-            "Geely FT mode leaked into BAIC BQB41");
+      check(entries->currentData().toString().isEmpty(),
+            "BAIC BQB41 did not require a new entry-mode selection");
 
       projects->setCurrentIndex(geely_state_vendor);
       application.processEvents();
       check(devices->currentText() == QStringLiteral("P611") &&
-                entries->currentData().toString() == QStringLiteral("ft") &&
+                entries->currentData().toString().isEmpty() &&
                 repeat_count->value() == 7 &&
                 channels->currentData().toUInt() == 2U &&
                 tx_id->text() == QStringLiteral("0x123") &&
                 rx_id->text() == QStringLiteral("0x456"),
-            "Geely P611 project/mode/repeat/channel/diagnostic IDs were not "
-            "restored after BAIC");
+            "Geely P611 project state was not restored or mode was retained "
+            "after BAIC");
 
       projects->setCurrentIndex(baic_state_vendor);
       application.processEvents();
       check(devices->currentText() == QStringLiteral("BQB41") &&
                 radar->currentIndex() == 2 &&
-                entries->currentData().toString() == QStringLiteral("app") &&
+                entries->currentData().toString().isEmpty() &&
                 repeat_count->value() == 8 &&
                 channels->currentData().toUInt() == 3U &&
                 tx_id->text() == QStringLiteral("0x74A") &&
                 rx_id->text() == QStringLiteral("0x7CA"),
-            "BAIC BQB41 project/target/repeat/channel state was not restored");
+            "BAIC BQB41 project state was not restored or mode was retained");
 
       // Exercise every configured vendor/project/target with an A -> B -> A
       // transition. This turns selector isolation into a catalog-wide contract
@@ -2532,7 +2546,6 @@ int main(int argc, char* argv[]) {
             }
             if (mode_index < 0) mode_index = entries->currentIndex();
             entries->setCurrentIndex(mode_index);
-            const auto expected_mode = entries->currentData().toString();
             const auto expected_tx =
                 QStringLiteral("0x%1")
                     .arg(0x500 + selector_state_case, 0, 16)
@@ -2569,7 +2582,8 @@ int main(int argc, char* argv[]) {
                 "/" + std::to_string(target);
             check(devices->currentText() == project_name &&
                       radar->currentIndex() == target &&
-                      entries->currentData().toString() == expected_mode &&
+                      entries->currentData().toString().isEmpty() &&
+                      entries->currentText() == QStringLiteral("请选择") &&
                       repeat_count->value() == expected_repeat &&
                       channels->currentData().toUInt() == expected_channel &&
                       tx_id->text() == expected_tx &&
@@ -2689,21 +2703,14 @@ int main(int argc, char* argv[]) {
     check(target_has_scoped_hardware(QStringLiteral("right_rear")) ||
               target_has_scoped_hardware(QStringLiteral("left_rear")),
           "Qt channels were not saved by Profile/target and backend");
-    const auto chuneng_right_mode =
-        settings
-            .value(QStringLiteral(
-                "selectors/profile_state/chuneng_331_left_rear/right_rear/"
-                "entry_mode"))
-            .toString();
-    const auto chuneng_left_mode =
-        settings
-            .value(QStringLiteral(
-                "selectors/profile_state/chuneng_331_left_rear/left_rear/"
-                "entry_mode"))
-            .toString();
-    check(chuneng_right_mode == QStringLiteral("ft") ||
-              chuneng_left_mode == QStringLiteral("ft"),
-          "Qt entry selection was not saved by Profile/target");
+    check(!settings.contains(QStringLiteral(
+                  "selectors/profile_state/chuneng_331_left_rear/right_rear/"
+                  "entry_mode")) &&
+              !settings.contains(QStringLiteral(
+                  "selectors/profile_state/chuneng_331_left_rear/left_rear/"
+                  "entry_mode")) &&
+              !settings.contains(QStringLiteral("selectors/entry_mode")),
+          "Qt entry selection must not be persisted");
     check(scoped_value(QStringLiteral("right_rear"),
                        QStringLiteral("repeat_count")).toInt() == 3 ||
               scoped_value(QStringLiteral("left_rear"),
@@ -2726,6 +2733,22 @@ int main(int argc, char* argv[]) {
           "C857 radar selection was not saved");
     checkpoint("settings-verified");
 
+    // Simulate settings written by an older release. Startup must ignore and
+    // remove them so reopening the application still shows "请选择".
+    settings.setValue(
+        QStringLiteral(
+            "selectors/profile_state/chuneng_331_left_rear/right_rear/"
+            "entry_mode"),
+        QStringLiteral("ft"));
+    settings.setValue(
+        QStringLiteral(
+            "selectors/profile_state/chuneng_331_left_rear/left_rear/"
+            "entry_mode"),
+        QStringLiteral("ft"));
+    settings.setValue(QStringLiteral("selectors/entry_mode"),
+                      QStringLiteral("ft"));
+    settings.sync();
+
     {
       uds::ui::qt::MainWindow restored;
       auto* restored_zlg = restored.findChild<QAction*>(
@@ -2738,18 +2761,29 @@ int main(int argc, char* argv[]) {
           QStringLiteral("vectorChannelComboBox"));
       auto* repeat_count = restored.findChild<QSpinBox*>(
           QStringLiteral("repeatCountSpinBox"));
-      check(projects && entries && channels && repeat_count && restored_zlg &&
+      auto* probe = restored.findChild<QPushButton*>(
+          QStringLiteral("probeButton"));
+      auto* start_flash = restored.findChild<QPushButton*>(
+          QStringLiteral("startFlashButton"));
+      check(projects && entries && channels && repeat_count && probe &&
+                start_flash && restored_zlg &&
                 restored_zlg->isChecked(),
             "Restored Qt selectors missing");
       check(projects->currentText() == QStringLiteral("楚能"),
             "Qt project selection was not restored");
       check(channels->currentData().toUInt() == 4U,
             "Qt ZLG channel selection was not restored");
-      check(entries->currentData().toString() == QStringLiteral("ft"),
-            "Qt entry selection was not restored");
+      check(entries->currentData().toString().isEmpty() &&
+                entries->currentText() == QStringLiteral("请选择") &&
+                entries->property("modeUnselected").toBool() &&
+                !probe->isEnabled() && !start_flash->isEnabled(),
+            "Qt entry selection was restored instead of reset");
       check(repeat_count->value() == 3,
             "Qt flash repeat count was not restored");
     }
+    settings.sync();
+    check(!settings.contains(QStringLiteral("selectors/entry_mode")),
+          "Legacy global entry mode was not removed during startup");
     checkpoint("restored-window-destroyed");
 
     settings.setValue(QStringLiteral("selectors/project"),
