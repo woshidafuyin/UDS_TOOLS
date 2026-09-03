@@ -792,6 +792,10 @@ int main(int argc, char* argv[]) {
             "Idle CAN channel selector must remain operator-selectable");
       check(probe && start_flash &&
                 entries->currentIndex() == -1 &&
+                entries->isEditable() && entries->lineEdit() &&
+                entries->lineEdit()->isReadOnly() &&
+                entries->lineEdit()->placeholderText() ==
+                    QStringLiteral("请选择") &&
                 entries->placeholderText() == QStringLiteral("请选择") &&
                 entries->findText(QStringLiteral("请选择")) == -1 &&
                 entries->currentData().toString().isEmpty() &&

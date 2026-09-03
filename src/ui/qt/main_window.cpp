@@ -37,6 +37,7 @@
 #include <QMenuBar>
 #include <QMouseEvent>
 #include <QMessageBox>
+#include <QPalette>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRegularExpression>
@@ -69,6 +70,21 @@ using namespace main_window_support;
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent), ui_(std::make_unique<Ui::MainWindow>()) {
   ui_->setupUi(this);
+  // Keep the prompt visible in the closed field without inserting it into the
+  // popup model. Qt's non-editable QComboBox placeholder is not painted by all
+  // Windows styles, so use a read-only editor solely for stable presentation.
+  ui_->entryModeComboBox->setEditable(true);
+  ui_->entryModeComboBox->setInsertPolicy(QComboBox::NoInsert);
+  if (auto* entry_mode_editor = ui_->entryModeComboBox->lineEdit()) {
+    entry_mode_editor->setReadOnly(true);
+    entry_mode_editor->setFocusPolicy(Qt::NoFocus);
+    entry_mode_editor->setAttribute(Qt::WA_TransparentForMouseEvents);
+    auto palette = entry_mode_editor->palette();
+    palette.setColor(QPalette::Text, QColor(QStringLiteral("#202938")));
+    palette.setColor(QPalette::PlaceholderText,
+                     QColor(QStringLiteral("#7b8490")));
+    entry_mode_editor->setPalette(palette);
+  }
   configureVisualDesign();
   version_page_ = new VersionConfirmationPage(ui_->workspaceTabWidget);
   ui_->workspaceTabWidget->addTab(version_page_,
@@ -349,6 +365,14 @@ QSpinBox:focus {
 QComboBox#entryModeComboBox[modeUnselected="true"] {
   background: #eef1f4;
   color: #7b8490;
+}
+QComboBox#entryModeComboBox QLineEdit {
+  min-height: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  color: #202938;
 }
 QComboBox::drop-down {
   width: 26px;
