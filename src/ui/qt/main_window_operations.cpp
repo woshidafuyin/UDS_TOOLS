@@ -315,6 +315,10 @@ void MainWindow::updateEnabledState() {
   const auto entry_mode_selected =
       !ui_->entryModeComboBox->currentData().toString().isEmpty();
   const auto mode_unselected = !entry_mode_selected;
+  if (entry_mode_placeholder_) {
+    entry_mode_placeholder_->setVisible(mode_unselected);
+    if (mode_unselected) entry_mode_placeholder_->raise();
+  }
   if (ui_->entryModeComboBox->property("modeUnselected").toBool() !=
       mode_unselected) {
     ui_->entryModeComboBox->setProperty("modeUnselected", mode_unselected);

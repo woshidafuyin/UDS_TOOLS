@@ -12,6 +12,7 @@ class QCloseEvent;
 class QEvent;
 class QFile;
 class QActionGroup;
+class QLabel;
 class QLineEdit;
 class QString;
 
@@ -179,6 +180,7 @@ private:
   QString latest_report_path_;
   std::unique_ptr<QFile> execution_log_file_;
   QActionGroup* can_backend_group_{};
+  QLabel* entry_mode_placeholder_{};
   QHash<QString, QList<UiLogEntry>> target_log_entries_;
   QHash<QString, RuntimeFileSelection> runtime_file_selections_;
   QString active_profile_state_key_;

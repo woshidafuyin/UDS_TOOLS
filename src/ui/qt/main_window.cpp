@@ -37,7 +37,6 @@
 #include <QMenuBar>
 #include <QMouseEvent>
 #include <QMessageBox>
-#include <QPalette>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRegularExpression>
@@ -72,19 +71,19 @@ MainWindow::MainWindow(QWidget* parent)
   ui_->setupUi(this);
   // Keep the prompt visible in the closed field without inserting it into the
   // popup model. Qt's non-editable QComboBox placeholder is not painted by all
-  // Windows styles, so use a read-only editor solely for stable presentation.
-  ui_->entryModeComboBox->setEditable(true);
-  ui_->entryModeComboBox->setInsertPolicy(QComboBox::NoInsert);
-  if (auto* entry_mode_editor = ui_->entryModeComboBox->lineEdit()) {
-    entry_mode_editor->setReadOnly(true);
-    entry_mode_editor->setFocusPolicy(Qt::NoFocus);
-    entry_mode_editor->setAttribute(Qt::WA_TransparentForMouseEvents);
-    auto palette = entry_mode_editor->palette();
-    palette.setColor(QPalette::Text, QColor(QStringLiteral("#202938")));
-    palette.setColor(QPalette::PlaceholderText,
-                     QColor(QStringLiteral("#7b8490")));
-    entry_mode_editor->setPalette(palette);
-  }
+  // Windows styles. Overlay a mouse-transparent label instead, preserving the
+  // native non-editable combo's whole-field click and keyboard behavior.
+  entry_mode_placeholder_ =
+      new QLabel(QStringLiteral("请选择"), ui_->entryModeComboBox);
+  entry_mode_placeholder_->setObjectName(
+      QStringLiteral("entryModePlaceholderLabel"));
+  entry_mode_placeholder_->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
+  entry_mode_placeholder_->setAttribute(Qt::WA_TransparentForMouseEvents);
+  entry_mode_placeholder_->setStyleSheet(
+      QStringLiteral("background: transparent; color: #7b8490;"));
+  entry_mode_placeholder_->setGeometry(
+      ui_->entryModeComboBox->rect().adjusted(8, 1, -28, -1));
+  entry_mode_placeholder_->raise();
   configureVisualDesign();
   version_page_ = new VersionConfirmationPage(ui_->workspaceTabWidget);
   ui_->workspaceTabWidget->addTab(version_page_,
@@ -366,14 +365,6 @@ QComboBox#entryModeComboBox[modeUnselected="true"] {
   background: #eef1f4;
   color: #7b8490;
 }
-QComboBox#entryModeComboBox QLineEdit {
-  min-height: 0;
-  background: transparent;
-  border: none;
-  border-radius: 0;
-  padding: 0;
-  color: #202938;
-}
 QComboBox::drop-down {
   width: 26px;
   border: none;
@@ -562,6 +553,12 @@ void MainWindow::installWheelMutationGuards() {
 }
 
 bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
+  if (ui_ && entry_mode_placeholder_ &&
+      watched == ui_->entryModeComboBox && event->type() == QEvent::Resize) {
+    entry_mode_placeholder_->setGeometry(
+        ui_->entryModeComboBox->rect().adjusted(8, 1, -28, -1));
+    entry_mode_placeholder_->raise();
+  }
   if (ui_ && watched == ui_->logPlainTextEdit->viewport()) {
     const auto link_at_event = [&]() {
       const auto* mouse_event = static_cast<QMouseEvent*>(event);

@@ -320,9 +320,6 @@ void MainWindow::applySelectedProfile(int device_index) {
   // previous run. Use QComboBox's non-selectable placeholder so the popup only
   // contains real operation modes.
   ui_->entryModeComboBox->setPlaceholderText(QStringLiteral("请选择"));
-  if (auto* entry_mode_editor = ui_->entryModeComboBox->lineEdit()) {
-    entry_mode_editor->setPlaceholderText(QStringLiteral("请选择"));
-  }
   if (profile.supports_ft_entry &&
       profile.default_entry_mode == QStringLiteral("auto")) {
     ui_->entryModeComboBox->addItem(QStringLiteral("自动检测"),

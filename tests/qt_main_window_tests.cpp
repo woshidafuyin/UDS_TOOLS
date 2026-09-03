@@ -639,6 +639,8 @@ int main(int argc, char* argv[]) {
           window.findChild<QLabel*>(QStringLiteral("deviceLabel"));
       auto* entries = window.findChild<QComboBox*>(
           QStringLiteral("entryModeComboBox"));
+      auto* entry_placeholder = window.findChild<QLabel*>(
+          QStringLiteral("entryModePlaceholderLabel"));
       auto* radar = window.findChild<QComboBox*>(
           QStringLiteral("radarComboBox"));
       auto* radar_label =
@@ -792,10 +794,11 @@ int main(int argc, char* argv[]) {
             "Idle CAN channel selector must remain operator-selectable");
       check(probe && start_flash &&
                 entries->currentIndex() == -1 &&
-                entries->isEditable() && entries->lineEdit() &&
-                entries->lineEdit()->isReadOnly() &&
-                entries->lineEdit()->placeholderText() ==
-                    QStringLiteral("请选择") &&
+                !entries->isEditable() && entry_placeholder &&
+                entry_placeholder->isVisible() &&
+                entry_placeholder->text() == QStringLiteral("请选择") &&
+                entry_placeholder->testAttribute(
+                    Qt::WA_TransparentForMouseEvents) &&
                 entries->placeholderText() == QStringLiteral("请选择") &&
                 entries->findText(QStringLiteral("请选择")) == -1 &&
                 entries->currentData().toString().isEmpty() &&
@@ -2635,9 +2638,20 @@ int main(int argc, char* argv[]) {
       check_file_panel_is_stable();
 
       const auto channel_four = channels->findData(4U);
+      const auto app_entry = entries->findData(QStringLiteral("app"));
       const auto ft_entry = entries->findData(QStringLiteral("ft"));
-      check(channel_four >= 0 && ft_entry >= 0,
-            "Chuneng persisted selector choices are unavailable");
+      check(channel_four >= 0 && app_entry >= 0 && ft_entry >= 0 &&
+                entries->itemText(app_entry) == QStringLiteral("APP") &&
+                entries->itemText(ft_entry) == QStringLiteral("FT"),
+            "Chuneng APP/FT selector choices are unavailable");
+      // A valid profile must keep the native combo as the click target. The
+      // visual placeholder above it is mouse-transparent and never enters the
+      // popup model.
+      check(entries->isEnabled(), "Chuneng flash-mode selector is disabled");
+      check(QApplication::widgetAt(
+                entries->mapToGlobal(entries->rect().center())) == entries &&
+                entries->findText(QStringLiteral("请选择")) == -1,
+            "Chuneng flash-mode field does not route clicks to its APP/FT combo");
       // Establish explicit per-backend values for this exact device before
       // verifying backend switches. The catalog matrix may have already saved
       // a different ZLG channel for the same target.
