@@ -803,8 +803,9 @@ int main(int argc, char* argv[]) {
                 entries->findText(QStringLiteral("请选择")) == -1 &&
                 entries->currentData().toString().isEmpty() &&
                 entries->property("modeUnselected").toBool() &&
-                !probe->isEnabled() && !start_flash->isEnabled(),
-            "Flash mode must start unselected and keep CAN actions disabled");
+                probe->isEnabled() && !start_flash->isEnabled(),
+            "An unselected flash mode must allow an explanatory probe click "
+            "while keeping formal flashing disabled");
       check(QMetaObject::invokeMethod(
                 bus_monitor_page, "runningChanged", Qt::DirectConnection,
                 Q_ARG(bool, true)),
@@ -1083,6 +1084,26 @@ int main(int argc, char* argv[]) {
       check(log_view && clear_log && !execution_log.isEmpty() &&
                 QFile::exists(execution_log),
             "Execution log persistence or clear action is missing");
+      int missing_mode_probe_requests = 0;
+      QObject::connect(
+          &window, &uds::ui::qt::MainWindow::probeRequested, &window,
+          [&missing_mode_probe_requests] { ++missing_mode_probe_requests; });
+      const auto status_before_missing_mode_probe = progress_status->text();
+      probe->click();
+      application.processEvents();
+      const auto missing_mode_block = find_log_block(
+          log_view->document(), QStringLiteral("未配置刷写模式"));
+      const auto missing_mode_format = log_fragment_format(
+          missing_mode_block, QStringLiteral("未配置刷写模式"));
+      check(missing_mode_probe_requests == 0 && missing_mode_block.isValid() &&
+                missing_mode_block.text().contains(
+                    QStringLiteral("请先选择刷写模式")) &&
+                missing_mode_format.foreground().color() ==
+                    QColor(QStringLiteral("#D93025")) &&
+                missing_mode_format.fontWeight() == QFont::Bold &&
+                progress_status->text() == status_before_missing_mode_probe,
+            "Missing flash mode did not stay offline and render only a red "
+            "operator-log prompt");
       QFile persisted(execution_log);
       check(persisted.open(QIODevice::ReadOnly) &&
                  persisted.readAll().contains("界面已就绪"),
@@ -2810,7 +2831,7 @@ int main(int argc, char* argv[]) {
                 entries->placeholderText() == QStringLiteral("请选择") &&
                 entries->findText(QStringLiteral("请选择")) == -1 &&
                 entries->property("modeUnselected").toBool() &&
-                !probe->isEnabled() && !start_flash->isEnabled(),
+                probe->isEnabled() && !start_flash->isEnabled(),
             "Qt entry selection was restored instead of reset");
       check(repeat_count->value() == 3,
             "Qt flash repeat count was not restored");

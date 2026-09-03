@@ -69,9 +69,10 @@ using namespace main_window_support;
 void MainWindow::startProbeFromUi() {
   const auto entry_mode = ui_->entryModeComboBox->currentData().toString();
   if (entry_mode.isEmpty()) {
-    const auto message = QStringLiteral("请先选择刷写模式。");
-    ui_->progressStatusLabel->setText(message);
-    appendUiLog(message);
+    appendUiLog(
+        QStringLiteral(
+            "未配置刷写模式：请先选择刷写模式后再执行“能否刷写”。"),
+        UiLogTone::Failure, UiLogDestination::ViewOnly);
     return;
   }
   bool profile_valid{};
@@ -359,7 +360,10 @@ void MainWindow::updateEnabledState() {
   // Placeholder profiles remain fail-closed for CAN operations, but file
   // selection is an offline preparation action and must stay available.
   ui_->filesGroupBox->setEnabled(!busy && profile_valid);
-  ui_->probeButton->setEnabled(!busy && usable && entry_mode_selected);
+  // Keep the probe action discoverable before a mode is selected. The click
+  // handler reports the missing mode in the operator log and returns before
+  // any monitor synchronization, CAN open, or probe request can occur.
+  ui_->probeButton->setEnabled(!busy && usable);
   ui_->startFlashButton->setEnabled(!busy && usable && entry_mode_selected);
   ui_->startFlashButton->setText(flash_running_
                                      ? QStringLiteral("刷写中…")
