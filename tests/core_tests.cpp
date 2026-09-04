@@ -2294,11 +2294,17 @@ void test_chery_e0y_periodic_wakeup_session() {
   using namespace std::chrono_literals;
   MockBus bus;
   uds::CheryE0yWakeupSession wakeup(
-      bus, {}, {}, uds::CheryE0yWakeupTiming{5ms, 30ms});
+      bus, {}, {}, uds::CheryE0yWakeupTiming{10ms, 150ms, 10ms});
   wakeup.start();
-  wakeup.wait_until_settled();
+  int readiness_attempts{};
+  const auto ready = wakeup.wait_until_ready(
+      [&](std::chrono::milliseconds timeout) {
+        check(timeout > 0ms && timeout <= 150ms,
+              "E0Y readiness probe received an invalid timeout budget");
+        return ++readiness_attempts == 2;
+      });
   wakeup.stop_and_check();
-  check(bus.sent.size() >= 2 &&
+  check(ready && readiness_attempts == 2 && !bus.sent.empty() &&
             std::all_of(bus.sent.cbegin(), bus.sent.cend(),
                         [](const uds::CanFrame& frame) {
                           return frame.id == 0x600 && !frame.extended &&

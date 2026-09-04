@@ -175,7 +175,7 @@
 | 楚能 ARC331 | `chuneng_331_left_rear.ini` / `chuneng_arc331` | 左/右后雷达；APP、FT；CBF、成对 S19/ASC，或 Driver CBF + APP S19/ASC |
 | 奇瑞 ARS1.33 | `chery_ars1_33.ini` / `chery_ars1_33` | APP、CAL、APP+CAL |
 | 奇瑞 KP31 | `chery_kp31.ini` / `chery_kp31` | APP、CAL、APP+CAL |
-| 奇瑞 E0Y | `chery_e0y.ini` / `chery_e0y` | 固定 `0x71F/0x79F`；`0x600` 全零 @1000ms、首个诊断请求前稳定15秒；APP、CAL、APP+CAL；三种模式提供默认关闭的 `Update_PublicKey`；正常流程独立对齐 CANoe `Download/TC_7/TC_2` |
+| 奇瑞 E0Y | `chery_e0y.ini` / `chery_e0y` | 固定 `0x71F/0x79F`；`0x600` 全零 @1000ms，1秒后开始 `10 01` 就绪探测，收到 `50 01` 立即继续、15秒为最大等待上限；APP、CAL、APP+CAL；三种模式提供默认关闭的 `Update_PublicKey`；正常流程独立对齐 CANoe `Download/TC_7/TC_2` |
 | 奇瑞 T22、T1EJ | 各自 Profile / Workflow | APP、CAL、APP+CAL；保留各自 CANoe 例程、安全等级和收尾语义，不复用 E0Y 阶段计划 |
 | 长安 C857 | `changan_c857.ini` / `changan_c857` | 主/从目标；APP、FT、CAL、APP+CAL |
 | 长安 B216 | `lingyao_b216.ini` / `lingyao_b216` | 主/从目标；Profile 声明模式 |
@@ -203,7 +203,7 @@ E0Y 以 `D:\project\奇瑞\03_CANoe刷写工程\E0Y\Runtime\run_20260903_checkbo
 
 三种模式共享同一套 E0Y 阶段计划和执行器，通用骨架如下：
 
-1. 在同一 CAN 通道持续发送标准 Classic CAN `0x600 00 00 00 00 00 00 00 00`，周期1000ms；首个诊断请求前稳定15秒，在线探测和完整刷写期间均保持发送；
+1. 在同一 CAN 通道持续发送标准 Classic CAN `0x600 00 00 00 00 00 00 00 00`，周期1000ms；1秒后开始物理 `10 01` 就绪探测，收到 `50 01` 立即继续，15秒仅为最大等待上限；在线探测和完整刷写期间均保持发送；
 2. 固定物理诊断端点 `0x71F -> 0x79F`、功能寻址 `0x7DF`，避免误用 KP31 的 `0x70D/0x78D`；
 3. APP 等待 2 秒，CAL/APP+CAL 等待 1 秒；
 4. 功能寻址发送 `10 83`，物理寻址执行 `31 01 02 03`；

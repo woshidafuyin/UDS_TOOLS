@@ -196,9 +196,6 @@ void run_project(CheryArs131Project project, std::wstring_view workflow_id,
           if (callbacks.log) callbacks.log(line);
         });
     e0y_wakeup->start();
-    e0y_wakeup->wait_until_settled();
-    report(callbacks, "E0Y wake-up", "PASS",
-           "0x600 all-zero Classic CAN @1000ms; 15000ms settle before first diagnostic request");
   }
   IsoTpSession physical_transport(
       *bus, {job.profile.tx_id, job.profile.rx_id, job.profile.padding, 0,
@@ -211,6 +208,35 @@ void run_project(CheryArs131Project project, std::wstring_view workflow_id,
   };
   UdsClient physical(physical_transport, uds_log, stop);
   UdsClient functional(functional_transport, uds_log, stop);
+  if (e0y_wakeup) {
+    std::string last_readiness_error;
+    const auto ready = e0y_wakeup->wait_until_ready(
+        [&](std::chrono::milliseconds timeout) {
+          try {
+            const auto response = physical.request(
+                std::array<std::uint8_t, 2>{0x10, 0x01}, timeout);
+            if (response.success && response.response.size() >= 2 &&
+                response.response[0] == 0x50 && response.response[1] == 0x01) {
+              return true;
+            }
+            last_readiness_error = response.detail.empty()
+                                       ? "missing 50 01 response"
+                                       : response.detail;
+          } catch (const std::exception& error) {
+            last_readiness_error = error.what();
+          }
+          return false;
+        });
+    if (!ready) {
+      throw std::runtime_error(
+          "E0Y diagnostic readiness timeout after 15000ms" +
+          (last_readiness_error.empty() ? std::string{}
+                                        : ": " + last_readiness_error));
+    }
+    report(callbacks, "E0Y wake-up", "PASS",
+           "0x600 all-zero Classic CAN @1000ms; 10 01 started after "
+           "1000ms; 50 01 received before 15000ms upper bound");
+  }
   CheryArs131AppFlow flow(
       physical, functional, spec, layout,
       [&](int percent, const std::string& line) {

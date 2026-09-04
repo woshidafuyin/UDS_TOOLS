@@ -44,23 +44,15 @@ std::string execute_probe_session(
 
   std::optional<UdsResponse> response;
   std::string last_request_error;
-  for (int attempt = 1; attempt <= plan.attempt_count; ++attempt) {
-    check_stop(stop);
-    if (plan.attempt_count > 1) {
-      log(callbacks,
-          (plan.shidaixinan_hjzj ? "时代新安功能10 03探测：第"
-                                 : "犀重物理10 01探测：第") +
-              std::to_string(attempt) + "/" +
-              std::to_string(plan.attempt_count) + "次");
-    }
+  const auto request_session = [&](std::chrono::milliseconds timeout) {
     try {
       auto candidate = client.request(
-          std::array<std::uint8_t, 2>{0x10, plan.session}, 1000ms);
+          std::array<std::uint8_t, 2>{0x10, plan.session}, timeout);
       if (candidate.success && candidate.response.size() >= 2 &&
           candidate.response[0] == 0x50 &&
           candidate.response[1] == plan.session) {
         response = std::move(candidate);
-        break;
+        return true;
       }
       std::ostringstream detail;
       if (!candidate.success) {
@@ -79,11 +71,31 @@ std::string execute_probe_session(
     } catch (const std::exception& error) {
       last_request_error = error.what();
     }
-    if (attempt < plan.attempt_count) {
-      for (int elapsed = 0; elapsed < 10; ++elapsed) {
-        check_stop(stop);
-        preconditions.check();
-        std::this_thread::sleep_for(20ms);
+    return false;
+  };
+
+  if (plan.chery_e0y) {
+    log(callbacks,
+        "在线探测：0x600唤醒1秒后开始10 01探测；收到50 01立即返回，"
+        "15秒仅作为最大等待上限。");
+    preconditions.wait_for_e0y_ready(request_session);
+  } else {
+    for (int attempt = 1; attempt <= plan.attempt_count; ++attempt) {
+      check_stop(stop);
+      if (plan.attempt_count > 1) {
+        log(callbacks,
+            (plan.shidaixinan_hjzj ? "时代新安功能10 03探测：第"
+                                   : "犀重物理10 01探测：第") +
+                std::to_string(attempt) + "/" +
+                std::to_string(plan.attempt_count) + "次");
+      }
+      if (request_session(1000ms)) break;
+      if (attempt < plan.attempt_count) {
+        for (int elapsed = 0; elapsed < 10; ++elapsed) {
+          check_stop(stop);
+          preconditions.check();
+          std::this_thread::sleep_for(20ms);
+        }
       }
     }
   }

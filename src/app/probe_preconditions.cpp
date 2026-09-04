@@ -55,7 +55,6 @@ void ProbePreconditions::start() {
           log(callbacks_, "在线探测：" + message);
         });
     e0y_wakeup_->start();
-    e0y_wakeup_->wait_until_settled();
   }
 
   if (plan_.chuneng_arc331 && !plan_.ft_probe) {
@@ -327,6 +326,14 @@ void ProbePreconditions::start() {
       std::this_thread::sleep_for(20ms);
     }
   }
+}
+
+bool ProbePreconditions::wait_for_e0y_ready(
+    const std::function<bool(std::chrono::milliseconds)>& probe) {
+  if (!e0y_wakeup_) {
+    throw std::logic_error("E0Y wake-up precondition is not active");
+  }
+  return e0y_wakeup_->wait_until_ready(probe);
 }
 
 } // namespace uds::app::probe_detail

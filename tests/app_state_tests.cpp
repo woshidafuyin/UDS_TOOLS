@@ -1225,6 +1225,31 @@ void test_probe_service_success() {
         "probe service progress must be the binary 0/100 verdict");
 }
 
+void test_probe_service_chery_e0y_returns_on_first_positive_response() {
+  auto capture = std::make_shared<ProbeBusCapture>();
+  uds::app::ProbeService service(
+      [capture](const uds::app::ProbeRequest& request) {
+        return std::make_unique<FakeProbeBus>(capture, request.rx_id, true);
+      });
+  auto request = make_probe_request();
+  request.profile.flow = L"chery_e0y";
+  request.profile.tx_id = request.tx_id = 0x71F;
+  request.profile.rx_id = request.rx_id = 0x79F;
+
+  const auto started = std::chrono::steady_clock::now();
+  const auto result = service.run(request, {}, {});
+  const auto elapsed = std::chrono::steady_clock::now() - started;
+  const auto uds_requests = std::count_if(
+      capture->sent.cbegin(), capture->sent.cend(), [](const auto& frame) {
+        return frame.id == 0x71F && frame.data.size() >= 3 &&
+               frame.data[0] == 0x02 && frame.data[1] == 0x10 &&
+               frame.data[2] == 0x01;
+      });
+  check(result.success && uds_requests == 1 &&
+            elapsed < std::chrono::seconds(5),
+        "E0Y probe did not return promptly on the first 50 01 response");
+}
+
 void test_probe_service_rejects_invalid_configuration_before_bus_access() {
   int factory_calls{};
   uds::app::ProbeService service(
@@ -1847,6 +1872,7 @@ int main() {
     test_flash_controller_repeat_stops_on_first_failure();
     test_flash_controller_stop();
     test_probe_service_success();
+    test_probe_service_chery_e0y_returns_on_first_positive_response();
     test_probe_service_rejects_invalid_configuration_before_bus_access();
     test_probe_service_marks_custom_endpoint_without_changing_request();
     test_probe_plan_preserves_entry_specific_session_and_ft_target();

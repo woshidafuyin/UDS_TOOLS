@@ -3,6 +3,7 @@
 #include "app/probe_plan.hpp"
 #include "flash/chery_e0y_wakeup.hpp"
 
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -21,6 +22,8 @@ public:
   ProbePreconditions& operator=(const ProbePreconditions&) = delete;
 
   void start();
+  bool wait_for_e0y_ready(
+      const std::function<bool(std::chrono::milliseconds)>& probe);
   void check() const;
   void stop_and_check();
 

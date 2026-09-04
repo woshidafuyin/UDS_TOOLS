@@ -18,6 +18,7 @@ inline constexpr std::chrono::milliseconds kCheryE0yWakeupSettle{15000};
 struct CheryE0yWakeupTiming {
   std::chrono::milliseconds period{kCheryE0yWakeupPeriod};
   std::chrono::milliseconds settle{kCheryE0yWakeupSettle};
+  std::chrono::milliseconds retry{200};
 };
 
 CanFrame chery_e0y_wakeup_frame();
@@ -38,6 +39,8 @@ public:
 
   void start();
   void wait_until_settled();
+  bool wait_until_ready(
+      const std::function<bool(std::chrono::milliseconds)>& probe);
   void check() const;
   void stop_and_check();
 
@@ -51,6 +54,7 @@ private:
   mutable std::mutex error_mutex_;
   std::string error_;
   std::jthread sender_;
+  std::chrono::steady_clock::time_point started_at_{};
 };
 
 } // namespace uds
