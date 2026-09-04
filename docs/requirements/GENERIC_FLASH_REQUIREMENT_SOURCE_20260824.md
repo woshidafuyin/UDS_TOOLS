@@ -16,7 +16,7 @@
 |---|---|---|---|
 | 奇瑞 T1EJ ARS1.31 | `chery_t1ej` | APP：F15A、D004不带签名；CAL/TC_7：F184、Driver/CAL以DD02校验、DD03；APP+CAL/TC_2：F184、D004携带APP RSA、三段以D002校验、D005；三模式均为7AF/7BF、27 07/08 | 源码/离线验证，三模式待台架 |
 | 奇瑞 T22 ARS1.31 | `chery_t22` | Panel含APP/CAL/APPAndCAL；APP=单次Download1；CAL/TC_7含85/28关闭与恢复、D003、F15A、D004(APP RSA)、Driver/CAL以D002校验，当前注释FF01/DD03；APP+CAL/TC_2以D002校验三段并执行FF01/D005；均为7AF/7BF、27 07/08 | 源码/离线验证，三模式待台架 |
-| 奇瑞 E0Y ARS1.31 | `chery_e0y` | APP：0203、无D004、DD02且无安装例程；CAL/TC_7：0203、Driver/CAL以DD02校验、DD03；APP+CAL/TC_2：D003、D004携带APP RSA、三段以D002校验、D005；三模式均为70D/78D、27 11/12 | 源码/离线验证，三模式待台架 |
+| 奇瑞 E0Y ARS1.31 | `chery_e0y` | 20260904 CANoe 正常基线：三模式均为功能寻址10 83、0203、85 82、28 81 03、27 11/12、F184；Driver/APP/CAL统一以DD02校验，不执行D003/D004/D002/D005/DD03；复位后功能寻址10 81并以14 FFFFFF/54收尾 | CANoe三模式有现场PASS证据；C++离线验证，三模式仍待台架 |
 | 零跑 ARF统一入口 | `lp_arf` | A12/B11 ARF2.31 与 ARF6.31 共用751/759、PLS 701/761、APP 0C0000/180000和1322字节证书流程；支持TMP单包或S19/SREC/BIN配套ASC/TMP；项目资源与来源证据继续独立保存 | 源码/离线验证；A12、B11、ARF6.31仍需分别台架验收 |
 | 北汽 | 不注册可执行 Workflow | 公盘目录为空，不推测诊断参数或刷写步骤 | `BLOCKED_REQUIREMENT` |
 

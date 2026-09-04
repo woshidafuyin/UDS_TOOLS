@@ -1,12 +1,55 @@
 UDS 通用刷写工具 Change List
 ========================================
 
-发布日期：2026-09-02
+发布日期：2026-09-04
 
 文档职责：
 - 本文件只记录当前发布包相对 8.19 正式包的变化。
 - 当前产品的完整功能、项目、模式和使用边界见包内 README.md。
 - 离线测试、硬件连通、真实 ECU 刷写是不同证据层级。
+
+本次更新：2026-09-04 奇瑞 E0Y CANoe 正常流程对齐
+----------------------------------------
+
+对比基线：
+- 上一公司 GitLab `company/main`：`ddb7e9b0f45b5533e71ab4640f901513fe2ea167`，`fix(ui): explain missing flash mode on probe`。
+- 本次范围：奇瑞 E0Y APP、CAL、APP+CAL 正常刷写流程、公钥开关、Profile、UI、离线回归和文档。
+- 权威 CANoe 基线：`D:\project\奇瑞\03_CANoe刷写工程\E0Y\Runtime\run_20260903_checkbox_selection_prototype`。
+- 入口映射：APP=`Download()`，CAL=`TC_7()`，APP+CAL=`TC_2()`。
+
+上一版逻辑：
+- E0Y 共用了奇瑞 ARS1.31 的通用 APP/CAL/APP+CAL 分支，没有用一个独立、可审计的 E0Y 阶段计划锁定 CANoe 正常流程。
+- APP+CAL 会拒绝 `Update_PublicKey`，界面也会禁用并清除该选项；这与当前 CANoe `TC_2()` 的 Panel 和实际代码不一致。
+- 分支中存在把 KP31/T22/T1EJ 或异常 Case 例程语义带入 E0Y 正常刷写的风险，例如 `D003/D004/D002/D005/DD03`。
+- 清 DTC 的预期曾与异常 Case 的“无响应”判定混在一起，没有把 E0Y 正常流程最后必须收到 `54` 的语义单独锁定。
+
+本次正确逻辑：
+- 新增无副作用的 `chery_e0y_normal_stage_sequence()`，作为 APP、CAL、APP+CAL 唯一的 E0Y 阶段计划。
+- 新增高内聚的 `run_e0y_normal()` 执行器，三种入口只声明下载对象差异，不复制公共 UDS 步骤。
+- 公共前置固定为：`10 83 -> 31 01 0203 -> 85 82 -> 28 81 03 -> 10 02 -> 27 11/12 -> [2E 6F00] -> 2E F184`。
+- Driver、APP、CAL 均使用 ECU `74` 响应协商的最大块长，执行 `34 -> 36 -> 37`，并分别以 `31 01 DD02 + 512-byte RSA` 校验。
+- APP 与 CAL 下载前使用 `31 01 FF00` 擦除对应区域；APP 下载 Driver+APP，CAL 下载 Driver+CAL，APP+CAL 下载 Driver+APP+CAL。
+- 公共收尾固定为：`31 01 FF01 -> 11 01 -> wait 2s -> FUNC 10 81 -> FUNC 14 FF FF FF`，最后清 DTC 明确要求 `54` 正响应。
+- E0Y 正常流程明确不执行 `D003`、`D004`、`D002`、`D005` 和 `DD03`。
+- `Update_PublicKey` 在 APP、CAL、APP+CAL 三种模式均可选，位于安全解锁之后、`2E F184` 之前，默认仍为关闭。
+- KP31、T22、T1EJ 保留各自 Workflow 和例程语义，不依赖 E0Y 阶段计划。
+
+代码与文档范围：
+- 修改 `src/flash/chery_ars1_31_app_flow.cpp/.hpp`：E0Y 阶段计划、统一执行器和三入口路由。
+- 修改 `src/flash/chery_ars1_31_project_workflows.cpp`：放开 E0Y APP+CAL 的合法公钥选项。
+- 修改 `src/ui/qt/main_window.ui` 与 `main_window_operations.cpp`：三种 E0Y 模式的界面语义一致。
+- 修改 `profiles/chery_e0y.ini`：来源更新为 2026-09-04 CANoe 勾选工程及 PASS 报告，保留 C++ 台架待验收标记。
+- 新增 `docs/CHERY_E0Y_FLOW_PARITY.md`，同步更新 README、需求来源和 Change List。
+- 增加 APP、CAL、APP+CAL 精确阶段顺序、`DD03` 不得回归、APP+CAL 公钥插入位置及 UI 状态回归。
+- 将楚能 UI 点击回归从全局屏幕坐标判定改为控件鼠标事件属性判定，去除无界面测试中的屏幕遮挡抖动，不改变产品逻辑。
+
+验证与证据边界：
+- 独立干净工作树 Release x86/x64 构建成功，同一轮 CTest `8/8 PASS`。
+- Longma、Xizhong、Changan、Chuneng、Chery KP31/E0Y/T1EJ/T22、Shidaixinan、LP 的发布资源与 Seed/Key 已知向量检查 PASS。
+- 本次没有连接 CAN/实际 ECU，没有使用 C++ 工具完成 APP、CAL、APP+CAL 实车刷写；CANoe PASS 仅是复刻依据，不自动等于新 EXE 台架 PASS。
+- 台架验收应依次执行 APP、CAL、APP+CAL，再覆盖 `Update_PublicKey`，并保留 EXE/Profile/资源/Trace/报告哈希。
+
+以下继续保留历史正式包及累计变更记录。
 
 一、比较基线
 ----------------------------------------
@@ -37,12 +80,12 @@ UDS 通用刷写工具 Change List
 - CMake 输出名、构建发布脚本和当前使用文档已同步，后续构建不会恢复旧名。
 - 仅更改文件名，正式 EXE 内容、大小和 SHA-256 保持不变。
 
-0. 奇瑞 E0Y Update_PublicKey 可选步骤
+0. 奇瑞 E0Y Update_PublicKey 可选步骤（2026-09-04 更新）
 
 - 奇瑞 E0Y 目标配置新增 `Update_PublicKey` 复选框，语义与 CANoe Panel 一致，默认关闭；它不是独立刷写模式。
-- 仅 APP 与 CAL 模式允许启用：完成 `27` 安全访问后、写 `2E F184` 指纹前，发送 `2E 6F00 + 514-byte public key`，并要求 ECU 返回 `6E 6F 00`。
-- APP+CAL/TC_2 的原 CAPL 流程未使用该开关，界面会禁用并清除选择，流程层也会拒绝误配置。
-- 514 字节载荷按 `FlashChery_E0Y_20240410/Capl/Flash.can` 固化；载荷 SHA-256 为 `517fb58290445bacca042a72594544eb64e5a41cd34a9e4a4e7243ea66e60762`。
+- APP、CAL、APP+CAL 三种模式均允许启用：完成 `27` 安全访问后、写 `2E F184` 指纹前，发送 `2E 6F00 + 514-byte public key`，并要求 ECU 返回 `6E 6F 00`。
+- 2026-09-04 以 `run_20260903_checkbox_selection_prototype` 的 `Download/TC_7/TC_2` 及 PASS 报告重新核对，取代了“APP+CAL 不支持该开关”的旧判断。
+- 514 字节载荷保持冻结；载荷 SHA-256 为 `517fb58290445bacca042a72594544eb64e5a41cd34a9e4a4e7243ea66e60762`。
 - 已完成离线全量 CTest 8/8；尚未连接 CAN/ECU，实际写公钥与后续刷写仍需台架验证。
 
 0. 可配置 APP 诊断端点贯穿正式刷写

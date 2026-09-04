@@ -349,9 +349,7 @@ void MainWindow::updateEnabledState() {
   ui_->repeatCountSpinBox->setEnabled(!busy && usable);
   const auto e0y_public_key_compatible =
       usable && entry_mode_selected &&
-      profiles[profile_index].flow_id == QStringLiteral("chery_e0y") &&
-      ui_->entryModeComboBox->currentData().toString() !=
-          QStringLiteral("app_cal");
+      profiles[profile_index].flow_id == QStringLiteral("chery_e0y");
   if (!e0y_public_key_compatible) {
     ui_->updatePublicKeyCheckBox->setChecked(false);
   }

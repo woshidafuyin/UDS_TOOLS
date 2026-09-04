@@ -51,11 +51,6 @@ void run_project(CheryArs131Project project, std::wstring_view workflow_id,
     throw std::runtime_error(
         "Update_PublicKey is supported only by the Chery E0Y workflow");
   }
-  if (job.update_public_key &&
-      plan.mode == CheryArs131FlashMode::app_cal) {
-    throw std::runtime_error(
-        "Chery E0Y Update_PublicKey is not part of APP+CAL/TC_2; select APP or CAL");
-  }
   constexpr auto supports_cal = true;
   if (job.profile.placeholder || job.profile.can_fd ||
       job.profile.extended_id || job.profile.uds_fd || job.profile.uds_brs ||

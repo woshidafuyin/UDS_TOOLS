@@ -2144,6 +2144,47 @@ void test_chery_ars131_project_contracts() {
                 "51 7F B5 82 90 44 5B AC CA 04 2A 72 59 45 44 EB "
                 "64 E5 A4 1C D3 4A 9E 4A 4E 72 43 EA 66 E6 07 62",
         "E0Y Update_PublicKey request differs from CANoe publickeydata[514]");
+  using Stage = uds::CheryE0yNormalStage;
+  const auto e0y_common_prefix = std::vector<Stage>{
+      Stage::settle, Stage::functional_extended_session,
+      Stage::programming_precondition, Stage::disable_dtc_setting,
+      Stage::disable_communication, Stage::programming_session,
+      Stage::security_access, Stage::write_fingerprint,
+      Stage::download_driver, Stage::verify_driver};
+  const auto e0y_common_suffix = std::vector<Stage>{
+      Stage::check_programming_dependencies, Stage::hard_reset,
+      Stage::functional_default_session, Stage::clear_dtc};
+  auto expected_e0y = [&](std::initializer_list<Stage> body) {
+    auto expected = e0y_common_prefix;
+    expected.insert(expected.end(), body);
+    expected.insert(expected.end(), e0y_common_suffix.begin(),
+                    e0y_common_suffix.end());
+    return expected;
+  };
+  check(uds::chery_e0y_normal_stage_sequence(
+            uds::CheryArs131FlashMode::app_only, false) ==
+            expected_e0y({Stage::erase_app, Stage::download_app,
+                          Stage::verify_app}),
+        "E0Y APP/Download stage sequence drifted from CANoe");
+  check(uds::chery_e0y_normal_stage_sequence(
+            uds::CheryArs131FlashMode::cal_only, false) ==
+            expected_e0y({Stage::erase_cal, Stage::download_cal,
+                          Stage::verify_cal}),
+        "E0Y CAL/TC_7 stage sequence drifted from CANoe or reintroduced DD03");
+  check(uds::chery_e0y_normal_stage_sequence(
+            uds::CheryArs131FlashMode::app_cal, false) ==
+            expected_e0y({Stage::erase_app, Stage::download_app,
+                          Stage::verify_app, Stage::erase_cal,
+                          Stage::download_cal, Stage::verify_cal}),
+        "E0Y APP+CAL/TC_2 stage sequence drifted from CANoe");
+  auto app_cal_with_key = expected_e0y(
+      {Stage::erase_app, Stage::download_app, Stage::verify_app,
+       Stage::erase_cal, Stage::download_cal, Stage::verify_cal});
+  app_cal_with_key.insert(app_cal_with_key.begin() + 7,
+                          Stage::update_public_key);
+  check(uds::chery_e0y_normal_stage_sequence(
+            uds::CheryArs131FlashMode::app_cal, true) == app_cal_with_key,
+        "E0Y TC_2 Update_PublicKey must stay between security and F184");
   const auto t1ej_app = uds::resolve_chery_ars1_31_download_plan(
       uds::CheryArs131Project::t1ej, L"app");
   const auto t1ej_cal = uds::resolve_chery_ars1_31_download_plan(

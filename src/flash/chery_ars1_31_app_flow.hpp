@@ -17,6 +17,33 @@ enum class CheryArs131Project { t1ej, t22, e0y };
 enum class CheryArs131D004Mode { none, routine_only, app_signature };
 enum class CheryArs131FlashMode { app_only, cal_only, app_cal };
 
+// Canonical E0Y normal-flow stages frozen from the CANoe Download/TC_7/TC_2
+// entries.  Keeping the stage plan public and side-effect free lets tests lock
+// protocol parity without coupling them to CAN hardware or transport timing.
+enum class CheryE0yNormalStage {
+  settle,
+  functional_extended_session,
+  programming_precondition,
+  disable_dtc_setting,
+  disable_communication,
+  programming_session,
+  security_access,
+  update_public_key,
+  write_fingerprint,
+  download_driver,
+  verify_driver,
+  erase_app,
+  download_app,
+  verify_app,
+  erase_cal,
+  download_cal,
+  verify_cal,
+  check_programming_dependencies,
+  hard_reset,
+  functional_default_session,
+  clear_dtc,
+};
+
 struct CheryArs131DownloadPlan {
   CheryArs131FlashMode mode;
   bool download_app;
@@ -70,6 +97,8 @@ std::vector<std::uint8_t> chery_ars1_31_request_download(
 std::vector<std::uint8_t> chery_ars1_31_erase_memory(
     std::uint32_t address, std::uint32_t length);
 std::vector<std::uint8_t> chery_e0y_update_public_key_request();
+std::vector<CheryE0yNormalStage> chery_e0y_normal_stage_sequence(
+    CheryArs131FlashMode mode, bool update_public_key);
 
 class CheryArs131AppFlow {
 public:
@@ -112,7 +141,10 @@ private:
   void run_cal_only(const CheryArs131AppImages& images,
                     bool update_public_key);
   void run_t22_cal_only(const CheryArs131AppImages& images);
-  void run_app_cal(const CheryArs131AppImages& images);
+  void run_app_cal(const CheryArs131AppImages& images,
+                   bool update_public_key);
+  void run_e0y_normal(const CheryArs131AppImages& images,
+                      CheryArs131FlashMode mode, bool update_public_key);
   void wait(std::chrono::milliseconds duration) const;
   void cancelled() const;
 

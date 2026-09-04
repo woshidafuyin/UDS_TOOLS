@@ -1,6 +1,6 @@
 # UDS 通用刷写工具
 
-更新日期：2026-09-02
+更新日期：2026-09-04
 当前正式程序：`CH_Diagnostic_Studio.exe`
 当前代码分支：`main`
 
@@ -175,7 +175,8 @@
 | 楚能 ARC331 | `chuneng_331_left_rear.ini` / `chuneng_arc331` | 左/右后雷达；APP、FT；CBF、成对 S19/ASC，或 Driver CBF + APP S19/ASC |
 | 奇瑞 ARS1.33 | `chery_ars1_33.ini` / `chery_ars1_33` | APP、CAL、APP+CAL |
 | 奇瑞 KP31 | `chery_kp31.ini` / `chery_kp31` | APP、CAL、APP+CAL |
-| 奇瑞 E0Y、T22、T1EJ | 各自 Profile / Workflow | APP、CAL、APP+CAL；E0Y 的 APP/CAL 额外提供默认关闭的 `Update_PublicKey` Panel 同义开关 |
+| 奇瑞 E0Y | `chery_e0y.ini` / `chery_e0y` | APP、CAL、APP+CAL；三种模式提供默认关闭的 `Update_PublicKey`；正常流程独立对齐 CANoe `Download/TC_7/TC_2` |
+| 奇瑞 T22、T1EJ | 各自 Profile / Workflow | APP、CAL、APP+CAL；保留各自 CANoe 例程、安全等级和收尾语义，不复用 E0Y 阶段计划 |
 | 长安 C857 | `changan_c857.ini` / `changan_c857` | 主/从目标；APP、FT、CAL、APP+CAL |
 | 长安 B216 | `lingyao_b216.ini` / `lingyao_b216` | 主/从目标；Profile 声明模式 |
 | 长马 J90K / ARS1.31 | `longma_ars1_31.ini` / `longma_ars1_31` | APP、FT |
@@ -190,6 +191,33 @@
 | 吉利 P611 | `geely_p611.ini` / `geely_p416` | 完整复用 P416 端点、入口、服务顺序和 VBF 参数；使用独立 `resources/geely_p611` 目录 |
 | 北汽 N61AB | `baic_n61ab.ini` / `baic_n61ab` | Classic CAN；归档 CAPL、Driver/APP S19 与 SeedKey 已接入；正常 APP Download |
 | 北汽 BQB41 | `baic_bqb41.ini` / `baic_bqb41` | CAN FD；四设备；成功 BLF 流程与已知答案验证的 SeedKey 已接入；Driver/APP需手动选择 |
+
+### 10.1 奇瑞 E0Y 正常刷写流程
+
+E0Y 以 `D:\project\奇瑞\03_CANoe刷写工程\E0Y\Runtime\run_20260903_checkbox_selection_prototype`
+为正常刷写权威基线，不以 KP31、T22、T1EJ 或异常 Case 的相似代码代替。三个入口的对应关系为：
+
+- APP 对齐 CANoe `Download()`，下载 Driver + APP；
+- CAL 对齐 CANoe `TC_7()`，下载 Driver + CAL；
+- APP+CAL 对齐 CANoe `TC_2()`，下载 Driver + APP + CAL。
+
+三种模式共享同一套 E0Y 阶段计划和执行器，通用骨架如下：
+
+1. APP 等待 2 秒，CAL/APP+CAL 等待 1 秒；
+2. 功能寻址发送 `10 83`，物理寻址执行 `31 01 02 03`；
+3. 功能寻址发送 `85 82` 和 `28 81 03`，物理寻址进入 `10 02`；
+4. 按 E0Y 的 16 字节 Seed/Key 执行 `27 11 / 27 12`；
+5. 勾选 `Update_PublicKey` 时，在安全解锁后、`F184` 前发送 `2E 6F00 + 514-byte public key`；
+6. 发送 `2E F184 + 19-byte fingerprint`；
+7. 每个下载对象按 ECU `74` 响应协商块长，执行 `34 -> 36 -> 37`，并以 `31 01 DD02 + 512-byte RSA` 校验；
+8. APP/CAL 在下载前分别以 `31 01 FF00` 擦除对应区域；
+9. 统一执行 `31 01 FF01`、`11 01`、等待 2 秒、功能寻址 `10 81`；
+10. 功能寻址发送 `14 FF FF FF`，必须收到 `54` 正响应才通过清 DTC 步骤。
+
+E0Y 正常流程明确不执行 `D003`、`D004`、`D002`、`D005` 和 `DD03`。
+`Update_PublicKey` 在 APP、CAL、APP+CAL 三种模式中均可选，默认关闭，不是独立的刷写模式。
+阶段计划为无 CAN 副作用的纯函数，离线测试锁定 APP、CAL、APP+CAL 顺序及公钥插入位置；
+CANoe 现场 PASS 是复刻依据，但新构建的 C++ 程序仍标记 `pending_validation=true`，需在同一 ECU、通道、资源组合上重新完成台架验收。
 
 ## 11. 零跑 LP-ARC / LP-ARF 专项说明
 

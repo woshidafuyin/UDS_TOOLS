@@ -84,6 +84,39 @@ CheryArs131DownloadPlan resolve_chery_ars1_31_download_plan(
   throw std::invalid_argument("unsupported Chery ARS1.31 flashing mode");
 }
 
+std::vector<CheryE0yNormalStage> chery_e0y_normal_stage_sequence(
+    CheryArs131FlashMode mode, bool update_public_key) {
+  using Stage = CheryE0yNormalStage;
+  std::vector<Stage> result{
+      Stage::settle,
+      Stage::functional_extended_session,
+      Stage::programming_precondition,
+      Stage::disable_dtc_setting,
+      Stage::disable_communication,
+      Stage::programming_session,
+      Stage::security_access,
+  };
+  if (update_public_key) result.push_back(Stage::update_public_key);
+  result.insert(result.end(), {Stage::write_fingerprint,
+                               Stage::download_driver,
+                               Stage::verify_driver});
+  if (mode == CheryArs131FlashMode::app_only ||
+      mode == CheryArs131FlashMode::app_cal) {
+    result.insert(result.end(), {Stage::erase_app, Stage::download_app,
+                                 Stage::verify_app});
+  }
+  if (mode == CheryArs131FlashMode::cal_only ||
+      mode == CheryArs131FlashMode::app_cal) {
+    result.insert(result.end(), {Stage::erase_cal, Stage::download_cal,
+                                 Stage::verify_cal});
+  }
+  result.insert(result.end(), {Stage::check_programming_dependencies,
+                               Stage::hard_reset,
+                               Stage::functional_default_session,
+                               Stage::clear_dtc});
+  return result;
+}
+
 std::vector<std::uint8_t> chery_ars1_31_request_download(
     std::uint32_t address, std::uint32_t length) {
   std::vector<std::uint8_t> result{0x34, 0x00, 0x44};
@@ -305,6 +338,11 @@ void CheryArs131AppFlow::transfer(
 
 void CheryArs131AppFlow::run_app_only(
     const CheryArs131AppImages& images, bool update_public_key) {
+  if (spec_.project == CheryArs131Project::e0y) {
+    run_e0y_normal(images, CheryArs131FlashMode::app_only,
+                   update_public_key);
+    return;
+  }
   require_size(images.driver, layout_.driver_length, "Driver");
   require_size(images.app, layout_.app_length, "APP");
   require_size(images.driver_signature, 512, "Driver signature");
@@ -379,6 +417,11 @@ void CheryArs131AppFlow::run_app_only(
 
 void CheryArs131AppFlow::run_cal_only(
     const CheryArs131AppImages& images, bool update_public_key) {
+  if (spec_.project == CheryArs131Project::e0y) {
+    run_e0y_normal(images, CheryArs131FlashMode::cal_only,
+                   update_public_key);
+    return;
+  }
   if (spec_.project == CheryArs131Project::t22) {
     run_t22_cal_only(images);
     return;
@@ -478,7 +521,12 @@ void CheryArs131AppFlow::run_t22_cal_only(
 }
 
 void CheryArs131AppFlow::run_app_cal(
-    const CheryArs131AppImages& images) {
+    const CheryArs131AppImages& images, bool update_public_key) {
+  if (spec_.project == CheryArs131Project::e0y) {
+    run_e0y_normal(images, CheryArs131FlashMode::app_cal,
+                   update_public_key);
+    return;
+  }
   require_size(images.driver, layout_.driver_length, "Driver");
   require_size(images.app, layout_.app_length, "APP");
   require_size(images.cal, layout_.cal_length, "CAL");
@@ -533,6 +581,126 @@ void CheryArs131AppFlow::run_app_cal(
   if (log_) log_(100, spec_.name + " APPAndCAL/TC_2 flow completed");
 }
 
+void CheryArs131AppFlow::run_e0y_normal(
+    const CheryArs131AppImages& images, CheryArs131FlashMode mode,
+    bool update_public_key) {
+  require_size(images.driver, layout_.driver_length, "Driver");
+  require_size(images.driver_signature, 512, "Driver signature");
+  if (mode == CheryArs131FlashMode::app_only ||
+      mode == CheryArs131FlashMode::app_cal) {
+    require_size(images.app, layout_.app_length, "APP");
+    require_size(images.app_signature, 512, "APP signature");
+  }
+  if (mode == CheryArs131FlashMode::cal_only ||
+      mode == CheryArs131FlashMode::app_cal) {
+    require_size(images.cal, layout_.cal_length, "CAL");
+    require_size(images.cal_signature, 512, "CAL signature");
+  }
+
+  const auto stages = chery_e0y_normal_stage_sequence(mode, update_public_key);
+  for (std::size_t index = 0; index < stages.size(); ++index) {
+    const auto percent = static_cast<int>(99U * index / (stages.size() - 1U));
+    const auto next_percent = static_cast<int>(
+        99U * std::min(index + 1U, stages.size() - 1U) /
+        (stages.size() - 1U));
+    switch (stages[index]) {
+      case CheryE0yNormalStage::settle:
+        if (log_) log_(percent, "E0Y FileInit-equivalent resources loaded");
+        wait(mode == CheryArs131FlashMode::app_only ? 2000ms : 1000ms);
+        break;
+      case CheryE0yNormalStage::functional_extended_session:
+        functional_send(std::array<std::uint8_t, 2>{0x10, 0x83}, percent,
+                        "FUNC 10 83 ExtendedSession suppressed");
+        break;
+      case CheryE0yNormalStage::programming_precondition:
+        precondition(percent);
+        break;
+      case CheryE0yNormalStage::disable_dtc_setting:
+        functional_send(std::array<std::uint8_t, 2>{0x85, 0x82}, percent,
+                        "FUNC 85 82 DisableDTCSetting");
+        break;
+      case CheryE0yNormalStage::disable_communication:
+        functional_send(std::array<std::uint8_t, 3>{0x28, 0x81, 0x03},
+                        percent, "FUNC 28 81 03 DisableCommunication");
+        break;
+      case CheryE0yNormalStage::programming_session:
+        expect(physical_, std::array<std::uint8_t, 2>{0x10, 0x02},
+               std::array<std::uint8_t, 2>{0x50, 0x02}, percent,
+               "10 02 ProgrammingSession");
+        break;
+      case CheryE0yNormalStage::security_access:
+        unlock(percent);
+        break;
+      case CheryE0yNormalStage::update_public_key:
+        write_public_key(percent);
+        break;
+      case CheryE0yNormalStage::write_fingerprint:
+        write_fingerprint(percent, 0xF184, 19);
+        break;
+      case CheryE0yNormalStage::download_driver:
+        transfer(layout_.driver_start, images.driver, percent, next_percent,
+                 "Driver");
+        break;
+      case CheryE0yNormalStage::verify_driver:
+        wait(2000ms);
+        verify(0xDD02, images.driver_signature, percent,
+               "Verify Driver signature");
+        wait(2000ms);
+        break;
+      case CheryE0yNormalStage::erase_app:
+        routine(chery_ars1_31_erase_memory(layout_.app_start,
+                                           layout_.app_length),
+                0xFF00, percent, "31 01 FF00 EraseAPP");
+        break;
+      case CheryE0yNormalStage::download_app:
+        transfer(layout_.app_start, images.app, percent, next_percent, "APP");
+        break;
+      case CheryE0yNormalStage::verify_app:
+        wait(2000ms);
+        verify(0xDD02, images.app_signature, percent,
+               "Verify APP signature");
+        wait(2000ms);
+        break;
+      case CheryE0yNormalStage::erase_cal:
+        routine(chery_ars1_31_erase_memory(layout_.cal_start,
+                                           layout_.cal_length),
+                0xFF00, percent, "31 01 FF00 EraseCAL");
+        break;
+      case CheryE0yNormalStage::download_cal:
+        transfer(layout_.cal_start, images.cal, percent, next_percent, "CAL");
+        break;
+      case CheryE0yNormalStage::verify_cal:
+        wait(2000ms);
+        verify(0xDD02, images.cal_signature, percent,
+               "Verify CAL signature");
+        wait(2000ms);
+        break;
+      case CheryE0yNormalStage::check_programming_dependencies:
+        routine(std::array<std::uint8_t, 4>{0x31, 0x01, 0xFF, 0x01},
+                0xFF01, percent,
+                "31 01 FF01 CheckProgrammingDependencies");
+        break;
+      case CheryE0yNormalStage::hard_reset:
+        expect(physical_, std::array<std::uint8_t, 2>{0x11, 0x01},
+               std::array<std::uint8_t, 2>{0x51, 0x01}, percent,
+               "11 01 HardReset");
+        wait(2000ms);
+        break;
+      case CheryE0yNormalStage::functional_default_session:
+        functional_send(std::array<std::uint8_t, 2>{0x10, 0x81}, percent,
+                        "FUNC 10 81 DefaultSession suppressed");
+        break;
+      case CheryE0yNormalStage::clear_dtc:
+        expect(functional_,
+               std::array<std::uint8_t, 4>{0x14, 0xFF, 0xFF, 0xFF},
+               std::array<std::uint8_t, 1>{0x54}, percent,
+               "FUNC 14 FF FF FF ClearDTC");
+        break;
+    }
+  }
+  if (log_) log_(100, "Chery E0Y CANoe-parity normal flow completed");
+}
+
 void CheryArs131AppFlow::run(const CheryArs131AppImages& images,
                              CheryArs131FlashMode mode,
                              bool update_public_key,
@@ -546,7 +714,7 @@ void CheryArs131AppFlow::run(const CheryArs131AppImages& images,
       run_cal_only(images, update_public_key);
       return;
     case CheryArs131FlashMode::app_cal:
-      run_app_cal(images);
+      run_app_cal(images, update_public_key);
       return;
   }
   throw std::invalid_argument("unsupported Chery ARS1.31 flashing mode");

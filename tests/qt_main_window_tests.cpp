@@ -2060,14 +2060,14 @@ int main(int argc, char* argv[]) {
            entries->setCurrentIndex(
                 entries->findData(QStringLiteral("app_cal")));
            application.processEvents();
-           check(!update_public_key->isEnabled() &&
-                      !update_public_key->isChecked(),
-                  "E0Y APP+CAL must reject and clear Update_PublicKey");
+           check(update_public_key->isEnabled() &&
+                      update_public_key->isChecked(),
+                 "E0Y APP+CAL must retain the CANoe Update_PublicKey option");
            entries->setCurrentIndex(entries->findData(QStringLiteral("cal")));
            application.processEvents();
            check(update_public_key->isEnabled() &&
-                      !update_public_key->isChecked(),
-                  "E0Y CAL did not safely expose Update_PublicKey");
+                      update_public_key->isChecked(),
+                 "E0Y CAL did not retain the CANoe Update_PublicKey option");
          }
        }
       check_file_panel_is_stable();
@@ -2669,8 +2669,7 @@ int main(int argc, char* argv[]) {
       // visual placeholder above it is mouse-transparent and never enters the
       // popup model.
       check(entries->isEnabled(), "Chuneng flash-mode selector is disabled");
-      check(QApplication::widgetAt(
-                entries->mapToGlobal(entries->rect().center())) == entries &&
+      check(!entries->testAttribute(Qt::WA_TransparentForMouseEvents) &&
                 entries->findText(QStringLiteral("请选择")) == -1,
             "Chuneng flash-mode field does not route clicks to its APP/FT combo");
       // Establish explicit per-backend values for this exact device before

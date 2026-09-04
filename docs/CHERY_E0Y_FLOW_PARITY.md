@@ -1,0 +1,46 @@
+# 奇瑞 E0Y 正常刷写流程对齐
+
+## 权威基线与边界
+
+- CANoe 工程：`D:\project\奇瑞\03_CANoe刷写工程\E0Y\Runtime\run_20260903_checkbox_selection_prototype`
+- CAPL：`Capl\Flash_XML.can`
+- 正常入口：APP=`Download()`、CAL=`TC_7()`、APP+CAL=`TC_2()`
+- 现场证据：2026-09-04 `E0Y_Case_Selection_report.xml` 及 `Evidence` 中三种模式 PASS 报告
+- C++ Workflow：`chery_e0y`
+
+CANoe 的现场 PASS 是复刻依据，不自动证明重新构建的 C++ EXE 已经通过台架验收。C++
+流程仍需在同一 ECU、通道、诊断端点和资源组合上重新执行，并冻结 EXE、Profile、资源、
+Trace 与报告哈希后才能解除 `pending_validation=true`。
+
+## 三种模式的统一协议骨架
+
+三种模式都执行以下前置步骤：
+
+1. 功能寻址发送 `10 83`，不等待正响应；
+2. 物理寻址执行 `31 01 0203`；
+3. 功能寻址发送 `85 82` 与 `28 81 03`，不等待正响应；
+4. 物理寻址进入 `10 02`；
+5. 以 `27 11 / 27 12` 和 16 字节 Seed/Key 解锁；
+6. 可选发送 `2E 6F00` 与冻结的 514 字节公钥；
+7. 发送 `2E F184` 与 19 字节指纹。
+
+所有下载对象都使用 ECU `74` 响应协商的最大块长度，执行 `34 -> 36 -> 37`，并分别以
+携带 512 字节 RSA 的 `31 01 DD02` 校验。APP 与 CAL 下载前执行 `31 01 FF00`。
+
+三种模式都按以下步骤收尾：
+
+1. `31 01 FF01`；
+2. `11 01` 并等待两秒；
+3. 功能寻址发送 `10 81`，不等待正响应；
+4. 功能寻址发送 `14 FF FF FF`，明确要求收到 `54`。
+
+## 模式差异
+
+| 模式 | 下载对象 | 明确不执行 |
+| --- | --- | --- |
+| APP / `Download()` | Driver + APP | D003、D004、D002、D005、DD03 |
+| CAL / `TC_7()` | Driver + CAL | D003、D004、D002、D005、DD03 |
+| APP+CAL / `TC_2()` | Driver + APP + CAL | D003、D004、D002、D005、DD03 |
+
+E0Y 流程通过 `chery_e0y_normal_stage_sequence()` 维护唯一阶段计划，三个入口共享同一执行器。
+KP31、T22、T1EJ 保留各自 Workflow 和既有例程语义，不依赖 E0Y 的阶段计划。
