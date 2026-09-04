@@ -39,6 +39,7 @@ struct VersionCheckItemResult {
   std::wstring actual;
   std::string request_hex;
   std::string response_hex;
+  std::string detail;
   unsigned elapsed_ms{};
   bool required{};
 };

@@ -779,6 +779,34 @@ private:
   bool response_sent_{};
 };
 
+class RejectingVersionBus final : public uds::ICanBus {
+public:
+  void open() override { opened_ = true; }
+  void close() noexcept override { opened_ = false; }
+  bool is_open() const noexcept override { return opened_; }
+  void send(const uds::CanFrame& frame) override {
+    if (frame.data.size() >= 2 && frame.data[1] == 0x22)
+      request_seen_ = true;
+  }
+  std::optional<uds::CanFrame> receive(
+      std::chrono::milliseconds timeout) override {
+    if (request_seen_ && !response_sent_) {
+      response_sent_ = true;
+      return uds::CanFrame{
+          0x708, {0x03, 0x7F, 0x22, 0x31, 0, 0, 0, 0},
+          false, false, false};
+    }
+    std::this_thread::sleep_for(
+        std::min(timeout, std::chrono::milliseconds(2)));
+    return std::nullopt;
+  }
+
+private:
+  bool opened_{};
+  bool request_seen_{};
+  bool response_sent_{};
+};
+
 struct ChunengVersionCapture {
   std::vector<uds::CanFrame> sent;
   std::mutex mutex;
@@ -925,14 +953,53 @@ void test_version_check_service_success() {
              result.items[0].status ==
                  uds::app::VersionCheckStatus::pass &&
              result.items[0].actual == L"OK" &&
-             result.items[0].expected.empty() &&
-             result.items[0].response_hex == "62 F1 89 4F 4B" &&
+              result.items[0].expected.empty() &&
+              result.items[0].response_hex == "62 F1 89 4F 4B" &&
+              result.items[0].detail.empty() &&
              result.message.starts_with(
                  "版本读取完成：成功 1，失败 0，耗时 ") &&
              logged("项目：测试厂商 / 测试项目 / 测试设备") &&
              logged("通道：CH1 | TX 0x700 | RX 0x708") &&
              logged("F189 SoftwareVersion：OK") && !raw_uds_leaked,
         "version-check service did not produce concise decoded logs while retaining raw result evidence");
+  std::filesystem::remove_all(directory);
+}
+
+void test_version_check_service_failure_detail() {
+  const auto directory =
+      std::filesystem::temp_directory_path() / "uds_version_check_failure_test";
+  std::filesystem::remove_all(directory);
+  std::filesystem::create_directories(directory);
+  const auto profile_path = directory / "profile.ini";
+  {
+    std::ofstream output(profile_path);
+    output << "[version_check]\n"
+              "session=0\n"
+              "item_count=1\n"
+              "item_0_name=SoftwareVersion\n"
+              "item_0_request=22 F1 89\n"
+              "item_0_decoder=ascii_trim\n"
+              "item_0_required=true\n";
+  }
+  uds::app::VersionCheckRequest request;
+  request.profile_path = profile_path;
+  request.profile.can_fd = false;
+  request.profile.padding = 0;
+  request.profile.isotp_st_min = 0;
+  request.profile.nominal_bitrate = 500000;
+  request.channel = 1;
+  request.tx_id = 0x700;
+  request.rx_id = 0x708;
+  uds::app::VersionCheckService service(
+      [](const uds::app::VersionCheckRequest&) {
+        return std::make_unique<RejectingVersionBus>();
+      });
+  const auto result = service.run(request, {}, {});
+  check(!result.success && !result.cancelled && result.items.size() == 1 &&
+            result.items[0].status == uds::app::VersionCheckStatus::error &&
+            result.items[0].response_hex == "7F 22 31" &&
+            !result.items[0].detail.empty(),
+        "Version-check failure did not separate the raw ECU response from its failure detail");
   std::filesystem::remove_all(directory);
 }
 
@@ -1891,6 +1958,7 @@ int main() {
     test_probe_controller_stop();
     test_probe_controller_stop_during_periodic_wakeup();
     test_version_check_service_success();
+    test_version_check_service_failure_detail();
     test_diagnostic_request_service_success();
     test_version_check_service_lsmr_nm_wakeup();
     test_version_check_service_chuneng_periodic_wakeup();

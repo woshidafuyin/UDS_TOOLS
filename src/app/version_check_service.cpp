@@ -343,13 +343,13 @@ VersionCheckResult VersionCheckService::run(
         item_result.status =
             item.required ? VersionCheckStatus::error
                           : VersionCheckStatus::warning;
-        item_result.response_hex = error.what();
         concise_result = error.what();
       }
       item_result.elapsed_ms = static_cast<unsigned>(
           std::chrono::duration_cast<std::chrono::milliseconds>(
               std::chrono::steady_clock::now() - started)
               .count());
+      item_result.detail = concise_result;
       if (item.required &&
           item_result.status != VersionCheckStatus::pass) {
         required_ok = false;

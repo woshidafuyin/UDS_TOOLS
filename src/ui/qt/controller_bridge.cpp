@@ -563,7 +563,7 @@ void ControllerBridge::startVersionCheck(int profile_index,
             emit versionCheckRow(
                 versionStatus(item.status), fromUtf8(item.request_hex),
                 fromWide(item.name), fromWide(item.actual),
-                fromUtf8(item.response_hex));
+                fromUtf8(item.response_hex), fromUtf8(item.detail));
           }
           emit versionCheckRunningChanged(false);
           emit versionCheckFinished(result.success, result.cancelled, message);

@@ -1,6 +1,7 @@
 #include "ui/qt/version_confirmation_page.hpp"
 
 #include <QAbstractItemView>
+#include <QColor>
 #include <QFontDatabase>
 #include <QGridLayout>
 #include <QGroupBox>
@@ -122,7 +123,7 @@ VersionConfirmationPage::VersionConfirmationPage(QWidget* parent)
 }
 
 void VersionConfirmationPage::setContext(
-    int profile_index, const QString& source,
+    int profile_index, const QString&,
     const QString& hardware_backend, const QString& vendor,
     const QString& project,
     const QString& target_id,
@@ -138,19 +139,17 @@ void VersionConfirmationPage::setContext(
   project_ = project;
   target_name_ = target_name.isEmpty() ? QStringLiteral("默认设备")
                                         : target_name;
-  source_ = source;
   hardware_backend_ = hardware_backend;
   configured_ = !items.empty();
   planned_items_ = items;
   selection_value_->setText(
       QStringLiteral("%1  /  %2  /  %3").arg(vendor_, project_, target_name_));
   address_value_->setText(
-      QStringLiteral("%1    ·    CH%2    TX 0x%3  →  RX 0x%4    ·    %5")
+      QStringLiteral("%1    ·    CH%2    TX 0x%3  →  RX 0x%4")
           .arg(hardware_backend_)
           .arg(channel_)
           .arg(tx_id_, 0, 16)
           .arg(rx_id_, 0, 16)
-          .arg(source_)
           .toUpper());
 
   const auto new_key = contextKey();
@@ -182,7 +181,7 @@ void VersionConfirmationPage::clearResults() {
 
 void VersionConfirmationPage::appendResult(
     const QString& status, const QString& request, const QString& name,
-    const QString& actual, const QString& raw_response) {
+    const QString& actual, const QString& raw_response, const QString& detail) {
   auto row = -1;
   for (int candidate = 0; candidate < table_->rowCount(); ++candidate) {
     const auto* request_item = table_->item(candidate, 2);
@@ -202,15 +201,28 @@ void VersionConfirmationPage::appendResult(
   table_->setItem(row, 2, cell(request, true));
   table_->setItem(row, 3, cell(name.isEmpty() ? QStringLiteral("含义未配置")
                                               : name));
-  table_->setItem(row, 4, cell(actual, true));
+  table_->setItem(row, 4,
+                  cell(actual.isEmpty() ? QStringLiteral("-") : actual, true));
   if (status == QStringLiteral("成功")) {
     table_->item(row, 0)->setForeground(Qt::darkGreen);
   } else if (status == QStringLiteral("不一致") ||
              status == QStringLiteral("错误")) {
     table_->item(row, 0)->setForeground(Qt::red);
+  } else if (status == QStringLiteral("警告")) {
+    table_->item(row, 0)->setForeground(QColor(QStringLiteral("#b85c00")));
+  } else if (status == QStringLiteral("信息")) {
+    table_->item(row, 0)->setForeground(QColor(QStringLiteral("#526d82")));
   }
   raw_view_->appendPlainText(QStringLiteral("TX  %1").arg(request));
-  raw_view_->appendPlainText(QStringLiteral("RX  %1").arg(raw_response));
+  if (!raw_response.isEmpty())
+    raw_view_->appendPlainText(QStringLiteral("RX  %1").arg(raw_response));
+  if (!detail.isEmpty()) {
+    raw_view_->appendPlainText(
+        QStringLiteral("%1  %2")
+            .arg(status == QStringLiteral("警告") ? QStringLiteral("WARN")
+                                                   : QStringLiteral("FAIL"),
+                 detail));
+  }
 }
 
 void VersionConfirmationPage::showPlannedItems() {
@@ -243,8 +255,30 @@ QString VersionConfirmationPage::contextKey() const {
       .arg(rx_id_);
 }
 
-void VersionConfirmationPage::finish(bool, bool, const QString&) {
+void VersionConfirmationPage::markPendingItemsNotExecuted() {
+  for (int row = 0; row < table_->rowCount(); ++row) {
+    auto* status = table_->item(row, 0);
+    if (!status || !status->text().startsWith(QStringLiteral("待读取")))
+      continue;
+    status->setText(QStringLiteral("未执行"));
+    status->setForeground(Qt::gray);
+  }
+}
+
+void VersionConfirmationPage::finish(bool success, bool cancelled,
+                                     const QString& message) {
   running_ = false;
+  if (cancelled) {
+    markPendingItemsNotExecuted();
+    raw_view_->appendPlainText(
+        QStringLiteral("INFO  %1")
+            .arg(message.isEmpty() ? QStringLiteral("版本读取已停止") : message));
+  } else if (!success) {
+    markPendingItemsNotExecuted();
+    raw_view_->appendPlainText(
+        QStringLiteral("FAIL  %1")
+            .arg(message.isEmpty() ? QStringLiteral("版本读取失败") : message));
+  }
   updateControls();
 }
 

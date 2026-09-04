@@ -562,23 +562,19 @@ int main(int argc, char* argv[]) {
         check(secondary >= 0, "Changan B216 secondary target unavailable");
         preview_radar->setCurrentIndex(secondary);
         application.processEvents();
-        const std::array<std::array<QString, 3>, 3> preview_rows{{
-            {QStringLiteral("22 F1 89"), QStringLiteral("软件版本号"),
-             QStringLiteral("SWD.00.7")},
-            {QStringLiteral("22 F1 70"), QStringLiteral("FBL版本（Boot）"),
-             QStringLiteral("V1.6")},
-            {QStringLiteral("22 FD 05"), QStringLiteral("标定软件版本号"),
-             QStringLiteral("00.00.00")},
-        }};
-        preview_page->clearResults();
-        for (const auto& row : preview_rows) {
-          preview_page->appendResult(
-              QStringLiteral("成功"), row[0], row[1], row[2],
-              QStringLiteral("62 ..."));
-        }
+        preview_page->setRunning(true);
+        preview_page->appendResult(
+            QStringLiteral("成功"), QStringLiteral("22 F1 89"),
+            QStringLiteral("软件版本号"), QStringLiteral("SWD.00.7"),
+            QStringLiteral("62 F1 89 53 57 44 2E 30 30 2E 37"), {});
+        preview_page->appendResult(
+            QStringLiteral("错误"), QStringLiteral("22 F1 70"),
+            QStringLiteral("FBL版本（Boot）"), {},
+            QStringLiteral("7F 22 31"),
+            QStringLiteral("NRC 0x31 RequestOutOfRange（请求超出范围）"));
         preview_page->finish(
-            true, false,
-            QStringLiteral("读取完成：全部必读版本信息读取成功"));
+            false, false,
+            QStringLiteral("版本读取完成：成功 1，失败 1；FBL版本读取失败"));
         tabs->setCurrentIndex(1);
         application.processEvents();
         check(window.grab().save(
@@ -732,6 +728,8 @@ int main(int argc, char* argv[]) {
                  version_page && version_table &&
                  version_table->columnCount() == 5 && version_button &&
                  version_selection && version_address &&
+                 !version_address->text().contains(
+                     QStringLiteral("当前刷写页选择")) &&
                  !window.findChild<QLabel*>(
                      QStringLiteral("versionSummaryLabel")) &&
                  version_button->text() == QStringLiteral("一键读取") &&
@@ -2900,6 +2898,53 @@ int main(int argc, char* argv[]) {
                 projects->currentText() == QStringLiteral("长安") &&
                 devices->currentText() == QStringLiteral("C857"),
             "Legacy C857 selection was not migrated to Changan/C857");
+    }
+
+    {
+      uds::ui::qt::VersionConfirmationPage page;
+      const uds::ui::qt::VersionReadItems items{
+          {QStringLiteral("F180"), QStringLiteral("22 F1 80"),
+           QStringLiteral("BootLoader版本号"), true},
+          {QStringLiteral("F193"), QStringLiteral("22 F1 93"),
+           QStringLiteral("供应商ECU硬件版本号"), false}};
+      page.setContext(0, QStringLiteral("当前刷写项选择"),
+                      QStringLiteral("Vector XL"), QStringLiteral("楚能"),
+                      QStringLiteral("ARC331"), {}, QStringLiteral("左后雷达"),
+                      1, 0x72E, 0x72F, items);
+      auto* table = page.findChild<QTableWidget*>(
+          QStringLiteral("versionResultTable"));
+      auto* raw = page.findChild<QPlainTextEdit*>(
+          QStringLiteral("versionRawCommunication"));
+      page.setRunning(true);
+      page.finish(false, false,
+                  QStringLiteral("版本读取失败：CAN通道打开失败"));
+      check(table && raw && table->rowCount() == 2 &&
+                table->item(0, 0)->text() == QStringLiteral("未执行") &&
+                table->item(1, 0)->text() == QStringLiteral("未执行") &&
+                table->item(0, 4)->text() == QStringLiteral("-") &&
+                raw->toPlainText().contains(
+                    QStringLiteral("FAIL  版本读取失败：CAN通道打开失败")),
+            "Version page did not expose a pre-read failure or close pending rows");
+
+      page.setRunning(true);
+      page.appendResult(QStringLiteral("错误"), QStringLiteral("22 F1 80"),
+                        QStringLiteral("BootLoader版本号"), {}, {},
+                        QStringLiteral("1000 ms内未收到0x72F响应"));
+      page.finish(false, false,
+                  QStringLiteral("版本读取完成：成功 0，失败 1"));
+      check(table->item(0, 4)->text() == QStringLiteral("-") &&
+                !raw->toPlainText().contains(QStringLiteral("RX  ")) &&
+                raw->toPlainText().contains(QStringLiteral("FAIL")) &&
+                raw->toPlainText().contains(QStringLiteral("1000 ms")) &&
+                table->item(1, 0)->text() == QStringLiteral("未执行"),
+            "Version page mislabeled a transport error as RX or left pending rows unresolved");
+
+      page.setRunning(true);
+      page.finish(false, true, QStringLiteral("版本读取已停止"));
+      check(table->item(0, 4)->text() == QStringLiteral("-") &&
+                raw->toPlainText().contains(
+                    QStringLiteral("INFO  版本读取已停止")),
+            "Version page did not render cancellation as a neutral not-executed state");
     }
 
     settings.clear();

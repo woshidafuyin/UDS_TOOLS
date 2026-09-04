@@ -28,7 +28,7 @@ public:
   void clearResults();
   void appendResult(const QString& status, const QString& request,
                     const QString& name, const QString& actual,
-                    const QString& raw_response);
+                    const QString& raw_response, const QString& detail = {});
   void finish(bool success, bool cancelled, const QString& message);
   void setReportAvailable(bool available);
 
@@ -42,6 +42,7 @@ private:
   void requestCheck();
   void updateControls();
   void showPlannedItems();
+  void markPendingItemsNotExecuted();
   [[nodiscard]] QString contextKey() const;
 
   int profile_index_{-1};
@@ -52,7 +53,6 @@ private:
   QString vendor_;
   QString project_;
   QString target_name_;
-  QString source_;
   QString hardware_backend_;
   VersionReadItems planned_items_;
   QString rendered_context_key_;
@@ -60,7 +60,6 @@ private:
   bool running_{};
   bool operation_busy_{};
   bool report_available_{};
-
   QLabel* selection_value_{};
   QLabel* address_value_{};
   QPushButton* check_button_{};

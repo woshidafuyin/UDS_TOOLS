@@ -129,7 +129,7 @@ signals:
   void versionCheckRunningChanged(bool running);
   void versionCheckRow(const QString& status, const QString& request,
                        const QString& name, const QString& actual,
-                       const QString& raw_response);
+                       const QString& raw_response, const QString& detail);
   void versionCheckFinished(bool success, bool cancelled,
                             const QString& message);
   void diagnosticRunningChanged(bool running);
