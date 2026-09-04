@@ -2023,15 +2023,27 @@ int main(int argc, char* argv[]) {
                     std::pair{QStringLiteral("0x7AF"),
                               QStringLiteral("0x7BF")}},
           std::pair{QStringLiteral("E0Y"),
-                    std::pair{QStringLiteral("0x70D"),
-                              QStringLiteral("0x78D")}}};
+                    std::pair{QStringLiteral("0x71F"),
+                              QStringLiteral("0x79F")}}};
+      {
+        QSettings stale_e0y_state;
+        stale_e0y_state.setValue(
+            QStringLiteral("selectors/profile_state/chery_e0y/radar/tx_id"),
+            QStringLiteral("0x70D"));
+        stale_e0y_state.setValue(
+            QStringLiteral("selectors/profile_state/chery_e0y/radar/rx_id"),
+            QStringLiteral("0x78D"));
+        stale_e0y_state.sync();
+      }
        for (const auto& [project, endpoint] : chery_editable_endpoints) {
         devices->setCurrentIndex(find_text(devices, project));
         application.processEvents();
-         check(!tx_id->isReadOnly() && !rx_id->isReadOnly() &&
-                  tx_id->text() == endpoint.first &&
-                  rx_id->text() == endpoint.second,
-               "Chery CANoe default endpoint was not applied as an editable UI value");
+         const auto is_e0y = project == QStringLiteral("E0Y");
+         check(tx_id->isReadOnly() == is_e0y &&
+                   rx_id->isReadOnly() == is_e0y &&
+                   tx_id->text() == endpoint.first &&
+                   rx_id->text() == endpoint.second,
+               "Chery CANoe endpoint or E0Y endpoint lock mismatch");
          {
            const auto t1ej_app = entries->findData(QStringLiteral("app"));
            const auto t1ej_cal = entries->findData(QStringLiteral("cal"));
@@ -2044,12 +2056,19 @@ int main(int argc, char* argv[]) {
                          QStringLiteral("APP+CAL"),
                  "T1EJ/T22/E0Y TC_7/TC_2 flashing modes are not exposed");
          }
-         const auto is_e0y = project == QStringLiteral("E0Y");
          check(update_public_key &&
                     update_public_key->isHidden() != is_e0y &&
                     !update_public_key->isChecked(),
                 "Update_PublicKey must be visible only for E0Y and default off");
          if (is_e0y) {
+           QSettings migrated_e0y_state;
+           check(!migrated_e0y_state.contains(
+                     QStringLiteral(
+                         "selectors/profile_state/chery_e0y/radar/tx_id")) &&
+                     !migrated_e0y_state.contains(
+                         QStringLiteral(
+                             "selectors/profile_state/chery_e0y/radar/rx_id")),
+                 "E0Y stale runtime endpoint override was not purged");
            check(!update_public_key->isEnabled(),
                  "E0Y unselected mode enabled Update_PublicKey");
            entries->setCurrentIndex(entries->findData(QStringLiteral("app")));
@@ -2586,26 +2605,35 @@ int main(int argc, char* argv[]) {
             }
             if (mode_index < 0) mode_index = entries->currentIndex();
             entries->setCurrentIndex(mode_index);
+            const auto e0y_endpoint_locked =
+                vendor_name == QStringLiteral("奇瑞") &&
+                project_name == QStringLiteral("E0Y");
             const auto expected_tx =
-                QStringLiteral("0x%1")
-                    .arg(0x500 + selector_state_case, 0, 16)
-                    .toUpper();
+                e0y_endpoint_locked
+                    ? QStringLiteral("0x71F")
+                    : QStringLiteral("0x%1")
+                          .arg(0x500 + selector_state_case, 0, 16)
+                          .toUpper();
             const auto expected_rx =
-                QStringLiteral("0x%1")
-                    .arg(0x600 + selector_state_case, 0, 16)
-                    .toUpper();
+                e0y_endpoint_locked
+                    ? QStringLiteral("0x79F")
+                    : QStringLiteral("0x%1")
+                          .arg(0x600 + selector_state_case, 0, 16)
+                          .toUpper();
             const auto expected_repeat = selector_state_case + 1;
             const auto expected_channel =
                 static_cast<unsigned>((selector_state_case % 4) + 1);
             repeat_count->setValue(expected_repeat);
             channels->setCurrentIndex(
                 channels->findData(expected_channel));
-            tx_id->setText(expected_tx);
-            rx_id->setText(expected_rx);
-            QMetaObject::invokeMethod(tx_id, "editingFinished",
-                                      Qt::DirectConnection);
-            QMetaObject::invokeMethod(rx_id, "editingFinished",
-                                      Qt::DirectConnection);
+            if (!e0y_endpoint_locked) {
+              tx_id->setText(expected_tx);
+              rx_id->setText(expected_rx);
+              QMetaObject::invokeMethod(tx_id, "editingFinished",
+                                        Qt::DirectConnection);
+              QMetaObject::invokeMethod(rx_id, "editingFinished",
+                                        Qt::DirectConnection);
+            }
 
             const auto anchor_vendor =
                 vendor_name == QStringLiteral("北汽")

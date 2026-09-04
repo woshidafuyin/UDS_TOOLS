@@ -361,8 +361,11 @@ void MainWindow::applySelectedProfile(int device_index) {
   // Profile IDs remain the defaults and are restored by double-clicking the
   // corresponding label. Operators may override either ID for every project
   // without editing the Profile on disk.
-  ui_->txIdLineEdit->setReadOnly(false);
-  ui_->rxIdLineEdit->setReadOnly(false);
+  // The E0Y normal-flow contract is tied to the CANoe physical endpoint.
+  // Keep the project-specific lock local so other profiles retain their
+  // existing operator-overridable endpoint behavior.
+  ui_->txIdLineEdit->setReadOnly(chery_e0y);
+  ui_->rxIdLineEdit->setReadOnly(chery_e0y);
   applySelectedRadar(false);
   restoreRuntimeFileSelection();
   restoreCurrentProfileState();
@@ -396,8 +399,17 @@ void MainWindow::saveActiveProfileState() const {
   const auto rx_text = ui_->rxIdLineEdit->text().trimmed();
   tx_text.toUInt(&tx_valid, 0);
   rx_text.toUInt(&rx_valid, 0);
-  if (tx_valid) settings.setValue(QStringLiteral("tx_id"), tx_text);
-  if (rx_valid) settings.setValue(QStringLiteral("rx_id"), rx_text);
+  const auto endpoint_locked =
+      ui_->txIdLineEdit->isReadOnly() || ui_->rxIdLineEdit->isReadOnly();
+  if (endpoint_locked) {
+    // A locked endpoint is owned by its Profile. Purge values written by an
+    // older release so they cannot silently replace the frozen E0Y address.
+    settings.remove(QStringLiteral("tx_id"));
+    settings.remove(QStringLiteral("rx_id"));
+  } else {
+    if (tx_valid) settings.setValue(QStringLiteral("tx_id"), tx_text);
+    if (rx_valid) settings.setValue(QStringLiteral("rx_id"), rx_text);
+  }
   settings.setValue(QStringLiteral("repeat_count"),
                     ui_->repeatCountSpinBox->value());
   bool channel_valid{};
@@ -445,8 +457,15 @@ void MainWindow::restoreCurrentProfileState() {
     saved.toUInt(&valid, 0);
     if (valid) editor->setText(saved);
   };
-  restore_id(QStringLiteral("tx_id"), ui_->txIdLineEdit);
-  restore_id(QStringLiteral("rx_id"), ui_->rxIdLineEdit);
+  const auto endpoint_locked =
+      ui_->txIdLineEdit->isReadOnly() || ui_->rxIdLineEdit->isReadOnly();
+  if (endpoint_locked) {
+    settings.remove(state_group + QStringLiteral("/tx_id"));
+    settings.remove(state_group + QStringLiteral("/rx_id"));
+  } else {
+    restore_id(QStringLiteral("tx_id"), ui_->txIdLineEdit);
+    restore_id(QStringLiteral("rx_id"), ui_->rxIdLineEdit);
+  }
 
   auto repeat_count = static_cast<int>(uds::app::kMinFlashRepeatCount);
   const auto repeat_key = state_group + QStringLiteral("/repeat_count");

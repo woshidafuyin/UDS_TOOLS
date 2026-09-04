@@ -25,12 +25,14 @@ ProbePreconditions::ProbePreconditions(
 ProbePreconditions::~ProbePreconditions() { stop_sender(); }
 
 void ProbePreconditions::stop_sender() noexcept {
+  e0y_wakeup_.reset();
   if (!sender_.joinable()) return;
   sender_.request_stop();
   sender_.join();
 }
 
 void ProbePreconditions::check() const {
+  if (e0y_wakeup_) e0y_wakeup_->check();
   std::scoped_lock lock(error_mutex_);
   if (!error_.empty()) {
     throw std::runtime_error("probe precondition sender failed: " + error_);
@@ -38,11 +40,24 @@ void ProbePreconditions::check() const {
 }
 
 void ProbePreconditions::stop_and_check() {
+  if (e0y_wakeup_) {
+    e0y_wakeup_->stop_and_check();
+    e0y_wakeup_.reset();
+  }
   stop_sender();
   check();
 }
 
 void ProbePreconditions::start() {
+  if (plan_.chery_e0y) {
+    e0y_wakeup_ = std::make_unique<CheryE0yWakeupSession>(
+        bus_, stop_, [this](const std::string& message) {
+          log(callbacks_, "在线探测：" + message);
+        });
+    e0y_wakeup_->start();
+    e0y_wakeup_->wait_until_settled();
+  }
+
   if (plan_.chuneng_arc331 && !plan_.ft_probe) {
     const auto wakeup_period = kChunengArc331WakeupPeriod;
     const CanFrame wakeup{

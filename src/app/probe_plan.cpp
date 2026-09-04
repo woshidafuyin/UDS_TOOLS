@@ -69,6 +69,7 @@ ProbePlanResolution resolve_probe_plan(const ProbeRequest& requested) {
   plan.lingpao_radar = lp_arc || lp_arf;
   plan.geely_p416 = plan.request.profile.flow == L"geely_p416";
   plan.xizhong = xizhong_supported_flow(plan.request.profile.flow);
+  plan.chery_e0y = plan.request.profile.flow == L"chery_e0y";
   plan.ars131_app =
       plan.request.profile.flow == L"longma_ars1_31" ||
       plan.request.profile.flow == L"changan_c857" ||
@@ -141,6 +142,9 @@ std::string probe_session_description(const ProbePlan& plan) {
     return plan.boot_probe
                ? "在线探测：楚能ARC331 BOOT→APP入口持续发送0x520唤醒，向所选雷达物理端点发送10 03；收到50 03即确认诊断在线，不发送仅APP入口适用的31 01 02 03，也不进入编程会话或刷写。"
                : "在线探测：楚能ARC331 APP入口持续发送0x520唤醒，向所选雷达物理端点发送10 03；收到50 03后检查31 01 02 03。该检查不发送10 02或刷写数据。";
+  }
+  if (plan.chery_e0y) {
+    return "在线探测：持续发送E0Y 0x600全零唤醒报文，稳定15秒后向0x71F发送10 01；收到0x79F的50 01才判定在线。";
   }
   if (plan.ft_probe) {
     return "在线探测：向FT端点发送扩展会话请求10 03；收到并核验50 03后判定在线，不执行10 02或刷写。";

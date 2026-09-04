@@ -15,7 +15,7 @@
 #include "flash/baic_radar_workflows.hpp"
 #include "flash/chery_ars1_33_flow.hpp"
 #include "flash/chery_ars1_31_app_flow.hpp"
-#include "flash/chery_ars1_31_app_flow.hpp"
+#include "flash/chery_e0y_wakeup.hpp"
 #include "flash/chery_kp31_flow.hpp"
 #include "flash/chuneng_331_flow.hpp"
 #include "flash/chuneng_331_workflow.hpp"
@@ -2119,7 +2119,7 @@ void test_chery_ars131_project_contracts() {
             t22.initial_physical_extended_session && t22.install_d005 &&
             !t22.restore_default_session,
         "T22 frozen normal-flow contract mismatch");
-  check(e0y.tx_id == 0x70D && e0y.rx_id == 0x78D &&
+  check(e0y.tx_id == 0x71F && e0y.rx_id == 0x79F &&
             e0y.seed_subfunction == 0x11 && e0y.seed_length == 16 &&
             e0y.fingerprint_did == 0xF184 &&
             e0y.precondition_routine == 0x0203 &&
@@ -2127,6 +2127,13 @@ void test_chery_ars131_project_contracts() {
             e0y.d004_mode == uds::CheryArs131D004Mode::none &&
             !e0y.install_d005,
         "E0Y frozen normal-flow contract mismatch");
+  const auto wakeup = uds::chery_e0y_wakeup_frame();
+  check(wakeup.id == 0x600 && !wakeup.extended && !wakeup.fd &&
+            !wakeup.brs &&
+            wakeup.data == std::vector<std::uint8_t>(8, 0x00) &&
+            uds::kCheryE0yWakeupPeriod == std::chrono::milliseconds(1000) &&
+            uds::kCheryE0yWakeupSettle == std::chrono::milliseconds(15000),
+        "E0Y CANoe 0x600 wake-up contract mismatch");
   check(uds::chery_ars1_31_request_download(0x08000000, 0x400) ==
             std::vector<std::uint8_t>({0x34, 0x00, 0x44, 0x08, 0x00,
                                       0x00, 0x00, 0x00, 0x00, 0x04, 0x00}) &&
@@ -2222,13 +2229,22 @@ void test_chery_ars131_project_contracts() {
     const auto profile = uds::load_profile_ini(source / "profiles" / profile_name);
     const auto workflow = uds::create_flash_workflow(profile.flow);
     check(workflow && workflow->id() == profile.flow &&
-              !profile.lock_diagnostic_ids &&
+              profile.lock_diagnostic_ids ==
+                  (profile.id == L"chery_e0y") &&
               !workflow->report_title(profile).empty() &&
               !profile.driver_file.empty() && !profile.app_file.empty() &&
               !profile.driver_verify_file.empty() &&
               !profile.app_verify_file.empty() && !profile.security_dll.empty(),
           std::string("independent Chery workflow/profile mismatch: ") +
               profile_name);
+    if (profile.id == L"chery_e0y") {
+      check(profile.tx_id == 0x71F && profile.rx_id == 0x79F &&
+                profile.functional_id == 0x7DF &&
+                profile.targets.size() == 1 &&
+                profile.targets[0].tx_id == 0x71F &&
+                profile.targets[0].rx_id == 0x79F,
+            "E0Y Profile endpoints drifted from CANoe PASS evidence");
+    }
     check(uds::load_srecord_window(source / profile.driver_file,
                                    profile.driver_start,
                                    profile.driver_length).size() ==
@@ -2272,6 +2288,25 @@ void test_chery_ars131_project_contracts() {
             "T22 Panel default ICE or alternate PHEV CAL/RSA pairing mismatch");
     }
   }
+}
+
+void test_chery_e0y_periodic_wakeup_session() {
+  using namespace std::chrono_literals;
+  MockBus bus;
+  uds::CheryE0yWakeupSession wakeup(
+      bus, {}, {}, uds::CheryE0yWakeupTiming{5ms, 30ms});
+  wakeup.start();
+  wakeup.wait_until_settled();
+  wakeup.stop_and_check();
+  check(bus.sent.size() >= 2 &&
+            std::all_of(bus.sent.cbegin(), bus.sent.cend(),
+                        [](const uds::CanFrame& frame) {
+                          return frame.id == 0x600 && !frame.extended &&
+                                 !frame.fd && !frame.brs &&
+                                 frame.data ==
+                                     std::vector<std::uint8_t>(8, 0x00);
+                        }),
+        "E0Y wake-up session did not maintain the configured all-zero 0x600 stream");
 }
 
 void test_lp_arf_tmp_packages() {
@@ -3733,6 +3768,8 @@ int main() {
     run("chery_kp31_protocol_and_resources", test_chery_kp31_protocol_and_resources);
     run("chery_ars131_project_contracts",
         test_chery_ars131_project_contracts);
+    run("chery_e0y_periodic_wakeup_session",
+        test_chery_e0y_periodic_wakeup_session);
     run("longma_ars131_protocol_and_resources", test_longma_ars131_protocol_and_resources);
     run("c857_project_profiles_and_resources",
         test_c857_project_profiles_and_resources);

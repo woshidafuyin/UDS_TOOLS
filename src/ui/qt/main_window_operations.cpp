@@ -343,8 +343,11 @@ void MainWindow::updateEnabledState() {
   ui_->vectorChannelComboBox->setEnabled(!busy && usable);
   ui_->txIdLineEdit->setEnabled(!busy && usable);
   ui_->rxIdLineEdit->setEnabled(!busy && usable);
-  ui_->txIdLineEdit->setReadOnly(false);
-  ui_->rxIdLineEdit->setReadOnly(false);
+  const auto e0y_endpoint_locked =
+      profile_valid &&
+      profiles[profile_index].flow_id == QStringLiteral("chery_e0y");
+  ui_->txIdLineEdit->setReadOnly(e0y_endpoint_locked);
+  ui_->rxIdLineEdit->setReadOnly(e0y_endpoint_locked);
   ui_->entryModeComboBox->setEnabled(!busy && profile_valid);
   ui_->repeatCountSpinBox->setEnabled(!busy && usable);
   const auto e0y_public_key_compatible =

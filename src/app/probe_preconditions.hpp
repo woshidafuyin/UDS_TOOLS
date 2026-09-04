@@ -1,7 +1,9 @@
 #pragma once
 
 #include "app/probe_plan.hpp"
+#include "flash/chery_e0y_wakeup.hpp"
 
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -32,6 +34,7 @@ private:
   mutable std::mutex error_mutex_;
   std::string error_;
   std::jthread sender_;
+  std::unique_ptr<CheryE0yWakeupSession> e0y_wakeup_;
 };
 
 } // namespace uds::app::probe_detail

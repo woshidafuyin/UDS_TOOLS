@@ -1284,6 +1284,16 @@ void test_probe_plan_preserves_entry_specific_session_and_ft_target() {
   check(arc331.valid && arc331.plan.boot_probe &&
             arc331.plan.session == 0x03 && arc331.plan.chuneng_arc331,
         "ARC331 BOOT probe plan lost its safe extended-session routing");
+  auto e0y_request = make_probe_request();
+  e0y_request.profile.flow = L"chery_e0y";
+  e0y_request.profile.tx_id = e0y_request.tx_id = 0x71F;
+  e0y_request.profile.rx_id = e0y_request.rx_id = 0x79F;
+  const auto e0y = uds::app::probe_detail::resolve_probe_plan(e0y_request);
+  check(e0y.valid && e0y.plan.chery_e0y &&
+            e0y.plan.probe_tx_id == 0x71F && e0y.plan.session == 0x01 &&
+            uds::app::probe_detail::probe_session_description(e0y.plan)
+                    .find("0x600") != std::string::npos,
+        "E0Y probe plan lost its 0x600/0x71F/0x79F entry contract");
 
   auto ft_request = make_probe_request();
   ft_request.entry_mode = L"ft";

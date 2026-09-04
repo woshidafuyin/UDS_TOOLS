@@ -5,11 +5,13 @@
 #include "core/keygen_client.hpp"
 #include "core/uds_client.hpp"
 #include "flash/chery_ars1_31_app_flow.hpp"
+#include "flash/chery_e0y_wakeup.hpp"
 
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <filesystem>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 
@@ -75,6 +77,11 @@ void run_project(CheryArs131Project project, std::wstring_view workflow_id,
       (supports_cal &&
        (layout.cal_start != 0xC0180000 || layout.cal_length != 0xC8))) {
     throw std::runtime_error(spec.name + " Driver/APP/CAL layout mismatch");
+  }
+  if (project == CheryArs131Project::e0y &&
+      (job.profile.tx_id != spec.tx_id || job.profile.rx_id != spec.rx_id)) {
+    throw std::runtime_error(
+        "Chery E0Y diagnostic endpoint must match CANoe 0x71F/0x79F");
   }
 
   const auto driver = resolve(job, job.driver_file);
@@ -182,6 +189,17 @@ void run_project(CheryArs131Project project, std::wstring_view workflow_id,
   auto bus = job.can_bus_provider->create(
       {"", job.profile.channel, job.profile.nominal_bitrate,
        job.profile.data_bitrate, false, L"UDSToolCpp"});
+  std::unique_ptr<CheryE0yWakeupSession> e0y_wakeup;
+  if (project == CheryArs131Project::e0y) {
+    e0y_wakeup = std::make_unique<CheryE0yWakeupSession>(
+        *bus, stop, [&](const std::string& line) {
+          if (callbacks.log) callbacks.log(line);
+        });
+    e0y_wakeup->start();
+    e0y_wakeup->wait_until_settled();
+    report(callbacks, "E0Y wake-up", "PASS",
+           "0x600 all-zero Classic CAN @1000ms; 15000ms settle before first diagnostic request");
+  }
   IsoTpSession physical_transport(
       *bus, {job.profile.tx_id, job.profile.rx_id, job.profile.padding, 0,
              job.profile.isotp_st_min});
@@ -206,6 +224,7 @@ void run_project(CheryArs131Project project, std::wstring_view workflow_id,
       },
       keygen);
   flow.run(images, plan.mode, job.update_public_key, stop);
+  if (e0y_wakeup) e0y_wakeup->stop_and_check();
   const auto mode = plan.download_app
                         ? (plan.download_cal ? "APP+CAL/TC_2" : "APP")
                         : "CAL/TC_7";

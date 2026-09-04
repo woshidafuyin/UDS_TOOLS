@@ -22,7 +22,7 @@ const CheryArs131AppSpec kT22{
     0x07, 4, 4, 0xD003, 0xD002, 0xF15A, 15,
     CheryArs131D004Mode::app_signature, 2000ms, true, false, true, false};
 const CheryArs131AppSpec kE0y{
-    CheryArs131Project::e0y, "Chery E0Y ARS1.31", 0x70D, 0x78D,
+    CheryArs131Project::e0y, "Chery E0Y ARS1.31", 0x71F, 0x79F,
     0x11, 16, 16, 0x0203, 0xDD02, 0xF184, 19,
     CheryArs131D004Mode::none, 0ms, false, true, false, true};
 

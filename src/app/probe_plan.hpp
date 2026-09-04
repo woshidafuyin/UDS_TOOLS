@@ -18,6 +18,7 @@ struct ProbePlan {
   bool geely_p416{};
   bool xizhong{};
   bool ars131_app{};
+  bool chery_e0y{};
   bool secondary_target{};
   bool expected_profile_ids{};
   std::uint32_t app_tx_id{};

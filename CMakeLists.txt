@@ -77,6 +77,7 @@ set(UDS_FLASH_SOURCES
   src/flash/chery_ars1_33_workflow.cpp
   src/flash/chery_ars1_31_app_flow.cpp
   src/flash/chery_ars1_31_project_workflows.cpp
+  src/flash/chery_e0y_wakeup.cpp
   src/flash/chery_kp31_flow.cpp
   src/flash/chery_kp31_workflow.cpp
   src/flash/c857_project_workflows.cpp
