@@ -1351,7 +1351,8 @@ void test_workflow_registry() {
   check(!uds::is_flash_workflow_registered(L"future_flow"),
         "unknown workflow was reported as registered");
   const auto registered = uds::registered_flash_workflows();
-  check(registered.size() == 17 &&
+  check(registered.size() == 18 &&
+             std::find(registered.begin(), registered.end(), L"perodua_p02c") != registered.end() &&
             std::find(registered.begin(), registered.end(), L"chuneng_331") == registered.end() &&
             std::find(registered.begin(), registered.end(), L"chuneng_arc331") != registered.end() &&
              std::find(registered.begin(), registered.end(), L"chery_ars1_33") != registered.end() &&
@@ -3231,7 +3232,7 @@ void test_shidaixinan_arf232_project_profiles_and_resources() {
   }
 
   const auto catalog = uds::discover_flash_profiles(source / "profiles");
-  check(catalog.errors.empty() && catalog.profiles.size() == 22,
+  check(catalog.errors.empty() && catalog.profiles.size() == 23,
         "Shidaixinan project profiles were not discovered cleanly");
   for (const auto& project : projects) {
     check(std::any_of(

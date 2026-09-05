@@ -60,6 +60,8 @@ UdsResponse UdsClient::request(std::span<const std::uint8_t> payload,
     std::vector<std::uint8_t> response;
     try {
       response = transport_.receive(timeout, cancellation);
+    } catch (const IsoTpReceiveTimeout&) {
+      throw UdsResponseTimeout();
     } catch (const std::exception& error) {
       throw std::runtime_error(std::string("UDS response wait failed: ") + error.what());
     }

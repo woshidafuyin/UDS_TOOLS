@@ -1,4 +1,5 @@
 #include "ui/qt/controller_bridge.hpp"
+#include "core/aes_cmac.hpp"
 
 #include "core/asc_trace.hpp"
 #include "core/version_check_plan.hpp"
@@ -420,7 +421,10 @@ void ControllerBridge::startFlash(
   request.driver_verify_file = toPath(driver_verify_path);
   request.app_verify_file = toPath(app_verify_path);
   request.cal_verify_file = toPath(cal_verify_path);
-  request.security_dll = toPath(seed_key_dll_path);
+  if (profile.security_algorithm == L"aes128_cmac")
+    request.security_key_file = toPath(seed_key_dll_path);
+  else
+    request.security_dll = toPath(seed_key_dll_path);
   request.trace_file = make_asc_trace_path(
       request.executable_directory, profile.id, request.target_id,
       request.entry_mode);
@@ -734,6 +738,12 @@ void ControllerBridge::buildProfileOptions() {
           pathText(record.profile.cal_verify_file),
          pathText(record.profile.security_dll)});
     auto& option = profile_options_.back();
+    option.uses_oem_key_file = record.profile.security_algorithm == L"aes128_cmac";
+    option.copy_selected_files_to_resources = record.profile.copy_selected_files_to_resources;
+    if (option.uses_oem_key_file) {
+      option.seed_key_dll_path = pathText(record.profile.security_key_file.empty()
+          ? default_oem_key_path() : record.profile.security_key_file);
+    }
     option.ft_tx_id = record.profile.ft_tx_id;
     option.ft_rx_id = record.profile.ft_rx_id;
     option.supports_app_tmp_package =

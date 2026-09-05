@@ -356,7 +356,8 @@ void MainWindow::updateEnabledState() {
   ui_->rxIdLineEdit->setEnabled(!busy && usable);
   const auto e0y_endpoint_locked =
       profile_valid &&
-      profiles[profile_index].flow_id == QStringLiteral("chery_e0y");
+      (profiles[profile_index].flow_id == QStringLiteral("chery_e0y") ||
+       profiles[profile_index].flow_id == QStringLiteral("perodua_p02c"));
   ui_->txIdLineEdit->setReadOnly(e0y_endpoint_locked);
   ui_->rxIdLineEdit->setReadOnly(e0y_endpoint_locked);
   ui_->entryModeComboBox->setEnabled(!busy && profile_valid);

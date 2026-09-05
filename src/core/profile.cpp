@@ -132,6 +132,7 @@ FlashProfile load_profile_ini(const std::filesystem::path& path) {
                 p.supports_cal_download);
   p.supports_app_tmp_package = read_bool(
       values, L"supports_app_tmp_package", p.supports_app_tmp_package);
+  p.copy_selected_files_to_resources = read_bool(values, L"copy_selected_files_to_resources", true);
   p.lock_diagnostic_ids =
       read_bool(values, L"lock_diagnostic_ids", p.lock_diagnostic_ids);
   p.default_entry_mode =
@@ -162,6 +163,12 @@ FlashProfile load_profile_ini(const std::filesystem::path& path) {
   p.isotp_st_min = static_cast<std::uint8_t>(read_uint(values, L"isotp_st_min", p.isotp_st_min));
   p.security_level = read_uint(values, L"security_level", p.security_level);
   p.security_variant = read_text(values, L"security_variant", p.security_variant);
+  p.security_algorithm = lowercase(read_text(values, L"security_algorithm", p.security_algorithm));
+  p.security_key_file = read_text(values, L"security_key_file");
+  p.gateway_tx_id = read_uint(values, L"gateway_tx_id", 0);
+  p.gateway_rx_id = read_uint(values, L"gateway_rx_id", 0);
+  p.programming_tester_identity = read_text(values, L"programming_tester_identity");
+  p.programming_crc_variant = read_text(values, L"programming_crc_variant");
   p.vbf_signature_policy = lowercase(
       read_text(values, L"vbf_signature_policy", p.vbf_signature_policy));
   p.driver0_start = read_uint(values, L"driver0_start", p.driver0_start);
@@ -268,6 +275,13 @@ void save_profile_ini(const FlashProfile& p, const std::filesystem::path& path) 
   append_value(contents, L"isotp_st_min", std::to_wstring(p.isotp_st_min));
   append_value(contents, L"security_level", std::to_wstring(p.security_level));
   append_value(contents, L"security_variant", p.security_variant);
+  append_value(contents, L"security_algorithm", p.security_algorithm);
+  append_value(contents, L"copy_selected_files_to_resources", p.copy_selected_files_to_resources ? L"true" : L"false");
+  append_value(contents, L"security_key_file", p.security_key_file.wstring());
+  append_value(contents, L"gateway_tx_id", std::to_wstring(p.gateway_tx_id));
+  append_value(contents, L"gateway_rx_id", std::to_wstring(p.gateway_rx_id));
+  append_value(contents, L"programming_tester_identity", p.programming_tester_identity);
+  append_value(contents, L"programming_crc_variant", p.programming_crc_variant);
   append_value(contents, L"vbf_signature_policy", p.vbf_signature_policy);
   append_value(contents, L"driver0_start", std::to_wstring(p.driver0_start));
   append_value(contents, L"driver0_length", std::to_wstring(p.driver0_length));

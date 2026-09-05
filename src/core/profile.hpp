@@ -47,6 +47,7 @@ struct FlashProfile {
   // both the APP image and its verification payload. Keep this capability in
   // the Profile so the generic UI does not hard-code project identifiers.
   bool supports_app_tmp_package{};
+  bool copy_selected_files_to_resources{true};
   bool lock_diagnostic_ids{};
   std::wstring default_entry_mode{L"app"};
   std::wstring app_entry_label{L"APP"};
@@ -71,6 +72,14 @@ struct FlashProfile {
   std::uint8_t isotp_st_min{10};
   unsigned security_level{0x11};
   std::wstring security_variant{L"chuneng"};
+  // Native authentication is opt-in; existing DLL profiles retain their path.
+  std::wstring security_algorithm{L"dll"};
+  std::filesystem::path security_key_file;
+  std::uint32_t gateway_tx_id{};
+  std::uint32_t gateway_rx_id{};
+  // F107 bytes 7..33: 10-byte shop code + 17-byte tester serial, space padded.
+  std::wstring programming_tester_identity;
+  std::wstring programming_crc_variant;
   // VBF containers may carry development and production signatures. Projects
   // select "development", "production" or "auto" without coupling that
   // policy to the generic parser.

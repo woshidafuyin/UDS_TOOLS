@@ -1,0 +1,107 @@
+/*@!Encoding:1252*/
+includes
+{
+#if X64
+  #pragma library("..\Exec64\perodua_capl.dll")
+#else
+  #pragma library("..\Exec32\perodua_capl.dll")
+#endif
+}
+variables
+{
+  msTimer pump;
+  msTimer testLease;
+  message * txFrame;
+  byte bytes[8];
+  char value[2048];
+  char line[2048];
+  long running;
+  long channel;
+  long lastStatus;
+  long heartbeat;
+  long leaseMisses;
+}
+on start
+{
+  running=0; lastStatus=0;
+  putValue(Status,0); putValue(Progress,0);
+  putValue(Start,0); putValue(Stop,0);
+  putValue(TestOwner,0); putValue(TestHeartbeat,0);
+}
+on envVar Start
+{
+  if(getValue(Start)==0 || running) return;
+  putValue(Start,0); putValue(Stop,0);
+  getValue(DriverFile,value);p02Text(0,value);
+  getValue(AppFile,value);p02Text(1,value);
+  getValue(CalFile,value);p02Text(2,value);
+  getValue(KeyFile,value);p02Text(3,value);
+  getValue(TesterIdentity,value);p02Text(4,value);
+  p02Number(0,(dword)getValue(Mode)); p02Number(1,(dword)getValue(CRC));
+  p02Number(2,(dword)getValue(DriverStart));p02Number(3,(dword)getValue(AppStart));p02Number(4,(dword)getValue(CalStart));
+  channel=(long)getValue(Channel);
+  running=p02Begin();
+  heartbeat=(long)getValue(TestHeartbeat);leaseMisses=0;
+  if(getValue(TestOwner))setTimer(testLease,100);
+  putValue(Status,p02Status());
+  setTimer(pump,1);
+}
+on envVar Stop
+{
+  if(getValue(Stop)==0) return;
+  p02Stop();running=0;putValue(Status,p02Status());
+  putValue(Stop,0);setTimer(pump,1);
+}
+on timer testLease
+{
+  if(!running)return;
+  if(getValue(TestHeartbeat)==heartbeat)leaseMisses++;
+  else { heartbeat=(long)getValue(TestHeartbeat);leaseMisses=0; }
+  if(leaseMisses>=10)
+  {
+    write("Test Module heartbeat stopped; cancelling flash");
+    putValue(Stop,1);putValue(TestOwner,0);
+  }
+  else setTimer(testLease,100);
+}
+on timer pump
+{
+  dword id;
+  long i;
+  long count;
+  for(count=0;count<32;count++)
+  {
+    id=p02Tx(elcount(bytes),bytes);
+    if(id==0)break;
+    txFrame.id=id;txFrame.can=channel;txFrame.dlc=8;
+    for(i=0;i<8;i++)txFrame.byte(i)=bytes[i];
+    output(txFrame);p02Ack();
+  }
+  for(count=0;count<32;count++)
+  {
+    if(!p02Log(elcount(line),line))break;
+    write("%s",line);
+  }
+  putValue(Progress,p02Progress());
+  lastStatus=p02Status();putValue(Status,lastStatus);
+  if(lastStatus==1)setTimer(pump,1);
+  else
+  {
+    running=0;p02Stop();cancelTimer(testLease);putValue(TestOwner,0);
+    while(p02Log(elcount(line),line))write("%s",line);
+    write("Perodua flash result: %d (2=PASS, -1=FAIL, -2=STOPPED)",lastStatus);
+  }
+}
+on message *
+{
+  byte data[8];
+  long i;
+  if(!running || this.dir!=rx || this.can!=channel || this.dlc!=8)return;
+  if(this.id!=0x794 && this.id!=0x781)return;
+  for(i=0;i<8;i++)data[i]=this.byte(i);
+  p02Rx(this.id,8,data);
+}
+on preStop
+{
+  cancelTimer(pump);cancelTimer(testLease);p02Stop();running=0;
+}

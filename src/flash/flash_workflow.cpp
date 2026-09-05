@@ -1,4 +1,5 @@
 #include "flash/flash_workflow.hpp"
+#include "flash/perodua_p02c_workflow.hpp"
 
 #include "flash/baic_radar_workflows.hpp"
 #include "flash/chery_ars1_33_workflow.hpp"
@@ -97,6 +98,9 @@ std::unique_ptr<FlashWorkflow> create_baic_bqb41() {
 
 // 新增项目专用刷写流程时，只需在这里增加一条注册记录。
 constexpr std::array kWorkflowRegistrations{
+  WorkflowRegistration{L"perodua_p02c", []() -> std::unique_ptr<FlashWorkflow> {
+    return std::make_unique<PeroduaP02cWorkflow>();
+  }},
   WorkflowRegistration{L"chuneng_arc331", &create_chuneng_arc331},
   WorkflowRegistration{L"chery_ars1_33", &create_chery_ars1_33},
   WorkflowRegistration{L"chery_kp31", &create_chery_kp31},

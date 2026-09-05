@@ -2603,18 +2603,16 @@ int main(int argc, char* argv[]) {
             }
             if (mode_index < 0) mode_index = entries->currentIndex();
             entries->setCurrentIndex(mode_index);
-            const auto e0y_endpoint_locked =
-                vendor_name == QStringLiteral("奇瑞") &&
-                project_name == QStringLiteral("E0Y");
+            const auto endpoint_locked = tx_id->isReadOnly() && rx_id->isReadOnly();
             const auto expected_tx =
-                e0y_endpoint_locked
-                    ? QStringLiteral("0x71F")
+                endpoint_locked
+                    ? tx_id->text()
                     : QStringLiteral("0x%1")
                           .arg(0x500 + selector_state_case, 0, 16)
                           .toUpper();
             const auto expected_rx =
-                e0y_endpoint_locked
-                    ? QStringLiteral("0x79F")
+                endpoint_locked
+                    ? rx_id->text()
                     : QStringLiteral("0x%1")
                           .arg(0x600 + selector_state_case, 0, 16)
                           .toUpper();
@@ -2624,7 +2622,7 @@ int main(int argc, char* argv[]) {
             repeat_count->setValue(expected_repeat);
             channels->setCurrentIndex(
                 channels->findData(expected_channel));
-            if (!e0y_endpoint_locked) {
+            if (!endpoint_locked) {
               tx_id->setText(expected_tx);
               rx_id->setText(expected_rx);
               QMetaObject::invokeMethod(tx_id, "editingFinished",
@@ -2645,7 +2643,13 @@ int main(int argc, char* argv[]) {
             const auto state_error =
                 "Catalog-wide selector state was not isolated for " +
                 vendor_name.toStdString() + "/" + project_name.toStdString() +
-                "/" + std::to_string(target);
+                "/" + std::to_string(target) + "; TX=" + tx_id->text().toStdString() +
+                " expected=" + expected_tx.toStdString() + "; RX=" + rx_id->text().toStdString() +
+                " expected=" + expected_rx.toStdString() + "; repeat=" + std::to_string(repeat_count->value()) +
+                " expected=" + std::to_string(expected_repeat) + "; channel=" +
+                std::to_string(channels->currentData().toUInt()) + " expected=" + std::to_string(expected_channel) +
+                "; target=" + std::to_string(radar->currentIndex()) + "; mode=" +
+                entries->currentData().toString().toStdString();
             check(devices->currentText() == project_name &&
                       radar->currentIndex() == target &&
                       entries->currentData().toString().isEmpty() &&
@@ -2947,6 +2951,45 @@ int main(int argc, char* argv[]) {
             "Version page did not render cancellation as a neutral not-executed state");
     }
 
+    {
+      uds::ui::qt::MainWindow perodua_window;
+      auto* vendors = perodua_window.findChild<QComboBox*>(QStringLiteral("projectComboBox"));
+      auto* projects = perodua_window.findChild<QComboBox*>(QStringLiteral("deviceComboBox"));
+      auto* radar = perodua_window.findChild<QComboBox*>(QStringLiteral("radarComboBox"));
+      auto* entries = perodua_window.findChild<QComboBox*>(QStringLiteral("entryModeComboBox"));
+      const auto vendor_index = vendors->findText(QStringLiteral("Perodua"));
+      check(vendor_index >= 0, "Perodua vendor was not registered in the UI");
+      vendors->setCurrentIndex(vendor_index);
+      const auto project_index = projects->findText(QStringLiteral("P02C"));
+      check(project_index >= 0, "Perodua P02C project missing");
+      projects->setCurrentIndex(project_index);
+      if (radar->currentIndex() < 0 && radar->count() > 0) radar->setCurrentIndex(0);
+      QApplication::processEvents();
+      check(entries->count() == 3 && entries->findData(QStringLiteral("app")) >= 0 &&
+                entries->findData(QStringLiteral("cal")) >= 0 &&
+                entries->findData(QStringLiteral("app_cal")) >= 0 &&
+                entries->findData(QStringLiteral("ft")) < 0,
+            "Perodua UI must expose APP/CAL/APP+CAL only");
+      check(perodua_window.findChild<QLabel*>(QStringLiteral("seedKeyDllPathLabel"))->text() ==
+                QStringLiteral("OEM Key 文件"), "native CMAC input was labeled as a DLL");
+      check(perodua_window.findChild<QPushButton*>(QStringLiteral("seedKeyDllBrowseButton"))
+                ->property("fileDialogFilter").toString().contains(QStringLiteral("*.key")),
+            "OEM Key picker uses the DLL filter");
+      auto* key_path = perodua_window.findChild<QLineEdit*>(QStringLiteral("seedKeyDllPathLineEdit"));
+      check(key_path->property("referenceOnly").toBool() &&
+                perodua_window.findChild<QLineEdit*>(QStringLiteral("appPathLineEdit"))
+                    ->property("referenceOnly").toBool(),
+            "Perodua inputs without bundled firmware must support selecting external files");
+      check(perodua_window.findChild<QLineEdit*>(QStringLiteral("txIdLineEdit"))->isReadOnly(),
+            "Perodua specification endpoint must be locked");
+      const auto other = vendors->findText(QStringLiteral("奇瑞"));
+      if (other >= 0) {
+        vendors->setCurrentIndex(other);
+        QApplication::processEvents();
+        check(!perodua_window.findChild<QPushButton*>(QStringLiteral("seedKeyDllBrowseButton"))
+                   ->property("oemKeyFile").toBool(), "OEM Key UI state leaked to a DLL project");
+      }
+    }
     {
       // UI preflight must reject missing inputs before monitor/CAN requests.
       checkpoint("preflight-kp31-start");

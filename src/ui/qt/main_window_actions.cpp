@@ -72,11 +72,15 @@ void MainWindow::connectActions() {
               const QString& logName, FlashFileField field) {
         button->setProperty("fileDialogFilter", filter);
         connect(button, &QPushButton::clicked, this,
-                [this, pathEdit, caption, filter, logName, field] {
+                [this, button, pathEdit, caption, filter, logName, field] {
+                  const bool oem_key = button->property("oemKeyFile").toBool();
                   const auto selected =
-                      selectFile(this, pathEdit, caption, filter);
+                      selectFile(this, pathEdit,
+                          oem_key ? QStringLiteral("选择受保护 OEM Key 文件") : caption,
+                          oem_key ? button->property("fileDialogFilter").toString() : filter);
                   if (selected.isEmpty()) return;
-                  storeSelectedFlashFile(field, selected, pathEdit, logName);
+                  storeSelectedFlashFile(field, selected, pathEdit,
+                      oem_key ? QStringLiteral("OEM Key") : logName);
                 });
       };
 

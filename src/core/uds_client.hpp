@@ -12,6 +12,13 @@
 
 namespace uds {
 
+// Distinguishes a lost final response from a transport send failure. A workflow
+// may repeat only operations whose protocol explicitly permits that retry.
+class UdsResponseTimeout final : public std::runtime_error {
+public:
+  UdsResponseTimeout() : std::runtime_error("UDS response wait failed: ISO-TP receive timeout") {}
+};
+
 struct UdsResponse {
   bool success{};
   std::vector<std::uint8_t> request;

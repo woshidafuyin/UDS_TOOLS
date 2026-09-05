@@ -1,0 +1,35 @@
+/*@!Encoding:1252*/
+includes {}
+variables {}
+void MainTest()
+{
+  TestModuleTitle("Perodua P02C Flash");
+  FlashSelectedMode();
+}
+testcase FlashSelectedMode()
+{
+  long result;
+  long elapsed;
+  TestCaseTitle("P02C_FLASH", "Flash selected APP / CAL / APP+CAL mode");
+  if(getValue(Status)==1)
+  {
+    TestStepFail("Start","Another flash operation is running");return;
+  }
+  putValue(TestOwner,1);putValue(TestHeartbeat,0);
+  putValue(Status,0);putValue(Start,0);testWaitForTimeout(5);
+  putValue(Start,1);testWaitForTimeout(20);
+  elapsed=0;
+  while(getValue(Status)==1 && elapsed<1800000)
+  {
+    putValue(TestHeartbeat,1-getValue(TestHeartbeat));
+    testWaitForTimeout(100);elapsed+=100;
+  }
+  result=(long)getValue(Status);
+  if(result==2) TestStepPass("Flash","CRC, dependencies, reset and communication restoration completed");
+  else
+  {
+    putValue(Stop,1);testWaitForTimeout(50);
+    TestStepFail("Flash","Failed/stopped, status=%d. See CANoe Write and Trace for the failed UDS step.",result);
+  }
+  putValue(TestOwner,0);
+}

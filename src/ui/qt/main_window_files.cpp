@@ -201,6 +201,16 @@ bool MainWindow::storeSelectedFlashFile(FlashFileField field,
                                         const QString& selected,
                                         QLineEdit* editor,
                                         const QString& log_name) {
+  if (editor->property("referenceOnly").toBool()) {
+    if (!QFileInfo(selected).isFile() || !QFileInfo(selected).isReadable()) {
+      QMessageBox::warning(this, QStringLiteral("文件不可读取"), selected);
+      return false;
+    }
+    showPath(editor, QFileInfo(selected).absoluteFilePath());
+    saveRuntimeFileSelection();
+    appendUiLog(QStringLiteral("%1已选择：%2").arg(log_name, QDir::toNativeSeparators(selected)));
+    return true;
+  }
   auto default_path = configuredDefaultFlashFile(field);
   // Some package formats embed verification data, so their verification slot
   // intentionally has no default file. Use the corresponding payload file as

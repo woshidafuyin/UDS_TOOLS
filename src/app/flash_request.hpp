@@ -47,6 +47,7 @@ struct FlashRequest {
   std::filesystem::path app_verify_file;
   std::filesystem::path cal_verify_file;
   std::filesystem::path security_dll;
+  std::filesystem::path security_key_file;
   std::filesystem::path trace_file;
 };
 

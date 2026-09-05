@@ -358,14 +358,29 @@ void MainWindow::applySelectedProfile(int device_index) {
   ui_->appVerifyPathLabel->setText(QStringLiteral("APP 校验文件"));
   showPath(ui_->calVerifyPathLineEdit, profile.cal_verify_path);
   showPath(ui_->seedKeyDllPathLineEdit, profile.seed_key_dll_path);
+  if (profile.uses_oem_key_file)
+    ui_->seedKeyDllPathLabel->setText(QStringLiteral("OEM Key 文件"));
+  ui_->seedKeyDllBrowseButton->setProperty("oemKeyFile", profile.uses_oem_key_file);
+  ui_->seedKeyDllBrowseButton->setProperty("fileDialogFilter", profile.uses_oem_key_file
+      ? QStringLiteral("受保护 OEM Key (*.key);;所有文件 (*.*)")
+      : QStringLiteral("动态链接库 (*.dll);;所有文件 (*.*)"));
+  for (auto* editor : {ui_->driverPathLineEdit, ui_->appPathLineEdit,
+                      ui_->calPathLineEdit, ui_->driverVerifyPathLineEdit,
+                      ui_->appVerifyPathLineEdit, ui_->calVerifyPathLineEdit,
+                      ui_->seedKeyDllPathLineEdit}) {
+    editor->setProperty("referenceOnly", !profile.copy_selected_files_to_resources);
+  }
+  if (profile.uses_oem_key_file) ui_->seedKeyDllPathLineEdit->setProperty("referenceOnly", true);
   // Profile IDs remain the defaults and are restored by double-clicking the
   // corresponding label. Operators may override either ID for every project
   // without editing the Profile on disk.
   // The E0Y normal-flow contract is tied to the CANoe physical endpoint.
   // Keep the project-specific lock local so other profiles retain their
   // existing operator-overridable endpoint behavior.
-  ui_->txIdLineEdit->setReadOnly(chery_e0y);
-  ui_->rxIdLineEdit->setReadOnly(chery_e0y);
+  const bool specification_endpoint_locked = chery_e0y ||
+      profile.flow_id == QStringLiteral("perodua_p02c");
+  ui_->txIdLineEdit->setReadOnly(specification_endpoint_locked);
+  ui_->rxIdLineEdit->setReadOnly(specification_endpoint_locked);
   applySelectedRadar(false);
   restoreRuntimeFileSelection();
   restoreCurrentProfileState();

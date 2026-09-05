@@ -1,0 +1,216 @@
+<?xml version='1.0' encoding='utf-8'?>
+<Panel Type="Vector.CANalyzer.Panels.PanelSerializer, Vector.CANalyzer.Panels.Serializer, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null">
+  <Object Type="Vector.CANalyzer.Panels.Runtime.Panel, Vector.CANalyzer.Panels.Common, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="Panel" Children="Controls" ControlName="Perodua P02C Flash">
+    <Object Type="Vector.CANalyzer.Panels.Design.StaticTextControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="Title" Children="Controls" ControlName="Title">
+      <Property Name="Name">Title</Property>
+      <Property Name="Location">20, 15</Property>
+      <Property Name="Size">750, 30</Property>
+      <Property Name="Text">Perodua P02C / CPD ARS1.33 - Flash</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.StaticTextControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="Bus" Children="Controls" ControlName="Bus">
+      <Property Name="Name">Bus</Property>
+      <Property Name="Location">20, 50</Property>
+      <Property Name="Size">750, 24</Property>
+      <Property Name="Text">CAN 500 kbit/s   CPD 714/794   Gateway 701/781   Functional 7DF</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.StaticTextControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="LabelDriverFile" Children="Controls" ControlName="LabelDriverFile">
+      <Property Name="Name">LabelDriverFile</Property>
+      <Property Name="Location">20, 92</Property>
+      <Property Name="Size">200, 24</Property>
+      <Property Name="Text">Driver</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.PathControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="DriverFile" Children="Controls" ControlName="DriverFile">
+      <Property Name="Name">DriverFile</Property>
+      <Property Name="Location">225, 88</Property>
+      <Property Name="Size">545, 28</Property>
+      <Property Name="SymbolConfiguration">5;1;P02C_Panel;;;DriverFile;4;;;-1;;;</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.StaticTextControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="LabelAppFile" Children="Controls" ControlName="LabelAppFile">
+      <Property Name="Name">LabelAppFile</Property>
+      <Property Name="Location">20, 134</Property>
+      <Property Name="Size">200, 24</Property>
+      <Property Name="Text">APP</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.PathControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="AppFile" Children="Controls" ControlName="AppFile">
+      <Property Name="Name">AppFile</Property>
+      <Property Name="Location">225, 130</Property>
+      <Property Name="Size">545, 28</Property>
+      <Property Name="SymbolConfiguration">5;1;P02C_Panel;;;AppFile;4;;;-1;;;</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.StaticTextControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="LabelCalFile" Children="Controls" ControlName="LabelCalFile">
+      <Property Name="Name">LabelCalFile</Property>
+      <Property Name="Location">20, 176</Property>
+      <Property Name="Size">200, 24</Property>
+      <Property Name="Text">CAL</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.PathControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="CalFile" Children="Controls" ControlName="CalFile">
+      <Property Name="Name">CalFile</Property>
+      <Property Name="Location">225, 172</Property>
+      <Property Name="Size">545, 28</Property>
+      <Property Name="SymbolConfiguration">5;1;P02C_Panel;;;CalFile;4;;;-1;;;</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.StaticTextControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="LabelKeyFile" Children="Controls" ControlName="LabelKeyFile">
+      <Property Name="Name">LabelKeyFile</Property>
+      <Property Name="Location">20, 218</Property>
+      <Property Name="Size">200, 24</Property>
+      <Property Name="Text">OEM Key (blank = local key)</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.PathControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="KeyFile" Children="Controls" ControlName="KeyFile">
+      <Property Name="Name">KeyFile</Property>
+      <Property Name="Location">225, 214</Property>
+      <Property Name="Size">545, 28</Property>
+      <Property Name="SymbolConfiguration">5;1;P02C_Panel;;;KeyFile;4;;;-1;;;</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.StaticTextControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="LabelTesterIdentity" Children="Controls" ControlName="LabelTesterIdentity">
+      <Property Name="Name">LabelTesterIdentity</Property>
+      <Property Name="Location">20, 260</Property>
+      <Property Name="Size">200, 24</Property>
+      <Property Name="Text">Shop code + tester serial</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.TextBoxControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="TesterIdentity" Children="Controls" ControlName="TesterIdentity">
+      <Property Name="Name">TesterIdentity</Property>
+      <Property Name="Location">225, 256</Property>
+      <Property Name="Size">545, 28</Property>
+      <Property Name="SymbolConfiguration">5;1;P02C_Panel;;;TesterIdentity;4;;;-1;;;</Property>
+      <Property Name="DisplayLabel">Hide</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.StaticTextControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="ModeLabel" Children="Controls" ControlName="ModeLabel">
+      <Property Name="Name">ModeLabel</Property>
+      <Property Name="Location">20, 310</Property>
+      <Property Name="Size">80, 24</Property>
+      <Property Name="Text">Mode</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.ComboBoxControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="Mode" Children="Controls" ControlName="Mode">
+      <Property Name="Name">Mode</Property>
+      <Property Name="Location">105, 306</Property>
+      <Property Name="Size">180, 28</Property>
+      <Property Name="SymbolConfiguration">5;1;P02C_Panel;;;Mode;1;;;-1;;;</Property>
+      <Property Name="DisplayLabel">Hide</Property>
+      <Property Name="UsedValueTable">PhysicalValue</Property>
+      <Property Name="ShowValues">Decimal</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.StaticTextControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="CRCLabel" Children="Controls" ControlName="CRCLabel">
+      <Property Name="Name">CRCLabel</Property>
+      <Property Name="Location">320, 310</Property>
+      <Property Name="Size">100, 24</Property>
+      <Property Name="Text">ECU CRC32</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.ComboBoxControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="CRC" Children="Controls" ControlName="CRC">
+      <Property Name="Name">CRC</Property>
+      <Property Name="Location">425, 306</Property>
+      <Property Name="Size">230, 28</Property>
+      <Property Name="SymbolConfiguration">5;1;P02C_Panel;;;CRC;1;;;-1;;;</Property>
+      <Property Name="DisplayLabel">Hide</Property>
+      <Property Name="UsedValueTable">PhysicalValue</Property>
+      <Property Name="ShowValues">Decimal</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.StaticTextControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="ChannelLabel" Children="Controls" ControlName="ChannelLabel">
+      <Property Name="Name">ChannelLabel</Property>
+      <Property Name="Location">665, 310</Property>
+      <Property Name="Size">55, 24</Property>
+      <Property Name="Text">CAN</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.TextBoxControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="Channel" Children="Controls" ControlName="Channel">
+      <Property Name="Name">Channel</Property>
+      <Property Name="Location">722, 306</Property>
+      <Property Name="Size">48, 28</Property>
+      <Property Name="SymbolConfiguration">5;1;P02C_Panel;;;Channel;1;;;-1;;;</Property>
+      <Property Name="DisplayLabel">Hide</Property>
+      <Property Name="ValueDecimalPlaces">0</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.StaticTextControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="BinInfo" Children="Controls" ControlName="BinInfo">
+      <Property Name="Name">BinInfo</Property>
+      <Property Name="Location">20, 349</Property>
+      <Property Name="Size">750, 24</Property>
+      <Property Name="Text">BIN start addresses (decimal); S-record uses file segment addresses.</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.StaticTextControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="DriverStartLabel" Children="Controls" ControlName="DriverStartLabel">
+      <Property Name="Name">DriverStartLabel</Property>
+      <Property Name="Location">20, 386</Property>
+      <Property Name="Size">60, 24</Property>
+      <Property Name="Text">Driver</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.TextBoxControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="DriverStart" Children="Controls" ControlName="DriverStart">
+      <Property Name="Name">DriverStart</Property>
+      <Property Name="Location">85, 382</Property>
+      <Property Name="Size">170, 28</Property>
+      <Property Name="SymbolConfiguration">5;1;P02C_Panel;;;DriverStart;1;;;-1;;;</Property>
+      <Property Name="DisplayLabel">Hide</Property>
+      <Property Name="ValueDisplay">Decimal</Property>
+      <Property Name="ValueDecimalPlaces">0</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.StaticTextControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="AppStartLabel" Children="Controls" ControlName="AppStartLabel">
+      <Property Name="Name">AppStartLabel</Property>
+      <Property Name="Location">270, 386</Property>
+      <Property Name="Size">60, 24</Property>
+      <Property Name="Text">APP</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.TextBoxControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="AppStart" Children="Controls" ControlName="AppStart">
+      <Property Name="Name">AppStart</Property>
+      <Property Name="Location">335, 382</Property>
+      <Property Name="Size">170, 28</Property>
+      <Property Name="SymbolConfiguration">5;1;P02C_Panel;;;AppStart;1;;;-1;;;</Property>
+      <Property Name="DisplayLabel">Hide</Property>
+      <Property Name="ValueDisplay">Decimal</Property>
+      <Property Name="ValueDecimalPlaces">0</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.StaticTextControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="CalStartLabel" Children="Controls" ControlName="CalStartLabel">
+      <Property Name="Name">CalStartLabel</Property>
+      <Property Name="Location">520, 386</Property>
+      <Property Name="Size">60, 24</Property>
+      <Property Name="Text">CAL</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.TextBoxControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="CalStart" Children="Controls" ControlName="CalStart">
+      <Property Name="Name">CalStart</Property>
+      <Property Name="Location">585, 382</Property>
+      <Property Name="Size">170, 28</Property>
+      <Property Name="SymbolConfiguration">5;1;P02C_Panel;;;CalStart;1;;;-1;;;</Property>
+      <Property Name="DisplayLabel">Hide</Property>
+      <Property Name="ValueDisplay">Decimal</Property>
+      <Property Name="ValueDecimalPlaces">0</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.ButtonControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="Start" Children="Controls" ControlName="Start">
+      <Property Name="Name">Start</Property>
+      <Property Name="Location">20, 430</Property>
+      <Property Name="Size">160, 36</Property>
+      <Property Name="Text">Start flash</Property>
+      <Property Name="SymbolConfiguration">5;1;P02C_Panel;;;Start;1;;;-1;;;</Property>
+      <Property Name="PressValueVT">1;Lower;1</Property>
+      <Property Name="ReleaseValueVT">1;Lower;0</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.ButtonControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="Stop" Children="Controls" ControlName="Stop">
+      <Property Name="Name">Stop</Property>
+      <Property Name="Location">195, 430</Property>
+      <Property Name="Size">120, 36</Property>
+      <Property Name="Text">Stop</Property>
+      <Property Name="SymbolConfiguration">5;1;P02C_Panel;;;Stop;1;;;-1;;;</Property>
+      <Property Name="PressValueVT">1;Lower;1</Property>
+      <Property Name="ReleaseValueVT">1;Lower;0</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.TextBoxControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="Status" Children="Controls" ControlName="Status">
+      <Property Name="Name">Status</Property>
+      <Property Name="Location">335, 433</Property>
+      <Property Name="Size">160, 28</Property>
+      <Property Name="SymbolConfiguration">5;1;P02C_Panel;;;Status;1;;;-1;;;</Property>
+      <Property Name="DisplayLabel">Hide</Property>
+      <Property Name="DisplayOnly">True</Property>
+      <Property Name="ValueDisplay">Symbolic</Property>
+      <Property Name="UsedValueTable">PhysicalValue</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.ProgressBarControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="Progress" Children="Controls" ControlName="Progress">
+      <Property Name="Name">Progress</Property>
+      <Property Name="Location">515, 430</Property>
+      <Property Name="Size">255, 36</Property>
+      <Property Name="SymbolConfiguration">5;1;P02C_Panel;;;Progress;1;;;-1;;;</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.StaticTextControl, Vector.CANalyzer.Panels.CommonControls, Version=12.0.75.0, Culture=neutral, PublicKeyToken=null" Name="Help" Children="Controls" ControlName="Help">
+      <Property Name="Name">Help</Property>
+      <Property Name="Location">20, 485</Property>
+      <Property Name="Size">750, 50</Property>
+      <Property Name="Text">Steps and errors: CANoe Write / Trace. Test Module reports: Reports folder.</Property>
+    </Object>
+    <Property Name="Name">Panel</Property>
+    <Property Name="Size">800, 545</Property>
+    <Property Name="BackColor">White</Property>
+  </Object>
+</Panel>

@@ -1,0 +1,3 @@
+# Preserve CANoe native serialization, including CRLF and record whitespace.
+*.cfg binary
+*.tse binary

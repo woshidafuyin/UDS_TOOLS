@@ -74,6 +74,8 @@ struct ControllerProfileOption {
   quint32 ft_tx_id{};
   quint32 ft_rx_id{};
   bool supports_app_tmp_package{};
+  bool uses_oem_key_file{};
+  bool copy_selected_files_to_resources{true};
 };
 
 // Owns the application-layer controllers and adapts their standard C++ worker

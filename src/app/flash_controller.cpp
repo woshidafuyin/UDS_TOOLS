@@ -385,6 +385,7 @@ void FlashController::execute(FlashRequest request,
     job.app_verify_file = request.app_verify_file;
     job.cal_verify_file = request.cal_verify_file;
     job.security_dll = request.security_dll;
+    job.security_key_file = request.security_key_file;
     job.can_bus_provider = bus_provider_;
 
     for (active_cycle = 1; active_cycle <= repeat_count; ++active_cycle) {

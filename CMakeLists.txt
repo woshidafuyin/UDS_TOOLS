@@ -52,6 +52,7 @@ if(ENABLE_KVASER)
 endif()
 
 set(UDS_CORE_SOURCES
+  src/core/aes_cmac.cpp
   src/core/asc_trace.cpp
   src/core/bus_monitor_trace.cpp
   src/core/can_id_filter.cpp
@@ -71,6 +72,8 @@ set(UDS_CORE_SOURCES
 )
 
 set(UDS_FLASH_SOURCES
+  src/flash/perodua_p02c_flow.cpp
+  src/flash/perodua_p02c_workflow.cpp
   src/flash/baic_radar_flow.cpp
   src/flash/baic_radar_workflows.cpp
   src/flash/chery_ars1_33_flow.cpp
@@ -128,7 +131,7 @@ function(configure_uds_core_target target)
     target_include_directories(${target} PRIVATE
       third_party/kvaser/sdk/include)
   endif()
-  target_link_libraries(${target} PUBLIC bcrypt)
+  target_link_libraries(${target} PUBLIC bcrypt crypt32)
   target_compile_definitions(${target} PUBLIC
     UDS_ENABLE_VECTOR=$<BOOL:${ENABLE_VECTOR}>
     UDS_ENABLE_TOSUN=$<BOOL:${ENABLE_TOSUN}>
@@ -171,6 +174,13 @@ configure_uds_core_target(uds_core)
 
 add_library(uds_flash STATIC ${UDS_FLASH_SOURCES})
 configure_uds_flash_target(uds_flash uds_core)
+
+set(UDS_CAPL_INCLUDE_DIR "" CACHE PATH "Vector CAPL DLL SDK include directory")
+if(UDS_CAPL_INCLUDE_DIR)
+  add_library(perodua_capl SHARED src/canoe/perodua_capl.cpp)
+  target_include_directories(perodua_capl PRIVATE "${UDS_CAPL_INCLUDE_DIR}")
+  target_link_libraries(perodua_capl PRIVATE uds_flash)
+endif()
 
 add_library(uds_app STATIC ${UDS_APP_SOURCES})
 configure_uds_app_target(uds_app uds_flash uds_core)
@@ -501,6 +511,10 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
 endif()
 
 enable_testing()
+add_executable(perodua_p02c_tests tests/perodua_p02c_tests.cpp)
+target_link_libraries(perodua_p02c_tests PRIVATE uds_flash uds_core)
+target_compile_definitions(perodua_p02c_tests PRIVATE UDS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+add_test(NAME perodua_p02c_tests COMMAND perodua_p02c_tests)
 add_executable(core_tests tests/core_tests.cpp)
 target_link_libraries(core_tests PRIVATE uds_flash uds_core)
 target_compile_definitions(core_tests PRIVATE UDS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
