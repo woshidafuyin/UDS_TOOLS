@@ -32,6 +32,8 @@ struct PersistedResourcePathResolution {
 // retaining its original filename. Existing files with other names, including
 // the configured default and previous selections, are never removed. The
 // selected source is also left untouched.
+// Same-name collisions are stored in unique subdirectories: existing resource
+// contents remain unchanged even when another field or saved job refers to them.
 [[nodiscard]] ResourceFileReplaceResult replaceConfiguredResourceFile(
     const QString& selected_path, const QString& configured_default_path,
     const QString& resources_root);

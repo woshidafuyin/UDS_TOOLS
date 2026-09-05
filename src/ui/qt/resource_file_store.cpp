@@ -4,6 +4,8 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QSaveFile>
+#include <QTemporaryDir>
+#include <memory>
 
 namespace uds::ui::qt {
 namespace {
@@ -132,7 +134,7 @@ ResourceFileReplaceResult replaceConfiguredResourceFile(
 
   const auto destination_directory =
       canonicalOrAbsolute(QFileInfo(configured).absolutePath());
-  const auto destination = canonicalOrAbsolute(
+  auto destination = canonicalOrAbsolute(
       QDir(destination_directory).filePath(selected.fileName()));
   if (!isInside(destination, root) ||
       !samePath(QFileInfo(destination).absolutePath(),
@@ -143,6 +145,21 @@ ResourceFileReplaceResult replaceConfiguredResourceFile(
   }
 
   const auto selected_absolute = canonicalOrAbsolute(selected_path);
+  // Paths may already be referenced by other fields, targets or saved jobs.
+  // Never replace their contents when importing a different same-named file.
+  // Keep the original filename in a fresh directory instead of guessing which
+  // UI field owns an existing resource.
+  std::unique_ptr<QTemporaryDir> import_directory;
+  if (!samePath(selected_absolute, destination) && QFileInfo::exists(destination)) {
+    import_directory = std::make_unique<QTemporaryDir>(
+        QDir(destination_directory).filePath(QStringLiteral("selected-XXXXXX")));
+    if (!import_directory->isValid()) {
+      result.error = QStringLiteral("无法创建同名文件的独立保存目录：%1")
+                         .arg(QDir::toNativeSeparators(destination_directory));
+      return result;
+    }
+    destination = QDir(import_directory->path()).filePath(selected.fileName());
+  }
   if (!samePath(selected_absolute, destination)) {
     QSaveFile output(destination);
     if (!output.open(QIODevice::WriteOnly)) {
@@ -182,6 +199,7 @@ ResourceFileReplaceResult replaceConfiguredResourceFile(
 
   result.success = true;
   result.stored_path = destination;
+  if (import_directory) import_directory->setAutoRemove(false);
   return result;
 }
 
