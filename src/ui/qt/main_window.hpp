@@ -127,6 +127,8 @@ private:
   void saveCurrentBackendChannel() const;
   void restoreCurrentBackendChannel(unsigned profile_default_channel);
   void saveComboSelections() const;
+  Q_INVOKABLE bool validateFlashFilesFromUi(int profile_index,
+                                             const QString& entry_mode);
   void startProbeFromUi();
   void startFlashFromUi();
   void syncVersionContext(bool recent_flash = false);

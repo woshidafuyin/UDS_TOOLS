@@ -801,9 +801,9 @@ int main(int argc, char* argv[]) {
                 entries->findText(QStringLiteral("请选择")) == -1 &&
                 entries->currentData().toString().isEmpty() &&
                 entries->property("modeUnselected").toBool() &&
-                probe->isEnabled() && !start_flash->isEnabled(),
+                probe->isEnabled() && start_flash->isEnabled(),
             "An unselected flash mode must allow an explanatory probe click "
-            "while keeping formal flashing disabled");
+            "and an explanatory flash click");
       check(QMetaObject::invokeMethod(
                 bus_monitor_page, "runningChanged", Qt::DirectConnection,
                 Q_ARG(bool, true)),
@@ -2856,7 +2856,7 @@ int main(int argc, char* argv[]) {
                 entries->placeholderText() == QStringLiteral("请选择") &&
                 entries->findText(QStringLiteral("请选择")) == -1 &&
                 entries->property("modeUnselected").toBool() &&
-                probe->isEnabled() && !start_flash->isEnabled(),
+                probe->isEnabled() && start_flash->isEnabled(),
             "Qt entry selection was restored instead of reset");
       check(repeat_count->value() == 3,
             "Qt flash repeat count was not restored");
@@ -2945,6 +2945,143 @@ int main(int argc, char* argv[]) {
                 raw->toPlainText().contains(
                     QStringLiteral("INFO  版本读取已停止")),
             "Version page did not render cancellation as a neutral not-executed state");
+    }
+
+    {
+      // UI preflight must reject missing inputs before monitor/CAN requests.
+      checkpoint("preflight-kp31-start");
+      uds::ui::qt::MainWindow window;
+      window.show();
+      application.processEvents();
+      checkpoint("preflight-kp31-window");
+      auto* vendors = window.findChild<QComboBox*>("projectComboBox");
+      auto* projects = window.findChild<QComboBox*>("deviceComboBox");
+      vendors->setCurrentIndex(find_text(vendors, QStringLiteral("奇瑞")));
+      projects->setCurrentIndex(find_text(projects, QStringLiteral("KP31")));
+      auto* modes = window.findChild<QComboBox*>("entryModeComboBox");
+      auto* log = window.findChild<QPlainTextEdit*>("logPlainTextEdit");
+      auto* probe = window.findChild<QPushButton*>("probeButton");
+      auto* flash = window.findChild<QPushButton*>("startFlashButton");
+      checkpoint("preflight-kp31-selectors");
+      int requests = 0;
+      QObject::disconnect(&window, &uds::ui::qt::MainWindow::probeRequested, nullptr, nullptr);
+      QObject::disconnect(&window, &uds::ui::qt::MainWindow::flashRequested, nullptr, nullptr);
+      QObject::connect(&window, &uds::ui::qt::MainWindow::probeRequested,
+                       &window, [&] { ++requests; });
+      QObject::connect(&window, &uds::ui::qt::MainWindow::flashRequested,
+                       &window, [&] { ++requests; });
+      const auto set_path = [&](const char* name, const QString& path) {
+        uds::ui::qt::main_window_support::showPath(
+            window.findChild<QLineEdit*>(name), path);
+      };
+      for (const auto* field : {"driverPathLineEdit", "driverVerifyPathLineEdit",
+             "appPathLineEdit", "appVerifyPathLineEdit", "calPathLineEdit",
+             "calVerifyPathLineEdit", "seedKeyDllPathLineEdit"}) set_path(field, {});
+      checkpoint("preflight-kp31-files-cleared");
+      modes->setCurrentIndex(-1);
+      for (auto* button : {probe, flash}) {
+        log->clear();
+        button->click();
+        const auto block = find_log_block(log->document(), QStringLiteral("未配置刷写模式"));
+        check(block.isValid() && log_fragment_format(block, QStringLiteral("未配置刷写模式"))
+                  .foreground().color() == QColor("#D93025") && requests == 0,
+              "Missing mode must produce a red log for both buttons without requests");
+      }
+      checkpoint("preflight-kp31-missing-mode-pass");
+      for (const auto& mode : {QStringLiteral("app"), QStringLiteral("cal"), QStringLiteral("app_cal")}) {
+        modes->setCurrentIndex(modes->findData(mode));
+        for (auto* button : {probe, flash}) {
+          log->clear();
+          button->click();
+          const auto text = log->toPlainText();
+          const auto block = find_log_block(log->document(), QStringLiteral("未选择 Driver 文件"));
+          check(block.isValid() && log_fragment_format(block, QStringLiteral("未选择 Driver 文件"))
+                    .foreground().color() == QColor("#D93025") && requests == 0 &&
+                    text.contains(QStringLiteral("未选择 Driver 校验 文件")) &&
+                    text.contains(QStringLiteral("未选择 APP 文件")) == (mode != "cal") &&
+                    text.contains(QStringLiteral("未选择 CAL 文件")) == (mode != "app"),
+                "KP31 mode-specific missing inputs must all be red and stay offline");
+        }
+      }
+      checkpoint("preflight-kp31-missing-files-pass");
+      set_path("driverPathLineEdit", settings_path); // a directory is not a firmware file
+      log->clear();
+      flash->click();
+      check(log->toPlainText().contains(QStringLiteral("Driver 文件不存在或不可读取")) && requests == 0,
+            "A directory must be rejected as a firmware input before CAN");
+      const auto selected_file = QDir(settings_path).filePath("preflight-selected.s19");
+      QFile selected(selected_file);
+      check(selected.open(QIODevice::WriteOnly), "Could not create preflight fixture");
+      selected.write("offline UI existence fixture");
+      selected.close();
+      for (const auto* field : {"driverPathLineEdit", "driverVerifyPathLineEdit",
+             "appPathLineEdit", "appVerifyPathLineEdit", "calPathLineEdit",
+             "calVerifyPathLineEdit", "seedKeyDllPathLineEdit"}) set_path(field, selected_file);
+      // UI checks presence; the disconnected controller still owns content validation.
+      modes->setCurrentIndex(modes->findData(QStringLiteral("cal")));
+      set_path("appPathLineEdit", {});
+      set_path("appVerifyPathLineEdit", {});
+      auto* bridge = window.findChild<uds::ui::qt::ControllerBridge*>();
+      int kp31_index = -1;
+      const auto& options = bridge->profileOptions();
+      for (int i = 0; i < static_cast<int>(options.size()); ++i) {
+        if (options[i].profile_id == QStringLiteral("chery_kp31")) kp31_index = i;
+      }
+      bool valid_files = false;
+      check(kp31_index >= 0 && QMetaObject::invokeMethod(
+                &window, "validateFlashFilesFromUi", Qt::DirectConnection,
+                Q_RETURN_ARG(bool, valid_files), Q_ARG(int, kp31_index),
+                Q_ARG(QString, QStringLiteral("cal"))) && valid_files && requests == 0,
+            "KP31 CAL must accept manually selected files without defaults or APP inputs");
+    }
+
+    {
+      uds::ui::qt::MainWindow window;
+      auto* vendors = window.findChild<QComboBox*>("projectComboBox");
+      auto* projects = window.findChild<QComboBox*>("deviceComboBox");
+      auto* modes = window.findChild<QComboBox*>("entryModeComboBox");
+      auto* log = window.findChild<QPlainTextEdit*>("logPlainTextEdit");
+      auto* probe = window.findChild<QPushButton*>("probeButton");
+      auto* flash = window.findChild<QPushButton*>("startFlashButton");
+      int requests = 0, covered = 0;
+      QObject::disconnect(&window, &uds::ui::qt::MainWindow::probeRequested, nullptr, nullptr);
+      QObject::disconnect(&window, &uds::ui::qt::MainWindow::flashRequested, nullptr, nullptr);
+      QObject::connect(&window, &uds::ui::qt::MainWindow::probeRequested,
+                       &window, [&] { ++requests; });
+      QObject::connect(&window, &uds::ui::qt::MainWindow::flashRequested,
+                       &window, [&] { ++requests; });
+      for (int vendor = 0; vendor < vendors->count(); ++vendor) {
+        vendors->setCurrentIndex(vendor);
+        for (int project = 0; project < projects->count(); ++project) {
+          projects->setCurrentIndex(project);
+          if (!probe->isEnabled()) continue; // Placeholder profiles remain disabled.
+          modes->setCurrentIndex(-1);
+          for (auto* button : {probe, flash}) {
+            log->clear();
+            button->click();
+            const auto block = find_log_block(log->document(), QStringLiteral("未配置刷写模式"));
+            check(block.isValid() && requests == 0 &&
+                      log_fragment_format(block, QStringLiteral("未配置刷写模式"))
+                          .foreground().color() == QColor("#D93025"),
+                  "Every available project must log missing mode in red for both actions");
+          }
+          modes->setCurrentIndex(modes->findData(QStringLiteral("app")));
+          uds::ui::qt::main_window_support::showPath(
+              window.findChild<QLineEdit*>("appPathLineEdit"), {});
+          for (auto* button : {probe, flash}) {
+            log->clear();
+            button->click();
+            const auto block = find_log_block(log->document(), QStringLiteral("未选择 APP 文件"));
+            check(block.isValid() && requests == 0 &&
+                      log_fragment_format(block, QStringLiteral("未选择 APP 文件"))
+                          .foreground().color() == QColor("#D93025"),
+                  "Every available project must reject missing APP in red before CAN");
+          }
+          ++covered;
+        }
+      }
+      check(covered >= 20, "Universal preflight coverage omitted active vendor projects");
+      std::cout << "Universal preflight projects checked: " << covered << '\n';
     }
 
     settings.clear();

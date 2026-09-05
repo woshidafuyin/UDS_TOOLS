@@ -66,13 +66,87 @@
 namespace uds::ui::qt {
 using namespace main_window_support;
 
+bool MainWindow::validateFlashFilesFromUi(int profile_index,
+                                         const QString& entry_mode) {
+  const auto& profile = controller_bridge_->profileOptions().at(
+      static_cast<std::size_t>(profile_index));
+  bool valid = true;
+  const auto reject = [this, &valid](const QString& message) {
+    appendUiLog(message, UiLogTone::Failure);
+    valid = false;
+  };
+  const bool chery = profile.flow_id.startsWith(QStringLiteral("chery_"));
+  const bool chuneng = profile.flow_id == QStringLiteral("chuneng_arc331");
+  const bool driver_cbf = chuneng && fullPath(ui_->driverPathLineEdit)
+      .endsWith(QStringLiteral(".cbf"), Qt::CaseInsensitive);
+  const bool app_cbf = chuneng && fullPath(ui_->appPathLineEdit)
+      .endsWith(QStringLiteral(".cbf"), Qt::CaseInsensitive);
+  const auto optional_lingpao_certificate =
+      profile.flow_id == QStringLiteral("lp_arf") ||
+      profile.flow_id == QStringLiteral("lp_arc");
+  const auto needs_app =
+      entry_mode != QStringLiteral("cal");
+  const auto embedded_tmp =
+      needs_app && profile.supports_app_tmp_package &&
+      fullPath(ui_->appPathLineEdit)
+          .endsWith(QStringLiteral(".tmp"), Qt::CaseInsensitive);
+  if (embedded_tmp &&
+      !ui_->appPathLineEdit->property(kPackageValidProperty).toBool()) {
+    reject(QStringLiteral("刷写文件无效：当前 TMP 升级包结构解析失败，请重新选择。"));
+  }
+  const auto needs_app_verification =
+      (needs_app && !embedded_tmp && !optional_lingpao_certificate &&
+       (chery || !profile.app_verify_path.isEmpty() ||
+        profile.supports_app_tmp_package ||
+        (chuneng && !app_cbf && !driver_cbf))) ||
+      (profile.profile_id == QStringLiteral("chery_t22") &&
+       entry_mode == QStringLiteral("cal"));
+  const auto needs_cal =
+      entry_mode == QStringLiteral("cal") ||
+      entry_mode == QStringLiteral("app_cal") ||
+      profile.flow_id == QStringLiteral("geely_p416");
+  const auto required_files = std::array{
+      std::tuple{QStringLiteral("Driver"), profile.flow_id != QStringLiteral("lp_arf"),
+                 fullPath(ui_->driverPathLineEdit)},
+      std::tuple{QStringLiteral("Driver 校验"),
+                 chery || (chuneng && !driver_cbf) || !profile.driver_verify_path.isEmpty(),
+                 fullPath(ui_->driverVerifyPathLineEdit)},
+      std::tuple{QStringLiteral("APP"), needs_app,
+                 fullPath(ui_->appPathLineEdit)},
+      std::tuple{profile.app_verify_label.isEmpty()
+                     ? QStringLiteral("APP 校验")
+                     : profile.app_verify_label,
+                  needs_app_verification,
+                 fullPath(ui_->appVerifyPathLineEdit)},
+      std::tuple{QStringLiteral("CAL"), needs_cal,
+                 fullPath(ui_->calPathLineEdit)},
+      std::tuple{QStringLiteral("CAL 校验"), needs_cal && (chery || !profile.cal_verify_path.isEmpty()),
+                 fullPath(ui_->calVerifyPathLineEdit)},
+      std::tuple{QStringLiteral("SeedKey 算法库"), chery || !profile.seed_key_dll_path.isEmpty(),
+                 fullPath(ui_->seedKeyDllPathLineEdit)}};
+  for (const auto& [label, required, selected_path] :
+       required_files) {
+    if (!required) continue;
+    if (selected_path.trimmed().isEmpty()) {
+      reject(QStringLiteral("未选择 %1 文件：请先选择后再执行“能否刷写”或“开始刷写”。")
+                 .arg(label));
+    } else {
+      const QFileInfo file(selected_path);
+      if (!file.isFile() || !file.isReadable()) {
+        reject(QStringLiteral("%1 文件不存在或不可读取：%2").arg(label, selected_path));
+      }
+    }
+  }
+  return valid;
+}
+
 void MainWindow::startProbeFromUi() {
   const auto entry_mode = ui_->entryModeComboBox->currentData().toString();
   if (entry_mode.isEmpty()) {
     appendUiLog(
         QStringLiteral(
             "未配置刷写模式：请先选择刷写模式后再执行“能否刷写”。"),
-        UiLogTone::Failure, UiLogDestination::ViewOnly);
+        UiLogTone::Failure);
     return;
   }
   bool profile_valid{};
@@ -90,6 +164,7 @@ void MainWindow::startProbeFromUi() {
     appendUiLog(message);
     return;
   }
+  if (!validateFlashFilesFromUi(profile_index, entry_mode)) return;
   followSelectedBusMonitorContext();
   if (!monitorMatchesSelectedHardware(profile_index)) {
     QMessageBox::warning(this, QStringLiteral("监听通道配置不一致"),
@@ -136,9 +211,8 @@ void MainWindow::startProbeFromUi() {
 void MainWindow::startFlashFromUi() {
   const auto entry_mode = ui_->entryModeComboBox->currentData().toString();
   if (entry_mode.isEmpty()) {
-    QMessageBox::warning(
-        this, QStringLiteral("请选择刷写模式"),
-        QStringLiteral("请先选择 APP、FT 或其他可用刷写模式。"));
+    appendUiLog(QStringLiteral("未配置刷写模式：请先选择刷写模式后再执行“开始刷写”。"),
+                UiLogTone::Failure);
     return;
   }
   bool profile_valid{};
@@ -164,77 +238,14 @@ void MainWindow::startFlashFromUi() {
     return;
   }
   const auto& profile = options[static_cast<std::size_t>(profile_index)];
+  if (!validateFlashFilesFromUi(profile_index, entry_mode)) return;
+
   followSelectedBusMonitorContext();
   if (!monitorMatchesSelectedHardware(profile_index)) {
     QMessageBox::warning(this, QStringLiteral("监听通道配置不一致"),
                          QStringLiteral("自动监听未能切换到当前 CAN 后端、通道或速率配置，"
                                         "本次刷写已阻止。"));
     return;
-  }
-  const auto optional_lingpao_certificate =
-      profile.flow_id == QStringLiteral("lp_arf") ||
-      profile.flow_id == QStringLiteral("lp_arc");
-  const auto needs_app =
-      entry_mode != QStringLiteral("cal");
-  const auto embedded_tmp =
-      needs_app && profile.supports_app_tmp_package &&
-      fullPath(ui_->appPathLineEdit)
-          .endsWith(QStringLiteral(".tmp"), Qt::CaseInsensitive);
-  if (embedded_tmp &&
-      !ui_->appPathLineEdit->property(kPackageValidProperty).toBool()) {
-    QMessageBox::warning(
-        this, QStringLiteral("TMP升级包无效"),
-        QStringLiteral("当前TMP结构解析失败，禁止刷写。"));
-    return;
-  }
-  if (needs_app && profile.supports_app_tmp_package && !embedded_tmp &&
-      !optional_lingpao_certificate &&
-      fullPath(ui_->appVerifyPathLineEdit).isEmpty()) {
-    QMessageBox::warning(
-        this, QStringLiteral("缺少APP验签文件"),
-        QStringLiteral("当前导入的是S19/SREC/BIN，请手动选择与APP匹配的ASC或TMP验签文件。"));
-    return;
-  }
-  const auto needs_app_verification =
-      (needs_app && !embedded_tmp && !optional_lingpao_certificate) ||
-      (profile.profile_id == QStringLiteral("chery_t22") &&
-       entry_mode == QStringLiteral("cal"));
-  const auto needs_cal =
-      entry_mode == QStringLiteral("cal") ||
-      entry_mode == QStringLiteral("app_cal") ||
-      profile.flow_id == QStringLiteral("geely_p416");
-  const auto configured_files = std::array{
-      std::tuple{QStringLiteral("Boot Driver"), true, profile.driver_path,
-                 fullPath(ui_->driverPathLineEdit)},
-      std::tuple{QStringLiteral("Driver Data"),
-                 !profile.driver_verify_path.isEmpty(),
-                 profile.driver_verify_path,
-                 fullPath(ui_->driverVerifyPathLineEdit)},
-      std::tuple{QStringLiteral("APP"), needs_app, profile.app_path,
-                 fullPath(ui_->appPathLineEdit)},
-      std::tuple{profile.app_verify_label.isEmpty()
-                     ? QStringLiteral("APP Data")
-                     : profile.app_verify_label,
-                  needs_app_verification,
-                 profile.app_verify_path,
-                 fullPath(ui_->appVerifyPathLineEdit)},
-      std::tuple{QStringLiteral("CAL"), needs_cal, profile.cal_path,
-                 fullPath(ui_->calPathLineEdit)},
-      std::tuple{QStringLiteral("CAL Data"), needs_cal,
-                 profile.cal_verify_path,
-                 fullPath(ui_->calVerifyPathLineEdit)},
-      std::tuple{QStringLiteral("SeedKey"), true,
-                 profile.seed_key_dll_path,
-                 fullPath(ui_->seedKeyDllPathLineEdit)}};
-  for (const auto& [label, required, configured_path, selected_path] :
-       configured_files) {
-    if (required && !configured_path.isEmpty() &&
-        (selected_path.isEmpty() || !QFileInfo::exists(selected_path))) {
-      QMessageBox::warning(
-          this, QStringLiteral("刷写文件无效"),
-          QStringLiteral("%1 文件不存在：\n%2").arg(label, selected_path));
-      return;
-    }
   }
 
   const auto repeat_count =
@@ -361,11 +372,11 @@ void MainWindow::updateEnabledState() {
   // Placeholder profiles remain fail-closed for CAN operations, but file
   // selection is an offline preparation action and must stay available.
   ui_->filesGroupBox->setEnabled(!busy && profile_valid);
-  // Keep the probe action discoverable before a mode is selected. The click
-  // handler reports the missing mode in the operator log and returns before
-  // any monitor synchronization, CAN open, or probe request can occur.
+  // Both actions remain clickable without a mode so preflight can explain
+  // missing inputs in the operator log before monitor synchronization or
+  // dispatching a probe/flash request. Busy/placeholder profiles stay locked.
   ui_->probeButton->setEnabled(!busy && usable);
-  ui_->startFlashButton->setEnabled(!busy && usable && entry_mode_selected);
+  ui_->startFlashButton->setEnabled(!busy && usable);
   ui_->startFlashButton->setText(flash_running_
                                      ? QStringLiteral("刷写中…")
                                      : QStringLiteral("开始刷写"));
