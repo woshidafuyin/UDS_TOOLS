@@ -198,9 +198,8 @@ void ChunengArc331Workflow::run(const FlashJob& job,
       throw std::runtime_error(
           "ChuNeng Driver CBF main-data layout must be 0x10280000/0x4000");
     }
-    // CBF stores the Driver source window at 0x10280000, while the ECU's
-    // RequestDownload contract uses the fixed Driver transfer address 0.
-    images.driver_address = 0x00000000;
+    // Match CN2944LC_Flash.cfg: RequestDownload uses the parsed CBF address.
+    images.driver_address = driver.main.address;
     images.driver = driver.main.data;
     images.driver_verification = driver.device_signature;
     // ABT block: downloaded right after the main image (reference
@@ -211,7 +210,8 @@ void ChunengArc331Workflow::run(const FlashJob& job,
     log(callbacks, "Driver CBF identity: " + identity);
     record(callbacks, 0, "Driver CBF", "PASS",
            identity + "; main and ABT extracted and integrity-checked; "
-           "transfer address=0x00000000; 256-byte dev_signature extracted",
+           "transfer address=" + hex_u32(images.driver_address) +
+           "; 256-byte dev_signature extracted",
            FlashStage::configuration, {}, FlashImageRole::driver);
   } else {
     if (job.driver_verify_file.empty()) {

@@ -103,6 +103,8 @@ void test_chuneng_completion_retains_failures() {
         if (scenario == 4) throw std::runtime_error("adapter disconnected");
         if (scenario == 2) reply({3, 0x7F, 0x11, 0x22});
         else reply({2, 0x51, 1});
+      } else if (sid == 0x10 && request.data.at(2) == 3) {
+        reply({2, 0x50, 3});
       } else if (sid == 0x14) {
         if (scenario == 2) reply({3, 0x7F, 0x14, 0x22});
         else reply({1, 0x54});
@@ -131,6 +133,10 @@ void test_chuneng_completion_retains_failures() {
       check(sent(0x11) && sent(0x85) && sent(0x28) && sent(0x10) && sent(0x14),
             "ARC331 completion did not run the entire recovery sequence");
       check(progress == 100, "ARC331 completed tail must reach 100 percent");
+      std::vector<std::uint8_t> order;
+      for (const auto& frame : bus.sent) order.push_back(frame.data.at(1));
+      check(order == std::vector<std::uint8_t>{0x31,0x11,0x10,0x28,0x85,0x10,0x14},
+            "ARC331 tail must follow CANoe session/communication/DTC order");
       check((scenario == 0) == failure.empty(), "ARC331 verdict lost failure or false failed");
       if (scenario == 1 || scenario == 2) check(failure.find("DependencyCheck") != std::string::npos &&
           failure.find("71 01 FF 01 05") != std::string::npos,

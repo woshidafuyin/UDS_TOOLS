@@ -168,11 +168,17 @@ void Chuneng331Flow::enter_programming_session(
   }
 
   if (entry.run_standard_preprogramming) {
-    // Q/CN A201-2025 appendix C pre-programming order: physical 10 03 with
-    // awaited response, physical 31 01 02 03 precondition check, then
-    // functional suppressed 10 83 / 85 82 / 28 83 03, then physical 10 02.
-    expect(physical_, kChuneng331ExtendedSessionRequest,
-           extended_response, 1, "10 03 ExtendedSession");
+    // Flash20230727.can::Download: functional default session, wait 2 s,
+    // then functional extended session before physical precondition check.
+    expect(functional_, std::array<std::uint8_t, 2>{0x10, 0x01},
+           std::array<std::uint8_t, 2>{0x50, 0x01}, 1,
+           "APP 10 01 Functional DefaultSession");
+    for (int i = 0; i < 20; ++i) {
+      check_cancelled();
+      std::this_thread::sleep_for(100ms);
+    }
+    expect(functional_, kChuneng331ExtendedSessionRequest,
+           extended_response, 2, "APP 10 03 Functional ExtendedSession");
     // Q/CN A201-2025 appendix B: 31 01 02 03 returns one status byte,
     // 0x04 = conditions met, 0x05 = conditions not met.  The reference
     // CANoe flow performs no 0203 gate, and bench/flash-line ECUs without
@@ -237,6 +243,12 @@ void Chuneng331Flow::enter_programming_session(
     expect(physical_, kChuneng331ProgrammingSession,
            programming_response, 10,
            "APP 10 02 ProgrammingSession");
+    // CANoe server_10 waits 2000 ms when ResetFlag is set for 10 02.
+    for (int i = 0; i < 20; ++i) {
+      check_cancelled();
+      std::this_thread::sleep_for(100ms);
+    }
+    check_cancelled();
     return;
   }
 
@@ -258,18 +270,17 @@ void Chuneng331Flow::enter_programming_session(
 }
 
 void Chuneng331Flow::restore_after_reset() {
-  send_functional_no_response(
-      kChuneng331FunctionalExtendedSession,
-      kChuneng331SessionControlDelay, 96,
-      "Post-reset 10 83 Functional ExtendedSession");
-  send_functional_no_response(
-      kChuneng331EnableDtc,
-      kChuneng331FunctionalControlDelay, 97,
-      "85 81 EnableDTC");
+  expect(functional_, kChuneng331ExtendedSessionRequest,
+         std::array<std::uint8_t, 2>{0x50, 0x03}, 96,
+         "Post-reset 10 03 Functional ExtendedSession");
   send_functional_no_response(
       kChuneng331EnableCommunication,
-      kChuneng331FunctionalControlDelay, 98,
+      kChuneng331FunctionalControlDelay, 97,
       "28 80 03 EnableCommunication");
+  send_functional_no_response(
+      kChuneng331EnableDtc,
+      kChuneng331FunctionalControlDelay, 98,
+      "85 81 EnableDTC");
   send_functional_no_response(
       kChuneng331FunctionalDefaultSession,
       kChuneng331SessionControlDelay, 99,
