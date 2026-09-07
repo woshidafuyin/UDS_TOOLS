@@ -383,6 +383,11 @@ void MainWindow::applySelectedProfile(int device_index) {
   ui_->rxIdLineEdit->setReadOnly(specification_endpoint_locked);
   applySelectedRadar(false);
   restoreRuntimeFileSelection();
+  if (profile.flow_id == QStringLiteral("lp_arf")) {
+    // A stale external Driver selected in an older UI must not block an
+    // APP-only workflow whose reference explicitly excludes Driver download.
+    showPath(ui_->driverPathLineEdit, {});
+  }
   restoreCurrentProfileState();
   updateAppPackagePresentation(false);
   activateSelectedLogTarget();

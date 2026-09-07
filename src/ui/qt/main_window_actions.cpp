@@ -66,6 +66,8 @@ namespace uds::ui::qt {
 using namespace main_window_support;
 
 void MainWindow::connectActions() {
+  connect(ui_->projectParametersButton, &QPushButton::clicked,
+          this, &MainWindow::editProjectFlashParameters);
   const auto connectFileButton =
       [this](QPushButton* button, QLineEdit* pathEdit,
               const QString& caption, const QString& filter,

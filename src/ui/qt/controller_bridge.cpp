@@ -18,6 +18,17 @@
 #include <utility>
 
 namespace uds::ui::qt {
+ProjectFlashSettings ControllerBridge::projectFlashSettings(int index) const {
+  return loadProjectFlashSettings(profiles_.at(static_cast<std::size_t>(index)).profile);
+}
+bool ControllerBridge::saveProjectParameters(int index, const ProjectFlashSettings& values) {
+  return saveProjectFlashSettings(profiles_.at(static_cast<std::size_t>(index)).profile, values);
+}
+QStringList ControllerBridge::projectParameterErrors(int index, const QString& mode,
+    const QString& driver, const QString& app, const QString& cal) const {
+  const auto& profile = profiles_.at(static_cast<std::size_t>(index)).profile;
+  return validateProjectFlashInputs(profile, loadProjectFlashSettings(profile), mode, driver, app, cal);
+}
 namespace {
 
 QString fromWide(std::wstring_view text) {
@@ -350,6 +361,13 @@ void ControllerBridge::startFlash(
 
   app::FlashRequest request;
   request.profile = profile;
+  const auto parameter_errors = projectParameterErrors(profile_index, entry_mode,
+      driver_path, app_path, cal_path);
+  if (!parameter_errors.isEmpty()) {
+    emit flashFinished(false, false, parameter_errors.join(QLatin1Char('\n')), {});
+    return;
+  }
+  applyProjectFlashSettings(request.profile, projectFlashSettings(profile_index));
   request.target_id = target_id.toStdWString();
   request.entry_mode = entry_mode.toStdWString();
   request.update_public_key = update_public_key;

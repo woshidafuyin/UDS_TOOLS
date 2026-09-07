@@ -54,6 +54,9 @@
 #include <QVBoxLayout>
 #include <QWheelEvent>
 #include <QWidget>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QFormLayout>
 
 #include <algorithm>
 #include <array>
@@ -66,6 +69,52 @@
 namespace uds::ui::qt {
 using namespace main_window_support;
 
+void MainWindow::editProjectFlashParameters() {
+  bool valid{};
+  const int index = selectedProfileIndex(&valid);
+  if (!valid) return;
+  auto values = controller_bridge_->projectFlashSettings(index);
+  QDialog dialog(this);
+  dialog.setObjectName(QStringLiteral("projectFlashParametersDialog"));
+  dialog.setWindowTitle(QStringLiteral("P02C 项目刷写参数"));
+  auto* layout = new QFormLayout(&dialog);
+  auto* description = new QLabel(QStringLiteral("按 ECU 定义选择 CRC；身份字段前 10 字节为维修站代码，后 17 字节为测试仪序列号。\nS19 自动读取地址和长度；只有使用 BIN 时才需要填写对应地址。"), &dialog);
+  description->setWordWrap(true);
+  layout->addRow(description);
+  auto* crc = new QComboBox(&dialog);
+  crc->setObjectName("programmingCrcComboBox");
+  crc->addItem(QStringLiteral("请选择已确认的 CRC 方式"), QString{});
+  crc->addItem(QStringLiteral("Reflected"), QStringLiteral("reflected"));
+  crc->addItem(QStringLiteral("Non-reflected"), QStringLiteral("non_reflected"));
+  crc->setCurrentIndex(std::max(0, crc->findData(values.crc_variant)));
+  layout->addRow(QStringLiteral("CRC 方式"), crc);
+  const auto edit = [&](const QString& label, const char* name, const QString& value) {
+    auto* field = new QLineEdit(value, &dialog); field->setObjectName(name);
+    layout->addRow(label, field); return field;
+  };
+  auto* identity = edit(QStringLiteral("测试仪身份"), "programmingIdentityLineEdit", values.tester_identity);
+  auto* driver = edit(QStringLiteral("Driver BIN 地址（可留空）"), "driverBinAddressLineEdit", values.driver_bin_address);
+  auto* app = edit(QStringLiteral("APP BIN 地址（可留空）"), "appBinAddressLineEdit", values.app_bin_address);
+  auto* cal = edit(QStringLiteral("CAL BIN 地址（可留空）"), "calBinAddressLineEdit", values.cal_bin_address);
+  auto* errors = new QLabel(&dialog); errors->setWordWrap(true); errors->setStyleSheet("color: #D93025;");
+  layout->addRow(errors);
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, &dialog);
+  layout->addRow(buttons);
+  connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+  connect(buttons, &QDialogButtonBox::accepted, &dialog, [&] {
+    values = {crc->currentData().toString(), identity->text(), driver->text().trimmed(),
+              app->text().trimmed(), cal->text().trimmed()};
+    const auto issues = validateProjectFlashSettings(values);
+    if (!issues.isEmpty()) { errors->setText(issues.join('\n')); return; }
+    if (!controller_bridge_->saveProjectParameters(index, values)) {
+      errors->setText(QStringLiteral("参数保存失败，请检查本机设置写入权限。")); return;
+    }
+    dialog.accept();
+  });
+  if (dialog.exec() == QDialog::Accepted)
+    appendUiLog(QStringLiteral("P02C 刷写参数已保存并立即生效，下次启动自动恢复。"));
+}
+
 bool MainWindow::validateFlashFilesFromUi(int profile_index,
                                          const QString& entry_mode) {
   const auto& profile = controller_bridge_->profileOptions().at(
@@ -76,11 +125,18 @@ bool MainWindow::validateFlashFilesFromUi(int profile_index,
     valid = false;
   };
   const bool chery = profile.flow_id.startsWith(QStringLiteral("chery_"));
+  for (const auto& error : controller_bridge_->projectParameterErrors(profile_index, entry_mode,
+       fullPath(ui_->driverPathLineEdit), fullPath(ui_->appPathLineEdit), fullPath(ui_->calPathLineEdit)))
+    reject(error);
   const bool chuneng = profile.flow_id == QStringLiteral("chuneng_arc331");
+  const bool xizhong = profile.flow_id == QStringLiteral("xizhong_rsmr") ||
+                       profile.flow_id == QStringLiteral("xizhong_lsmr");
   const bool driver_cbf = chuneng && fullPath(ui_->driverPathLineEdit)
       .endsWith(QStringLiteral(".cbf"), Qt::CaseInsensitive);
   const bool app_cbf = chuneng && fullPath(ui_->appPathLineEdit)
       .endsWith(QStringLiteral(".cbf"), Qt::CaseInsensitive);
+  if (chuneng && driver_cbf != app_cbf)
+    reject(QStringLiteral("楚能 Driver 与 APP 必须同时使用 CBF，或同时使用 S-record 并配套校验文件。"));
   const auto optional_lingpao_certificate =
       profile.flow_id == QStringLiteral("lp_arf") ||
       profile.flow_id == QStringLiteral("lp_arc");
@@ -96,7 +152,7 @@ bool MainWindow::validateFlashFilesFromUi(int profile_index,
   }
   const auto needs_app_verification =
       (needs_app && !embedded_tmp && !optional_lingpao_certificate &&
-       (chery || !profile.app_verify_path.isEmpty() ||
+       (chery || xizhong || !profile.app_verify_path.isEmpty() ||
         profile.supports_app_tmp_package ||
         (chuneng && !app_cbf && !driver_cbf))) ||
       (profile.profile_id == QStringLiteral("chery_t22") &&
@@ -118,11 +174,12 @@ bool MainWindow::validateFlashFilesFromUi(int profile_index,
                      : profile.app_verify_label,
                   needs_app_verification,
                  fullPath(ui_->appVerifyPathLineEdit)},
-      std::tuple{QStringLiteral("CAL"), needs_cal,
+      std::tuple{profile.flow_id == QStringLiteral("geely_p416") ? QStringLiteral("ESS") : QStringLiteral("CAL"), needs_cal,
                  fullPath(ui_->calPathLineEdit)},
       std::tuple{QStringLiteral("CAL 校验"), needs_cal && (chery || !profile.cal_verify_path.isEmpty()),
                  fullPath(ui_->calVerifyPathLineEdit)},
-      std::tuple{QStringLiteral("SeedKey 算法库"), chery || !profile.seed_key_dll_path.isEmpty(),
+      std::tuple{profile.uses_oem_key_file ? QStringLiteral("OEM Key") : QStringLiteral("SeedKey 算法库"),
+                 profile.uses_oem_key_file || chery || !profile.seed_key_dll_path.isEmpty(),
                  fullPath(ui_->seedKeyDllPathLineEdit)}};
   for (const auto& [label, required, selected_path] :
        required_files) {
@@ -362,6 +419,9 @@ void MainWindow::updateEnabledState() {
   ui_->rxIdLineEdit->setReadOnly(e0y_endpoint_locked);
   ui_->entryModeComboBox->setEnabled(!busy && profile_valid);
   ui_->repeatCountSpinBox->setEnabled(!busy && usable);
+  const bool project_parameters = profile_valid && profiles[profile_index].flow_id == QStringLiteral("perodua_p02c");
+  ui_->projectParametersButton->setVisible(project_parameters);
+  ui_->projectParametersButton->setEnabled(!busy && usable && project_parameters);
   const auto e0y_public_key_compatible =
       usable && entry_mode_selected &&
       profiles[profile_index].flow_id == QStringLiteral("chery_e0y");
@@ -373,6 +433,10 @@ void MainWindow::updateEnabledState() {
   // Placeholder profiles remain fail-closed for CAN operations, but file
   // selection is an offline preparation action and must stay available.
   ui_->filesGroupBox->setEnabled(!busy && profile_valid);
+  const bool driver_used = profile_valid && profiles[profile_index].flow_id != QStringLiteral("lp_arf");
+  ui_->driverPathLineEdit->setEnabled(driver_used);
+  ui_->driverBrowseButton->setEnabled(driver_used);
+  ui_->driverPathLabel->setEnabled(driver_used);
   // Both actions remain clickable without a mode so preflight can explain
   // missing inputs in the operator log before monitor synchronization or
   // dispatching a probe/flash request. Busy/placeholder profiles stay locked.

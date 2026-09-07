@@ -5,6 +5,7 @@
 #include <QFileInfo>
 #include <QSaveFile>
 #include <QTemporaryDir>
+#include <QRegularExpression>
 #include <memory>
 
 namespace uds::ui::qt {
@@ -109,6 +110,15 @@ PersistedResourcePathResolution resolvePersistedResourcePath(
   return result;
 }
 
+QString flashResourceImportAnchor(const QString& configured_default,
+    const QString& resources_root, const QString& profile_id, const QString& selected) {
+  if (!configured_default.isEmpty()) return configured_default;
+  if (profile_id.isEmpty()) return {};
+  auto id = profile_id;
+  id.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9_-]")), QStringLiteral("_"));
+  return QDir(QDir(resources_root).filePath(id)).filePath(QFileInfo(selected).fileName());
+}
+
 ResourceFileReplaceResult replaceConfiguredResourceFile(
     const QString& selected_path, const QString& configured_default_path,
     const QString& resources_root) {
@@ -141,6 +151,11 @@ ResourceFileReplaceResult replaceConfiguredResourceFile(
                 destination_directory)) {
     result.error = QStringLiteral("保留原文件名后的目标超出默认资源目录：%1")
                        .arg(QDir::toNativeSeparators(destination));
+    return result;
+  }
+
+  if (!QDir().mkpath(destination_directory)) {
+    result.error = QStringLiteral("无法创建项目资源目录：%1").arg(destination_directory);
     return result;
   }
 

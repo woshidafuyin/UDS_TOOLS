@@ -16,6 +16,10 @@ struct PersistedResourcePathResolution {
   bool migrated{};
 };
 
+// Blank customer defaults still have a project-owned import destination.
+[[nodiscard]] QString flashResourceImportAnchor(const QString& configured_default,
+    const QString& resources_root, const QString& profile_id, const QString& selected);
+
 // Stores files managed under <application_directory>/resources as portable
 // paths relative to CH_Diagnostic_Studio.exe. Paths outside the managed resources
 // tree remain absolute so external-file semantics are not changed.

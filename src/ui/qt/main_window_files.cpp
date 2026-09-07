@@ -232,6 +232,15 @@ bool MainWindow::storeSelectedFlashFile(FlashFileField field,
   }
   const auto resources_root = QDir(QCoreApplication::applicationDirPath())
                                    .filePath(QStringLiteral("resources"));
+  // A customer may supply every firmware file externally. Empty defaults
+  // must not prevent selection; retain the same isolated import semantics.
+  if (default_path.isEmpty()) {
+    bool valid{};
+    const auto index = selectedProfileIndex(&valid);
+    if (!valid) return false;
+    const auto& id = controller_bridge_->profileOptions().at(static_cast<std::size_t>(index)).profile_id;
+    default_path = flashResourceImportAnchor({}, resources_root, id, selected);
+  }
   const auto result = replaceConfiguredResourceFile(
       selected, default_path, resources_root);
   if (!result.success) {

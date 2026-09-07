@@ -8,6 +8,9 @@
 #include "ui/qt/ui_log_message_parser.hpp"
 #include "ui/qt/version_confirmation_page.hpp"
 
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QTimer>
 #include <QAction>
 #include <QActionGroup>
 #include <QApplication>
@@ -377,6 +380,29 @@ int main(int argc, char* argv[]) {
     QSettings settings;
     settings.clear();
     settings.sync();
+
+    {
+      // Every deployed Profile can import customer files without a default.
+      QTemporaryDir sandbox;
+      const auto source = QDir(sandbox.path()).filePath("customer.s19");
+      QFile file(source); check(file.open(QIODevice::WriteOnly), "input fixture");
+      file.write("original customer input"); file.close();
+      const auto root = QDir(sandbox.path()).filePath("resources");
+      const auto catalog = uds::discover_flash_profiles(
+          QDir(QCoreApplication::applicationDirPath()).filePath("profiles").toStdWString());
+      check(catalog.errors.empty() && catalog.profiles.size() >= 23, "project import audit incomplete");
+      for (const auto& record : catalog.profiles) {
+        const auto id = QString::fromStdWString(record.profile.id);
+        const auto anchor = uds::ui::qt::flashResourceImportAnchor({}, root, id, source);
+        const auto first = uds::ui::qt::replaceConfiguredResourceFile(source, anchor, root);
+        check(first.success && QFileInfo(first.stored_path).fileName() == "customer.s19",
+              "blank default prevented customer firmware import");
+        const auto second = uds::ui::qt::replaceConfiguredResourceFile(source, anchor, root);
+        check(second.success && second.stored_path != first.stored_path && QFileInfo(source).exists(),
+              "reimport overwrote a previous selection or source");
+      }
+      std::cout << "Project import audit: " << catalog.profiles.size() << " profiles\n";
+    }
 
     {
       QTemporaryDir sandbox;
@@ -2423,6 +2449,9 @@ int main(int argc, char* argv[]) {
       }
       devices->setCurrentIndex(find_text(devices, QStringLiteral("ARF")));
       application.processEvents();
+      check(!driver_path->isEnabled() &&
+                !window.findChild<QPushButton*>("driverBrowseButton")->isEnabled(),
+            "LP ARF allowed selecting an unsupported Driver");
       check(entries->currentData().toString().isEmpty(),
             "ARF did not start with an unselected entry mode");
       devices->setCurrentIndex(find_text(devices, QStringLiteral("ARC")));
@@ -2982,12 +3011,59 @@ int main(int argc, char* argv[]) {
             "Perodua inputs without bundled firmware must support selecting external files");
       check(perodua_window.findChild<QLineEdit*>(QStringLiteral("txIdLineEdit"))->isReadOnly(),
             "Perodua specification endpoint must be locked");
+      auto* parameters = perodua_window.findChild<QPushButton*>("projectParametersButton");
+      check(parameters && !parameters->isHidden() && parameters->isEnabled(), "P02C parameter entry missing");
+      auto* parameter_bridge = perodua_window.findChild<uds::ui::qt::ControllerBridge*>();
+      int parameter_index = -1;
+      for (int i = 0; i < static_cast<int>(parameter_bridge->profileOptions().size()); ++i)
+        if (parameter_bridge->profileOptions()[i].profile_id == "perodua_p02c") parameter_index = i;
+      check(parameter_index >= 0, "P02C parameter profile missing");
+      check(!parameter_bridge->projectParameterErrors(parameter_index, "app", "driver.s19", "app.s19", {}).isEmpty(),
+            "missing project settings accepted");
+      QTimer::singleShot(0, &perodua_window, [&] {
+        auto* d = perodua_window.findChild<QDialog*>("projectFlashParametersDialog");
+        check(d != nullptr, "parameter dialog not opened");
+        d->findChild<QComboBox*>("programmingCrcComboBox")->setCurrentIndex(1);
+        d->findChild<QLineEdit*>("programmingIdentityLineEdit")->setText("SHOP000001TESTER1");
+        d->grab().save(QDir(QCoreApplication::applicationDirPath()).filePath("p02c-parameters-audit.png"));
+        d->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Save)->click();
+      });
+      parameters->click();
+      check(parameter_bridge->projectParameterErrors(parameter_index, "app", "driver.s19", "app.s19", {}).isEmpty(),
+            "saved S19 parameters not immediately usable");
+      check(!parameter_bridge->projectParameterErrors(parameter_index, "app", "driver.bin", "app.s19", {}).isEmpty(),
+            "BIN silently used unknown zero address");
+      check(parameter_bridge->projectParameterErrors(parameter_index, "cal", "driver.s19", "unused.bin", "cal.s19").isEmpty(),
+            "unused APP BIN blocked CAL mode");
+      auto values = parameter_bridge->projectFlashSettings(parameter_index);
+      values.driver_bin_address = "0x0";
+      check(parameter_bridge->saveProjectParameters(parameter_index, values), "explicit zero BIN address rejected");
+      check(parameter_bridge->projectParameterErrors(parameter_index, "app", "driver.bin", "app.s19", {}).isEmpty(),
+            "explicit zero BIN address not applied");
+      values.driver_bin_address = "0x100000000";
+      check(!parameter_bridge->saveProjectParameters(parameter_index, values), "overflow BIN address persisted");
+      values.driver_bin_address = "00008";
+      check(parameter_bridge->saveProjectParameters(parameter_index, values), "decimal address with leading zeros rejected");
+      QTimer::singleShot(0, &perodua_window, [&] {
+        auto* d = perodua_window.findChild<QDialog*>("projectFlashParametersDialog");
+        d->findChild<QLineEdit*>("programmingIdentityLineEdit")->setText("CANCELLED");
+        d->reject();
+      });
+      parameters->click();
+      check(parameter_bridge->projectFlashSettings(parameter_index).tester_identity == "SHOP000001TESTER1",
+            "cancelled dialog changed saved settings");
       const auto other = vendors->findText(QStringLiteral("奇瑞"));
       if (other >= 0) {
         vendors->setCurrentIndex(other);
         QApplication::processEvents();
         check(!perodua_window.findChild<QPushButton*>(QStringLiteral("seedKeyDllBrowseButton"))
                    ->property("oemKeyFile").toBool(), "OEM Key UI state leaked to a DLL project");
+        check(parameters->isHidden(), "P02C parameters leaked into another project");
+        vendors->setCurrentIndex(vendor_index);
+        projects->setCurrentIndex(projects->findText("P02C"));
+        check(parameter_bridge->projectFlashSettings(parameter_index).tester_identity == "SHOP000001TESTER1",
+              "project switch lost saved parameters");
+
       }
     }
     {
@@ -3076,6 +3152,43 @@ int main(int argc, char* argv[]) {
                 Q_RETURN_ARG(bool, valid_files), Q_ARG(int, kp31_index),
                 Q_ARG(QString, QStringLiteral("cal"))) && valid_files && requests == 0,
             "KP31 CAL must accept manually selected files without defaults or APP inputs");
+      int profile_modes = 0;
+      for (int index = 0; index < static_cast<int>(options.size()); ++index) {
+        if (options[index].placeholder) continue;
+        QStringList supported_modes{"app"};
+        if (options[index].supports_ft_entry) supported_modes << "ft";
+        if (options[index].supports_cal_download) supported_modes << "cal" << "app_cal";
+        for (const auto& mode : supported_modes) {
+          for (const auto* field : {"driverPathLineEdit", "driverVerifyPathLineEdit",
+                 "appPathLineEdit", "appVerifyPathLineEdit", "calPathLineEdit",
+                 "calVerifyPathLineEdit", "seedKeyDllPathLineEdit"}) set_path(field, selected_file);
+          if (options[index].flow_id == "lp_arf") set_path("driverPathLineEdit", {});
+          valid_files = false;
+          check(QMetaObject::invokeMethod(&window, "validateFlashFilesFromUi", Qt::DirectConnection,
+                    Q_RETURN_ARG(bool, valid_files), Q_ARG(int, index), Q_ARG(QString, mode)) && valid_files,
+                "Complete selected inputs were blocked for a registered project/mode");
+          ++profile_modes;
+        }
+      }
+      std::cout << "Complete-input profile/mode checks: " << profile_modes << '\n';
+      for (const auto& flow : {QString("xizhong_lsmr"), QString("chuneng_arc331")}) {
+        int index = -1;
+        for (int i = 0; i < static_cast<int>(options.size()); ++i)
+          if (options[i].flow_id == flow) { index = i; break; }
+        check(index >= 0, "Required project missing from preflight regression");
+        for (const auto* field : {"driverPathLineEdit", "driverVerifyPathLineEdit",
+               "appPathLineEdit", "appVerifyPathLineEdit", "seedKeyDllPathLineEdit"})
+          set_path(field, selected_file);
+        log->clear();
+        if (flow == "xizhong_lsmr") set_path("appVerifyPathLineEdit", {});
+        else set_path("driverPathLineEdit", "driver.cbf");
+        valid_files = true;
+        check(QMetaObject::invokeMethod(&window, "validateFlashFilesFromUi", Qt::DirectConnection,
+                  Q_RETURN_ARG(bool, valid_files), Q_ARG(int, index), Q_ARG(QString, QString("app"))) &&
+                  !valid_files && requests == 0 &&
+                  log->toPlainText().contains(flow == "xizhong_lsmr" ? QStringLiteral("Hash") : QStringLiteral("同时使用")),
+              "Missing LSMR hash or mixed ChuNeng formats bypassed UI preflight");
+      }
     }
 
     {

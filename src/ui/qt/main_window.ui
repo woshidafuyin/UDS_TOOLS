@@ -596,6 +596,12 @@
               <property name="text"><string>停止</string></property>
              </widget>
           </item>
+          <item row="2" column="0" colspan="2">
+           <widget class="QPushButton" name="projectParametersButton">
+            <property name="visible"><bool>false</bool></property>
+            <property name="text"><string>项目刷写参数…</string></property>
+           </widget>
+          </item>
          </layout>
         </widget>
        </item>

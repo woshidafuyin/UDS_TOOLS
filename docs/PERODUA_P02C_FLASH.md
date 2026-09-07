@@ -87,6 +87,8 @@ CANoe Write/Trace提供步骤与报文，Test Module报告记录本次结果。�
 
 UI只处理项目选择和文件路径，Workflow负责输入/通信接入，Flow负责规范步骤；公共ISO-TP和UDS保持复用。新增CAPL桥接层仅把CANoe报文队列接入ICanBus。密钥保护使用Windows crypt32，AES使用已有bcrypt，不添加第三方加密运行时。CANoe桥接为单个刷写节点设计，同一DLL进程内不支持多个并发刷写节点。
 
-通用工具的CRC方式、测试仪身份及BIN地址通过`dist/profiles/perodua_p02c.ini`设置，保存后重新启动工具加载。CANoe对应参数由面板填写。源码中的项目默认参数保持未确认状态，不提供虚构的正式Tester ID或CRC结论。
+通用工具选择 Perodua → P02C 后，点击“项目刷写参数…”，填写已确认的 CRC 方式和测试仪身份。只有所选文件是 BIN 时才需填写该角色的起始地址，支持十进制和 0x 十六进制（已确认的 0 地址需明确填写 0）。S19 自动解析各段地址和长度，不要求填写 BIN 地址或整模块长度。
+
+点击保存后立即生效，下次启动自动恢复；取消不改动已保存参数。参数按项目 ID 保存到当前 Windows 用户的工具设置中，未保存过时读取 INI 默认值；保存过后以界面设置为准。无需修改 INI 或重启。OEM Key 仍通过文件选择入口使用当前用户的受保护密钥文件，不放入参数设置。CANoe对应参数由面板填写。源码中的项目默认参数保持未确认状态，不提供虚构的正式Tester ID或CRC结论。
 
 CANoe工程运行所需文件均在工程目录中。修改CAPL后可直接在CANoe重新编译；修改C++协议引擎时，在UDS_tools仓库以MSVC分别构建x86/x64的`perodua_capl`目标，设置`UDS_CAPL_INCLUDE_DIR`为Vector安装示例的`Programming/CAPLdll/Includes`，再更新相应Exec目录。工程Source文件夹保留本项目C++源文件快照，公共依赖以UDS_tools仓库为准。

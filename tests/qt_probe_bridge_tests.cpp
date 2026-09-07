@@ -6,6 +6,8 @@
 #include <QCoreApplication>
 #include <QThread>
 #include <QTimer>
+#include <QSettings>
+#include <QTemporaryDir>
 
 #include <algorithm>
 #include <atomic>
@@ -292,6 +294,56 @@ void test_stale_queued_callbacks_do_not_pollute_next_operation(
 int main(int argc, char* argv[]) {
   try {
     QCoreApplication application(argc, argv);
+    QTemporaryDir settings_directory;
+    check(settings_directory.isValid(), "Cannot isolate project settings");
+    QCoreApplication::setOrganizationName("UdsBridgeTests");
+    QCoreApplication::setApplicationName("ProjectParameters");
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settings_directory.path());
+    {
+      auto record = makeProfile();
+      record.profile.id = record.profile.flow = L"perodua_p02c";
+      record.profile.security_algorithm = L"aes128_cmac";
+      record.profile.supports_cal_download = true;
+      auto flash = std::make_shared<FlashCapture>();
+      uds::ui::qt::ControllerBridge parameters_bridge(
+          {record}, uds::app::ProbeService{}, [flash](std::wstring_view) {
+            return std::make_unique<FakeFlashWorkflow>(flash);
+          });
+      bool finished = false, success = false;
+      QObject::connect(&parameters_bridge, &uds::ui::qt::ControllerBridge::flashFinished,
+          &application, [&](bool ok, bool, const QString&, const QString&) {
+            finished = true; success = ok;
+          });
+      const auto start = [&](const QString& mode) {
+        parameters_bridge.startFlash(0, {}, mode, false, 1, 2, 0x772, 0x77A,
+            "driver.bin", "app.s19", "cal.s19", {}, {}, {}, "tester.key");
+      };
+      start("app");
+      check(finished && !success && !flash->ran, "Missing parameters reached workflow");
+      uds::ui::qt::ProjectFlashSettings values;
+      values.crc_variant = "non_reflected";
+      values.tester_identity = "SHOP000001TESTER1";
+      values.driver_bin_address = "0x40000000";
+      check(parameters_bridge.saveProjectParameters(0, values), "Cannot save bridge parameters");
+      for (const auto& mode : {QString("app"), QString("cal"), QString("app_cal")}) {
+        finished = success = false;
+        flash->ran = false;
+        start(mode);
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+        while (!finished && std::chrono::steady_clock::now() < deadline) {
+          application.processEvents();
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        check(finished && success && flash->ran &&
+                  flash->job.profile.programming_crc_variant == L"non_reflected" &&
+                  flash->job.profile.programming_tester_identity == L"SHOP000001TESTER1" &&
+                  flash->job.profile.driver_start == 0x40000000 &&
+                  flash->job.security_key_file == std::filesystem::path(L"tester.key") &&
+                  flash->job.entry_mode == mode.toStdWString(),
+              "Saved project parameters did not reach the selected-mode flash job");
+      }
+    }
     test_stale_queued_callbacks_do_not_pollute_next_operation(application);
     auto capture = std::make_shared<BusCapture>();
     auto flash_capture = std::make_shared<FlashCapture>();

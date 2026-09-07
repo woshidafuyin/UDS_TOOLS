@@ -131,6 +131,7 @@ private:
                                              const QString& entry_mode);
   void startProbeFromUi();
   void startFlashFromUi();
+  void editProjectFlashParameters();
   void syncVersionContext(bool recent_flash = false);
   void syncBusMonitorContext();
   void syncDiagnosticRequestContext();

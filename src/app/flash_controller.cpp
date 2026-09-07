@@ -361,7 +361,8 @@ void FlashController::execute(FlashRequest request,
                                       "CAL Data", request.cal_verify_file),
                     FlashStage::configuration);
     record_snapshot("Flash file", file_configuration_detail(
-                                      "SeedKey", request.security_dll),
+                                      request.profile.security_algorithm == L"aes128_cmac" ? "Protected OEM Key" : "SeedKey",
+                                      request.profile.security_algorithm == L"aes128_cmac" ? request.security_key_file : request.security_dll),
                     FlashStage::configuration);
     add_report(0, "Flash count", "INFO",
                "Configured repetitions=" + std::to_string(repeat_count) +

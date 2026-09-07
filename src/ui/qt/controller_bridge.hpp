@@ -7,6 +7,7 @@
 #include "app/diagnostic_request_controller.hpp"
 #include "core/profile.hpp"
 #include "ui/qt/version_read_view_model.hpp"
+#include "ui/qt/project_flash_settings.hpp"
 
 #include <QObject>
 #include <QHash>
@@ -96,6 +97,10 @@ public:
 
   [[nodiscard]] const std::vector<ControllerProfileOption>& profileOptions() const;
   [[nodiscard]] const QStringList& startupMessages() const;
+  ProjectFlashSettings projectFlashSettings(int profile_index) const;
+  bool saveProjectParameters(int profile_index, const ProjectFlashSettings& settings);
+  QStringList projectParameterErrors(int profile_index, const QString& mode,
+      const QString& driver, const QString& app, const QString& cal) const;
 
 public slots:
   void startProbe(int profile_index, const QString& target_id,

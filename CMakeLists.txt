@@ -295,6 +295,7 @@ if(UDS_BUILD_QT_UI AND CMAKE_SIZEOF_VOID_P EQUAL 8)
       src/ui/qt/ui_log_message_parser.cpp
       src/ui/qt/ui_log_message_parser.hpp
       src/ui/qt/resource_file_store.cpp
+      src/ui/qt/project_flash_settings.cpp
       src/ui/qt/main_window.hpp
       src/ui/qt/main_window.ui
       src/ui/qt/version_confirmation_page.cpp
@@ -551,7 +552,8 @@ if(TARGET uds_tool_qt)
     src/ui/qt/controller_bridge.cpp
     src/ui/qt/controller_bridge.hpp
     ${UDS_QT_CONTROLLER_BRIDGE_MOC_SOURCES}
-  )
+    src/ui/qt/project_flash_settings.cpp
+    )
   target_include_directories(qt_probe_bridge_tests PRIVATE src)
   target_link_libraries(qt_probe_bridge_tests PRIVATE
     Qt5::Core
