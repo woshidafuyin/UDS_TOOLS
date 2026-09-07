@@ -355,6 +355,8 @@ int main(int argc, char* argv[]) {
       application.processEvents();
       check(startup_window.isVisible(),
             "startup presenter must show the requested window");
+      check(startup_window.isMaximized() && !startup_window.isFullScreen(),
+            "startup presenter must maximize the window, not use borderless fullscreen");
       check((startup_window.windowFlags() & Qt::WindowStaysOnTopHint) == 0,
             "startup presenter must not leave the window always on top");
 #ifdef Q_OS_WIN
@@ -364,8 +366,22 @@ int main(int argc, char* argv[]) {
           GetWindowLongPtr(startup_handle, GWL_EXSTYLE);
       check((extended_style & WS_EX_TOPMOST) == 0,
             "startup presenter must clear the native topmost state");
+      if (QApplication::platformName() == QStringLiteral("windows")) {
+        check(IsZoomed(startup_handle),
+              "startup presenter must maximize the native Windows window");
+      }
 #endif
+      startup_window.showNormal();
+      application.processEvents();
+      check(!startup_window.isMaximized(),
+            "startup presenter must allow later manual restoration");
       startup_window.close();
+    }
+    // Native startup-only verification avoids creating a diagnostic window
+    // or starting CAN monitoring when checking Windows maximize behavior.
+    if (qEnvironmentVariableIsSet("UDS_UI_STARTUP_ONLY")) {
+      std::cout << "qt_main_window_tests: startup PASS\n";
+      return 0;
     }
     application.setQuitOnLastWindowClosed(false);
     const auto settings_path = QDir::temp().filePath(

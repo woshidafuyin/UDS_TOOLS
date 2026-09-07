@@ -41,7 +41,7 @@ void requestOneTimeForeground(QWidget& window) {
 }  // namespace
 
 void presentWindowOnStartup(QWidget& window) {
-  window.show();
+  window.showMaximized();
 
   const QPointer<QWidget> guarded_window(&window);
   QTimer::singleShot(0, &window, [guarded_window]() {
