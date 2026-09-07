@@ -63,6 +63,9 @@ public:
   void run(const Chuneng331Images& images, std::stop_token stop = {});
   void run(const Chuneng331Images& images, std::wstring_view entry_mode,
            std::stop_token stop = {});
+  // Called only after APP CheckMemory succeeds. Complete the diagnostic
+  // tail while retaining every ECU rejection/timeout as an overall failure.
+  void finish_after_download(std::stop_token stop = {});
 
 private:
   UdsResponse expect(UdsClient& client, std::span<const std::uint8_t> request,
@@ -91,6 +94,8 @@ private:
   Log log_;
   KeyGenerator key_generator_;
   std::stop_token stop_;
+  bool completing_{};
+  std::vector<std::string> completion_failures_;
 };
 
 } // namespace uds

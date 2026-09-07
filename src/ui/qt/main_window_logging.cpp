@@ -415,9 +415,16 @@ void MainWindow::handleFlashFinished(bool success, bool cancelled,
     appendUiLog(QStringLiteral("========== 刷写成功 =========="),
                 UiLogTone::Success);
   } else {
-    appendUiLog(QStringLiteral(
+    if (message.contains(QStringLiteral("流程已执行到底，结果FAIL"))) {
+      ui_->progressBar->setValue(100);
+      appendUiLog(QStringLiteral(
+          "警告：流程已执行到底，但存在失败步骤。请查看上方失败步骤及原因；"
+          "完成收尾不代表APP运行验证通过。"));
+    } else {
+      appendUiLog(QStringLiteral(
         "安全提示：若失败发生在进入编程会话之后，ECU恢复状态未确认。"
         "请保持供电，先查看报告最后成功步骤，再按项目恢复流程处理。"));
+    }
     appendUiLog(QStringLiteral("========== 刷写失败 =========="),
                 UiLogTone::Failure);
   }

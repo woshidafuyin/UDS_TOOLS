@@ -407,7 +407,10 @@ void ChunengArc331Workflow::run(const FlashJob& job,
     [&](int percent, const std::string& line) {
       if (callbacks.progress) callbacks.progress(percent, line);
       const auto pass = line.find(" PASS:") != std::string::npos;
-      record(callbacks, percent, line, pass ? "PASS" : "INFO", line);
+      const auto fail = line.find(" FAIL:") != std::string::npos;
+      const auto warning = line.starts_with("WARNING:");
+      record(callbacks, percent, line,
+             fail ? "FAIL" : pass ? "PASS" : warning ? "WARN" : "INFO", line);
     }, keygen);
   flow.run(images, job.entry_mode, stop);
   record(callbacks, 100, "Download", "PASS",

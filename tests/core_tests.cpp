@@ -51,6 +51,7 @@ public:
   bool is_open() const noexcept override { return open_; }
   void send(const uds::CanFrame& frame) override {
     sent.push_back(frame);
+    if (on_send) on_send(frame);
     if (!inject_after_send.empty()) {
       for (auto& response : inject_after_send) rx.push_back(std::move(response));
       inject_after_send.clear();
@@ -64,6 +65,7 @@ public:
   }
 
   bool open_{};
+  std::function<void(const uds::CanFrame&)> on_send;
   std::vector<uds::CanFrame> sent;
   std::deque<uds::CanFrame> rx;
   std::vector<uds::CanFrame> inject_after_send;
@@ -81,6 +83,71 @@ uds::CanFrame frame(std::initializer_list<std::uint8_t> data) {
 
 void test_hex() {
   check(uds::to_hex(uds::from_hex("10 01")) == "10 01", "hex round-trip failed");
+}
+
+void test_chuneng_completion_retains_failures() {
+  for (int scenario = 0; scenario < 6; ++scenario) {
+    MockBus bus;
+    std::stop_source cancellation;
+    bus.on_send = [&](const uds::CanFrame& request) {
+      const auto sid = request.data.at(1);
+      const auto reply = [&](std::initializer_list<std::uint8_t> data) {
+        bus.rx.push_back({0x72F, data, false, false, false});
+      };
+      if (sid == 0x31) {
+        if (scenario == 5) return; // ECU never sends a final response.
+        reply({5, 0x71, 1, 0xFF, 1,
+               static_cast<std::uint8_t>(scenario == 0 ? 4 : 5)});
+        if (scenario == 3) cancellation.request_stop();
+      } else if (sid == 0x11) {
+        if (scenario == 4) throw std::runtime_error("adapter disconnected");
+        if (scenario == 2) reply({3, 0x7F, 0x11, 0x22});
+        else reply({2, 0x51, 1});
+      } else if (sid == 0x14) {
+        if (scenario == 2) reply({3, 0x7F, 0x14, 0x22});
+        else reply({1, 0x54});
+      }
+    };
+    uds::IsoTpSession physical_transport(bus, {0x72E, 0x72F});
+    uds::IsoTpSession functional_transport(bus, {0x7DF, 0x72F});
+    uds::UdsClient physical(physical_transport, {}, cancellation.get_token());
+    uds::UdsClient functional(functional_transport, {}, cancellation.get_token());
+    int progress = 0;
+    std::vector<std::string> logs;
+    uds::Chuneng331Flow flow(physical, functional, physical_transport,
+        functional_transport, [&](int percent, const std::string& line) {
+          progress = percent;
+          logs.push_back(line);
+        }, {});
+    std::string failure;
+    try { flow.finish_after_download(cancellation.get_token()); }
+    catch (const std::exception& error) { failure = error.what(); }
+    const auto sent = [&](std::uint8_t sid) {
+      return std::any_of(bus.sent.begin(), bus.sent.end(), [&](const auto& f) {
+        return f.data.size() > 1 && f.data[1] == sid;
+      });
+    };
+    if (scenario < 3 || scenario == 5) {
+      check(sent(0x11) && sent(0x85) && sent(0x28) && sent(0x10) && sent(0x14),
+            "ARC331 completion did not run the entire recovery sequence");
+      check(progress == 100, "ARC331 completed tail must reach 100 percent");
+      check((scenario == 0) == failure.empty(), "ARC331 verdict lost failure or false failed");
+      if (scenario == 1 || scenario == 2) check(failure.find("DependencyCheck") != std::string::npos &&
+          failure.find("71 01 FF 01 05") != std::string::npos,
+          "dependency failure and response must survive successful cleanup");
+      if (scenario == 2) check(failure.find("ECUReset") != std::string::npos &&
+          failure.find("ClearDTC") != std::string::npos &&
+          failure.find("NRC 0x22") != std::string::npos,
+            "recovery failures must accumulate with decoded rejection reason");
+      if (scenario == 5) check(failure.find("DependencyCheck") != std::string::npos &&
+          failure.find("超时") != std::string::npos,
+          "timeout must remain FAIL after completing recovery");
+    } else {
+      check(!failure.empty() && !sent(0x14), "cancel/disconnection must abort recovery");
+      check(progress < 100, "aborted recovery must not claim completion");
+      if (scenario == 3) check(!sent(0x11), "cancelled tail must not send reset");
+    }
+  }
 }
 
 void test_sha256() {
@@ -3736,6 +3803,7 @@ int main() {
       test();
     };
     run("hex", test_hex);
+    run("chuneng_completion_retains_failures", test_chuneng_completion_retains_failures);
     run("sha256", test_sha256);
     run("html_report_navigation_and_transfer_aggregation",
         test_html_report_navigation_and_transfer_aggregation);

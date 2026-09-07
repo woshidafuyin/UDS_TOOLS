@@ -1546,6 +1546,17 @@ int main(int argc, char* argv[]) {
                  result_format.fontWeight() == QFont::Bold,
              "Failed flash result is not a bold red log entry");
 
+      check(QMetaObject::invokeMethod(
+                &window, "handleFlashFinished", Qt::DirectConnection,
+                Q_ARG(bool, false), Q_ARG(bool, false),
+                Q_ARG(QString, QStringLiteral("流程已执行到底，结果FAIL；失败步骤：DependencyCheck RX=71 01 FF 01 05")),
+                Q_ARG(QString, QString{})),
+            "Completed-with-failure result handler is not invokable");
+      application.processEvents();
+      check(log_view->toPlainText().contains(QStringLiteral("警告：流程已执行到底")) &&
+                log_view->document()->lastBlock().text().contains(QStringLiteral("刷写失败")),
+            "Completed recovery must show a warning and retain FAIL");
+
       QTemporaryDir report_directory;
       check(report_directory.isValid(),
             "Could not create a report-link test directory");

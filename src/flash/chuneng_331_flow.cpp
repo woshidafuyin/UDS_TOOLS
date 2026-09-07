@@ -1,6 +1,7 @@
 #include "flash/chuneng_331_flow.hpp"
 #include "core/chuneng_arc331_protocol.hpp"
 #include "core/hex.hpp"
+#include "core/uds_nrc.hpp"
 #include "core/high_resolution_timer.hpp"
 
 #include <algorithm>
@@ -93,7 +94,31 @@ UdsResponse Chuneng331Flow::expect(UdsClient& client, std::span<const std::uint8
                                    std::span<const std::uint8_t> prefix, int percent,
                                    const std::string& name) {
   if (log_) log_(percent, name);
-  auto result = client.request(request);
+  check_cancelled();
+  UdsResponse result;
+  try {
+    result = client.request(request);
+  } catch (const UdsResponseTimeout&) {
+    check_cancelled();
+    if (!completing_) throw;
+    const auto failure = name + ": 等待ECU最终响应超时";
+    completion_failures_.push_back(failure);
+    if (log_) log_(percent, name + " FAIL: " + failure);
+    return {};
+  }
+  check_cancelled();
+  if (completing_ && (!result.success || result.response.size() < prefix.size() ||
+      !std::equal(prefix.begin(), prefix.end(), result.response.begin()))) {
+    std::string reason = "响应与预期不符";
+    if (const auto negative = parse_uds_negative_response(result.response))
+      reason = "步骤被ECU拒绝；" + format_uds_nrc(negative->nrc);
+    else if (const auto routine = parse_uds_routine_result(result.response))
+      reason = format_uds_routine_result(*routine);
+    const auto failure = name + ": " + reason + "; RX=" + to_hex(result.response);
+    completion_failures_.push_back(failure);
+    if (log_) log_(percent, name + " FAIL: " + failure);
+    return result;
+  }
   if (!result.success) throw std::runtime_error(name + ": NRC/timeout " + result.detail);
   if (result.response.size() < prefix.size() ||
       !std::equal(prefix.begin(), prefix.end(), result.response.begin())) {
@@ -455,14 +480,34 @@ void Chuneng331Flow::run(const Chuneng331Images& images,
   app_verify.insert(app_verify.end(), images.app_verification.begin(), images.app_verification.end());
   expect_routine(physical_, app_verify, 0x0202, 91,
                  "AppVerification");
+  finish_after_download(stop_);
+  check_wakeup();
+}
+
+void Chuneng331Flow::finish_after_download(std::stop_token stop) {
+  stop_ = stop;
+  completion_failures_.clear();
+  completing_ = true;
+  // Reset the policy even when transport failure or cancellation unwinds.
+  struct ResetPolicy { bool& value; ~ResetPolicy() { value = false; } } reset{completing_};
+  check_cancelled();
   expect_routine(physical_,
-                 std::array<std::uint8_t,4>{0x31,0x01,0xFF,0x01},
+                  std::array<std::uint8_t,4>{0x31,0x01,0xFF,0x01},
                  0xFF01, 93, "DependencyCheck");
   expect(physical_, std::array<std::uint8_t,2>{0x11,0x01},
          std::array<std::uint8_t,2>{0x51,0x01}, 95, "ECUReset");
-  std::this_thread::sleep_for(6s);
+  for (int i = 0; i < 60; ++i) {
+    check_cancelled();
+    std::this_thread::sleep_for(100ms);
+  }
   restore_after_reset();
-  check_wakeup();
+  check_cancelled();
+  if (!completion_failures_.empty()) {
+    std::string summary = "流程已执行到底，结果FAIL；收尾步骤已全部尝试，应用运行状态仍需确认。失败步骤：";
+    for (const auto& failure : completion_failures_) summary += "\n- " + failure;
+    if (log_) log_(100, "WARNING: " + summary);
+    throw std::runtime_error(summary);
+  }
 }
 
 } // namespace uds

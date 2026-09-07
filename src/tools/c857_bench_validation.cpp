@@ -18,6 +18,8 @@ struct Options {
   bool flash{};
   std::filesystem::path dist;
   std::filesystem::path log;
+  std::wstring profile{L"changan_c857"};
+  std::wstring target{L"secondary"};
 };
 
 Options parse_options(int argc, wchar_t** argv) {
@@ -32,10 +34,14 @@ Options parse_options(int argc, wchar_t** argv) {
       options.dist = argv[++index];
     } else if (argument == L"--log" && index + 1 < argc) {
       options.log = argv[++index];
+    } else if (argument == L"--profile" && index + 1 < argc) {
+      options.profile = argv[++index];
+    } else if (argument == L"--target" && index + 1 < argc) {
+      options.target = argv[++index];
     } else {
       throw std::runtime_error(
           "usage: c857_bench_validation [--probe|--flash] "
-          "--dist <dist-directory> --log <log-file>");
+          "--dist <dist-directory> --log <log-file> [--profile <id> --target <id>]");
     }
   }
   if (options.dist.empty() || options.log.empty()) {
@@ -74,21 +80,22 @@ int wmain(int argc, wchar_t** argv) {
     };
 
     auto profile =
-        uds::load_profile_ini(options.dist / "profiles" / "changan_c857.ini");
+        uds::load_profile_ini(options.dist / "profiles" / (options.profile + L".ini"));
     const auto target = std::find_if(
         profile.targets.cbegin(), profile.targets.cend(),
-        [](const uds::FlashTargetProfile& item) {
-          return item.id == L"secondary";
+        [&](const uds::FlashTargetProfile& item) {
+          return item.id == options.target;
         });
     if (target == profile.targets.cend()) {
-      throw std::runtime_error("C857 secondary target is missing");
+      throw std::runtime_error("selected target is missing");
     }
     profile.tx_id = target->tx_id;
     profile.rx_id = target->rx_id;
 
     log("MODE=" + std::string(options.flash ? "FLASH" : "PROBE"));
-    log("PROFILE=changan_c857; TARGET=secondary/ICRR; CH=" +
-        std::to_string(profile.channel) + "; TX=0x760; RX=0x768; FUNC=0x7DF");
+    log("PROFILE=" + utf8(options.profile) + "; TARGET=" + utf8(options.target) + "; CH=" +
+        std::to_string(profile.channel) + "; TX(decimal)=" + std::to_string(profile.tx_id) +
+        "; RX(decimal)=" + std::to_string(profile.rx_id) + "; FUNC(decimal)=" + std::to_string(profile.functional_id));
 
     uds::app::ProbeRequest probe_request;
     probe_request.profile = profile;
@@ -112,6 +119,12 @@ int wmain(int argc, wchar_t** argv) {
 
     uds::app::FlashRequest request;
     request.profile = profile;
+    request.target_id = options.target;
+    request.target_description = utf8(options.profile + L"/" + options.target);
+    request.hardware_backend = "Vector XL";
+    request.qualification_status = "PASS";
+    request.qualification_detail = probe_result.message;
+    request.trace_file = options.log.parent_path() / (options.log.stem().wstring() + L".asc");
     request.entry_mode = L"app";
     request.repeat_count = 1;
     request.executable_directory = options.dist;
